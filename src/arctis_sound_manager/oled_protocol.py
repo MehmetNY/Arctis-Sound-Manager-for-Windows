@@ -35,6 +35,7 @@ class OledProtocol:
         control_report_size: int = CONTROL_REPORT_SIZE,
         min_brightness: int = 0,
         transpose: bool = False,
+        y_offset: int = 0,
     ) -> None:
         """Initialise the protocol with per-device parameters.
 
@@ -53,6 +54,8 @@ class OledProtocol:
             transpose: the controller addresses the panel rotated 90°
                        (Arctis Pro GameDAC: a 128x52 panel drawn as 128
                        rows of 52 pixels, bottom pixel first).
+            y_offset:  panel row the bitmap's top edge lands on (Nova Pro
+                       Wired: 12, under the DAC's own status strip).
         """
         self.report_id = report_id
         self.DISPLAY_WIDTH = width
@@ -61,6 +64,7 @@ class OledProtocol:
         self.CONTROL_REPORT_SIZE = control_report_size
         self.min_brightness = min_brightness
         self.transpose = transpose
+        self.y_offset = y_offset
 
     @property
     def can_go_dark(self) -> bool:
@@ -95,7 +99,7 @@ class OledProtocol:
                 self.report_id,
                 self.CMD_SCREEN,
                 src_x,
-                0,
+                self.y_offset,
                 strip_width,
                 padded_height,
             ]

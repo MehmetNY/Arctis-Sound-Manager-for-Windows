@@ -44,7 +44,6 @@ device:
     - [0x06, 0x27, 'settings.gain']               # Audio gain (low/high)
     - [0x06, 0x37, 'settings.mic_volume']         # Mic volume
     - [0x06, 0x39, 'settings.mic_side_tone']      # Sidetone
-    - [0x06, 0xbf, 'settings.mic_led_brightness'] # Mic mute LED brightness
     - [0x06, 0x49, 0x01]                          # Enable ChatMix
     - [0x06, 0x20]
 
@@ -54,8 +53,21 @@ device:
   shutdown_commands:
     - [0x06, 0x49, 0x00]                          # Disable ChatMix
 
+  # The only opcodes this family defines (base_arctis_nova_pro.device, GG
+  # 121): 01 09 10 12 20 27 2E 33 37 39 43 47 49 80 83 85 8D 93 95. The wired
+  # DAC has no 0xB0 (wireless settings) and no 0xBF (muted-mic LED) - those are
+  # the Nova Pro *Wireless* base's, and this profile used to poll 0xB0 every
+  # 2 s and send 0xBF at init. An unknown opcode on SET_REPORT is answered with
+  # a STALL ([Errno 32] Pipe error in the log) and the DAC got into a state
+  # (volume maxed, sound cut, mic dead) that only a replug cleared (#321).
+  # tests/test_nova_pro_wired_321.py keeps every command inside that list.
+  #
+  # The status request is the spec's own audio_settings read (0x20): its reply
+  # carries the wheel position. There is no battery and no online/mic frame to
+  # ask for on a wired DAC; a request is still declared because the status
+  # poll loop also carries the EQ-mode reconcile.
   status:
-    request: 0x06b0
+    request: 0x0620
     response_mapping:
       - starts_with: 0x0725
         station_volume: 0x02
@@ -74,14 +86,7 @@ device:
         media_mix: 0x02
         chat_mix: 0x03
 
-      - starts_with: 0x06b0
-        mic_status: 0x09
-        mic_led_brightness: 0x0b
-
     representation:
-      headset:
-        - mic_status
-        - mic_led_brightness
       mixer:
         - station_volume
         - media_mix
@@ -113,7 +118,16 @@ device:
     report_id: 0x06    # First byte of every HID report sent to the OLED
     wvalue: 0x0300     # SET_REPORT wValue base: high byte = report type (0x03 Feature)
     width: 128         # Panel width in pixels
-    height: 64         # Panel height in pixels
+    # GG's spec for this family (base_arctis_nova_pro): a 128x52 bitmap drawn at
+    # y=12 - the 12 rows above are the DAC's own status area, never painted
+    # over - as HIDFEATURE chunks of 521 bytes (two halves of the width), and
+    # reload_display (0x95) to give the screen back. ASM drew 64 rows in
+    # 1024-byte chunks, which the Wireless base accepts but this DAC is not
+    # specified for (#321). Wireless profile untouched.
+    height: 52
+    y_offset: 12
+    frame_report_size: 521
+    reload_on_exit: true
 
   settings:
     headset:
@@ -145,15 +159,6 @@ device:
           0x03: high
         default: 0x00
         update_sequence: [0x06, 0x39, 'value']
-      mic_led_brightness:
-        type: slider
-        min: 0x01
-        max: 0x0a
-        step: 1
-        min_label: perc_10
-        max_label: perc_100
-        default: 0x0a
-        update_sequence: [0x06, 0xbf, 'value']
 
   status_parse:
     station_volume:
@@ -168,12 +173,4 @@ device:
       type: percentage
       perc_min: 0
       perc_max: 100
-    mic_status:
-      type: int_str_mapping
-      values:
-        0x01: muted
-        0x00: unmuted
-    mic_led_brightness:
-      type: percentage
-      perc_min: 0
-      perc_max: 10
+

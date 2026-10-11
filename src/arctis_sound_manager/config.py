@@ -208,6 +208,13 @@ class OledConfig:
     frame_report_size: int = 1024
     control_report_size: int = 64
     min_brightness: int = 0    # lowest level the panel accepts (0 = can go dark)
+    # First panel row the draw_bitmap writes to. The Nova Pro Wired draws a
+    # 128x52 bitmap at y=12: the 12 rows above are the DAC's own status strip,
+    # which GG never paints over (#321).
+    y_offset: int = 0
+    # Give the screen back (reload_display, 0x95) when ASM stops, so the DAC is
+    # not left in custom-draw mode with nobody feeding it (#321).
+    reload_on_exit: bool = False
     transpose: bool = False    # controller addresses the panel rotated 90°
     # 'nova' (0x93 strips) or 'siberia_840' (0xD0/0xD2 whole frames, Arctis
     # Pro Wireless); `packing` is the latter's pixel layout, see
@@ -565,6 +572,8 @@ class DeviceConfiguration:
                 frame_report_size=raw_oled.get('frame_report_size', 1024),
                 control_report_size=raw_oled.get('control_report_size', 64),
                 min_brightness=raw_oled.get('min_brightness', 0),
+                y_offset=int(raw_oled.get('y_offset', 0)),
+                reload_on_exit=bool(raw_oled.get('reload_on_exit', False)),
                 transpose=bool(raw_oled.get('transpose', False)),
                 protocol=raw_oled.get('protocol', 'nova'),
                 packing=raw_oled.get('packing', 'column_msb'),

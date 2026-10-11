@@ -2090,8 +2090,13 @@ class CoreEngine:
             read_input: list[int] = list(await asyncio.to_thread(usb_device.read, endpoint, max_packet_size, 1000))
             self._eio_counts.pop(interface_id, None)  # this interface read fine again
             with self._device_lock:
-                if self.device_config is None:
-                    return
+                config_gone = self.device_config is None
+            if config_gone:
+                # Mid-disconnect: a read can still complete here, and loop()
+                # resubmits the task at once. Without a wait this would spin
+                # for as long as the frames keep arriving.
+                await asyncio.sleep(_LISTEN_IDLE_BACKOFF_S)
+                return
 
             if self.device_config.status is not None:
                 self.logger.debug(f'Response: {read_input}')
@@ -2134,7 +2139,15 @@ class CoreEngine:
             self._absorb_settings_readback(read_input)
             self._resolve_raw_response_waiters(read_input)
 
-            await asyncio.sleep(0.1)
+            # Yield to the loop, but do not sleep. This used to be a flat
+            # 100 ms after every frame, so a burst of wheel reports (the Nova
+            # Pro Wired DAC pushes one 0x0725 per notch) was drained at ten per
+            # second while usbhid drains it instantly. The DAC holds the next
+            # event until the pending IN report has been read, so a quick spin
+            # of the knob showed up late and in one jump (#321). Nothing here
+            # can turn into a busy loop: a read with nothing to deliver blocks
+            # for its full timeout, and every failure path below backs off.
+            await asyncio.sleep(0)
         except usb.core.USBError as e:
             if isinstance(e, usb.core.USBTimeoutError) or e.errno == 110:  # ETIMEDOUT
                 # A plain interrupt-read timeout is the NORMAL idle state — no
@@ -2209,8 +2222,9 @@ class CoreEngine:
                 self.logger.warning('USB error: %s', e)
                 await asyncio.sleep(0.5)
         except AttributeError:
-            # self.usb_device can be None mid-disconnect
-            pass
+            # self.usb_device can be None mid-disconnect. Costs a short wait:
+            # loop() resubmits at once and nothing else here paces it.
+            await asyncio.sleep(0.1)
         
     
     async def loop(self):
@@ -5064,6 +5078,14 @@ class CoreEngine:
                 self.logger.warning(f"Shutdown command {command} failed: {e!r}")
 
     def teardown(self) -> None:
+        # Before the interfaces are released: handing the screen back is a
+        # control transfer to the OLED interface (#321).
+        if self.oled_manager is not None:
+            try:
+                self.oled_manager.stop()
+            except Exception as e:
+                self.logger.warning(f"Error stopping OLED manager: {e}")
+            self.oled_manager = None
         if self.usb_device:
             try:
                 self._send_shutdown_commands()

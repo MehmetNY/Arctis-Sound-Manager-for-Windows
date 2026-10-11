@@ -188,6 +188,7 @@ class OledManager:
         # (0x0300 → 0x03 Feature; 0x0200 → 0x02 Output).  The actual wValue
         # passed to ctrl_transfer is recomputed per-packet in _send_oled_packet.
         self._oled_frame_report_type: int = (self._oled_wvalue >> 8) & 0xFF
+        self._reload_on_exit: bool = bool(oled_cfg is not None and oled_cfg.reload_on_exit)
 
         if oled_cfg is not None and oled_cfg.protocol == 'siberia_840':
             self._protocol = SiberiaOledProtocol(
@@ -204,6 +205,7 @@ class OledManager:
                 control_report_size=oled_cfg.control_report_size,
                 min_brightness=oled_cfg.min_brightness,
                 transpose=oled_cfg.transpose,
+                y_offset=oled_cfg.y_offset,
             )
         else:
             self._protocol = OledProtocol(report_id=_report_id, width=_width, height=_height)
@@ -412,6 +414,7 @@ class OledManager:
         self._weather.invalidate()
 
     def stop(self) -> None:
+        was_running = self._thread is not None
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
@@ -431,6 +434,14 @@ class OledManager:
         if self._media_scroll_thread is not None:
             self._media_scroll_thread.join(timeout=2.0)
             self._media_scroll_thread = None
+        if was_running and self._reload_on_exit:
+            # Once the drawing threads are gone, so nothing repaints over it.
+            # Without this a restarted ASM meets a DAC still in custom-draw
+            # mode (#321).
+            try:
+                self._hand_back_screen()
+            except Exception as e:  # noqa: BLE001 — best effort on the way out
+                logger.debug("OLED hand-back on stop failed: %r", e)
         self._session.close()
         logger.info("OledManager stopped")
 
