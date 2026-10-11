@@ -98,7 +98,10 @@ def load_devices(paths: Iterable[Path]) -> list[tuple[int, list[int], str]]:
             pids_by_key[key] = []
             order.append(key)
         merged = pids_by_key[key]
-        for p in device['product_ids']:
+        # The charging case is read through the same libusb access as the
+        # device itself (charging_case.py), so it needs the same rule.
+        case_pids = (device.get('charging_case') or {}).get('product_ids', [])
+        for p in [*device['product_ids'], *case_pids]:
             pid = int(p)
             if pid not in merged:
                 merged.append(pid)

@@ -200,6 +200,8 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 > 🔵 Product IDs shown in **blue** are actively in use — detected on real users' devices through the app's anonymous usage stats
 > 🔴 Seen in telemetry but not yet declared in a device YAML — support pending
 
+**Arctis GameBuds charging case** (`230c`, GameBuds X `231a`): when the case is plugged into the computer over USB, the Headset page also shows its battery, charging state, lid and which earbuds are seated in it. The case is read alongside the dongle, never instead of it, so plugging or unplugging it does not touch your audio.
+
 **Find your headset's Product ID** (the 4 hex digits after `1038:`):
 
 ```bash

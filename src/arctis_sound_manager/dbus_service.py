@@ -15,6 +15,7 @@ from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import RequestNameReply
 from dbus_next.service import ServiceInterface, method, signal
 
+from arctis_sound_manager.charging_case import status_category
 from arctis_sound_manager.config import parsed_status
 from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_CONFIG_INTERFACE_NAME,
@@ -282,6 +283,12 @@ class ArctisManagerDbusStatusService(ServiceInterface):
         # reports the truth, which is that we know nothing yet.
         if not result and self.core_engine._device_ready and not online_var:
             result = {'headset': {'headset_power_status': {'value': 'online', 'type': 'label'}}}
+
+        # Only while the case is plugged in — absent, not "unknown", otherwise.
+        case_monitor = getattr(self.core_engine, 'charging_case', None)
+        case_state = case_monitor.state_for(config) if case_monitor else {}
+        if case_state:
+            result['charging_case'] = status_category(case_state)
 
         return json.dumps(result)
 

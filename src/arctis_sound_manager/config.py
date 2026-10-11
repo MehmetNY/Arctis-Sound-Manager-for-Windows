@@ -252,6 +252,13 @@ class ConfigStatus:
         return {m.reply_to for m in self.response_mapping if m.reply_to is not None}
 
 @dataclass
+class ChargingCaseConfig:
+    product_ids: list[int]
+    hid_usage_page: int | None
+    command_interface_index: int
+
+
+@dataclass
 class OnlineStatusConfig:
     status_variable: str
     online_value: Any
@@ -385,6 +392,18 @@ class DeviceConfiguration:
             int(pid): str(reason)
             for pid, reason in (raw_config.get('known_unsupported_product_ids') or {}).items()
         }
+        # Optional. A second USB product sold with this one that reports its
+        # own status — the GameBuds charging case. Not part of product_ids:
+        # it has no audio and must never become the device ASM drives, so it
+        # is read on the side by charging_case.ChargingCaseMonitor.
+        raw_case = raw_config.get('charging_case') or None
+        self.charging_case: ChargingCaseConfig | None = (
+            ChargingCaseConfig(
+                product_ids=[int(p) for p in raw_case.get('product_ids', [])],
+                hid_usage_page=raw_case.get('hid_usage_page', None),
+                command_interface_index=int(raw_case.get('command_interface_index', 3)),
+            ) if raw_case else None
+        )
         self.command_transport = CommandTransport(raw_config.get('command_transport', 'interrupt'))
         self.command_report_id = raw_config.get('command_report_id', None)
         self.listen_interface_indexes = raw_config.get('listen_interface_indexes', [])

@@ -35,6 +35,7 @@ from arctis_sound_manager.channel_volumes import load_channel_volumes
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
+from arctis_sound_manager.charging_case import ChargingCaseMonitor
 from arctis_sound_manager.usb_reenumerate import (reset_via_usbfs,
                                                   sysfs_device_dir)
 from arctis_sound_manager.utils import ObservableDict
@@ -432,6 +433,10 @@ class CoreEngine:
         self.reload_device_configurations()
         self.usb_devices_monitor.register_on_connect(self.on_device_connected)
         self.usb_devices_monitor.register_on_disconnect(self.on_device_disconnected)
+        # A charging case is read on the side, never as the driven device.
+        self.charging_case = ChargingCaseMonitor(lambda: self.device_configurations)
+        self.usb_devices_monitor.register_on_connect(self.charging_case.on_device_connected)
+        self.usb_devices_monitor.register_on_disconnect(self.charging_case.on_device_disconnected)
     
     def new_device_status(self) -> ObservableDict:
         device_status = ObservableDict()
@@ -1928,6 +1933,7 @@ class CoreEngine:
         self._stopping = False
         self._main_event_loop = asyncio.get_running_loop()
         self.usb_devices_monitor.start()
+        self.charging_case.scan()
 
         # Apply the configured quantum (#183) — including 0, which is what
         # makes this self-healing: if a previous run was killed before stop()
@@ -1945,6 +1951,7 @@ class CoreEngine:
         self.logger.info("Stopping CoreEngine...")
         self._stopping = True
         self.usb_devices_monitor.stop()
+        self.charging_case.stop()
         self._hush_outputs_for_shutdown()
         # Honor "redirect on disconnect" *before* tearing down the loopbacks.
         # redirect_audio_on_disconnect() only fires when the current default is
@@ -2354,6 +2361,12 @@ class CoreEngine:
         # reports. Limited to the SteelSeries vendor to avoid noise from the
         # rest of the bus when running under the polling backend.
         if vendor_id != 0x1038:
+            return
+
+        # A charging case: ChargingCaseMonitor has its own callback for it.
+        if any(c.vendor_id == vendor_id and getattr(c, 'charging_case', None)
+               and product_id in c.charging_case.product_ids
+               for c in self.device_configurations):
             return
 
         # Some hardware enumerates under more than one PID and only answers on

@@ -311,7 +311,10 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Device name and model\n"
                     "• USB Vendor ID and Product ID\n"
                     "• Battery level and charging status\n"
-                    "• ANC / Transparent mode state and controls\n\n"
+                    "• ANC / Transparent mode state and controls\n"
+                    "• Arctis GameBuds: while the charging case is plugged into this\n"
+                    "  computer over USB, its battery, charging state, lid and which\n"
+                    "  earbuds are seated in it\n\n"
                     "This information is useful for troubleshooting or reporting issues."
                 ),
             },
@@ -804,7 +807,10 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Nom et modèle de l'appareil\n"
                     "• Identifiant USB (Vendor ID et Product ID)\n"
                     "• Niveau de batterie et état de charge\n"
-                    "• Contrôles ANC / Mode Transparent\n\n"
+                    "• Contrôles ANC / Mode Transparent\n"
+                    "• Arctis GameBuds : quand le boîtier de charge est branché en USB\n"
+                    "  à cet ordinateur, sa batterie, son état de charge, le couvercle\n"
+                    "  et les écouteurs posés dedans\n\n"
                     "Ces informations sont utiles pour le dépannage ou pour signaler un problème."
                 ),
             },
@@ -1306,7 +1312,10 @@ HELP_CONTENT: dict[str, dict] = {
                     "• Nombre y modelo del dispositivo\n"
                     "• Identificador USB (Vendor ID y Product ID)\n"
                     "• Nivel de batería y estado de carga\n"
-                    "• Controles ANC / Modo Transparente\n\n"
+                    "• Controles ANC / Modo Transparente\n"
+                    "• Arctis GameBuds: mientras el estuche de carga esté conectado por\n"
+                    "  USB a este ordenador, su batería, estado de carga, tapa y qué\n"
+                    "  auriculares están dentro\n\n"
                     "Esta información es útil para solucionar problemas o reportar incidencias."
                 ),
             },

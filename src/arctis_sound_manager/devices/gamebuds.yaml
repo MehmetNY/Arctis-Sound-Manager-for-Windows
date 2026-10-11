@@ -31,6 +31,23 @@ device:
   command_interface_index: [3, 0]
   listen_interface_indexes: [3]
 
+  # The charging case (base_arctis_gamebuds_case.device): a separate USB
+  # product, seen only while the case is plugged into this computer. It has
+  # no audio, so it must never become the device ASM drives — it is not in
+  # product_ids, and charging_case.ChargingCaseMonitor reads it on the side
+  # (0xB7 batteries + charging, 0xB8 buds seated, 0xBC lid). Same transport
+  # as the dongle above (64-byte SET_REPORT, page 0xffc0), per the spec's
+  # `(api-read HID (chunk HIDIO 65 ...))` shared by both files. The
+  # interface number is not in any specification: 3 is the dongle's, used
+  # only when sysfs does not show exactly one interface on page 0xffc0
+  # (the case's push interface declares 0xffc1, its sync-interface).
+  charging_case:
+    product_ids:
+      - 0x230c  # Arctis GameBuds Case
+      - 0x231a  # Arctis GameBuds X Case
+    hid_usage_page: 0xffc0
+    command_interface_index: 3
+
   # Status protocol (issue #202): `(struct headset_settings)` in
   # base_arctis_gamebuds_dongle.device, command 0xB0. Neither
   # arctis_gamebuds_dongle.device (0x230a) nor arctis_gamebuds_x_dongle.device
@@ -98,16 +115,7 @@ device:
   # offline whenever the user wears just the other bud — precisely the "ASM
   # thinks a working headset is offline" failure this task warns against.
   #
-  # The case (base_arctis_gamebuds_case.device, command 0xB7,
-  # left/right/case_battery_percent) is UNREACHABLE from this profile: it is
-  # a separate USB product (0x230C / 0x231A for the X variant) with its own
-  # device() block and its own vendor interface, not a sub-frame the dongle
-  # relays. ASM has no concept of "a second USB device backing one profile" —
-  # every YAML here talks to exactly one product id at a time — so reading
-  # the case would need a new profile/device entry of its own (and even then
-  # only while the case is connected over USB, which is not how a charging
-  # case is normally used). Left unmapped; the case's own PIDs are not added
-  # to product_ids above.
+  # The case is NOT in product_ids: see charging_case above.
   #
   # Still unidentified, unrelated to status: 0xb8 (seen taking 3 values —
   # 0x01/0x02/0x03 — in USB capture; ANC force mode or BT auto-mute is a
