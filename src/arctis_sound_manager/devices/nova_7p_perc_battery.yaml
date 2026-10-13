@@ -156,10 +156,18 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: ux_settings, frame: [0xa0]}
-    - {name: audio_settings, frame: [0x20]}
-    - {name: headset_status, frame: [0xb0]}
-    - {name: read_color_spin, frame: [0x14]}
+    - name: ux_settings
+      frame: [0xa0]
+      fields: {inactivity_timer: 1, muted_mic_brightness: 2}
+    - name: audio_settings
+      frame: [0x20]
+      fields: {mic_volume: 1, sidetone: 2, volume_limiter: 3}
+    - name: headset_status
+      frame: [0xb0]
+      fields: {connection_status: 1, battery_status: 2, charging_status: 3, game_chatmix_level: 4, chat_chatmix_level: 5, bt_power_default: 7, bt_call_default: 8, mic_mute: 9}
+    - name: read_color_spin
+      frame: [0x14]
+      fields: {color_spin: 1}
 
   settings:
     headset:

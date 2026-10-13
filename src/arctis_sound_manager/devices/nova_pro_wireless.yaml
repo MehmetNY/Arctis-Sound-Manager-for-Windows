@@ -200,14 +200,56 @@ device:
     width: 128         # Panel width in pixels
     height: 64         # Panel height in pixels
 
+  # The base station's own current values, read before device_init pushes
+  # anything, so settings never chosen here keep what the DAC has (set in GG,
+  # or on the DAC itself) instead of being reset to the defaults below.
+  # Offsets index the raw frame, report id included, like response_mapping:
+  # audio_settings (0x20), wireless_settings (0xB0) and ux_settings (0x80) of
+  # base_arctis_nova_pro_wireless, every one confirmed on a 0x12e0 by
+  # `asm-cli tools probe` (values inside the spec's ranges, the 0xB0 offsets
+  # identical to the status mapping above).
+  settings_readback:
+    - request: 0x0620
+      starts_with: 0x0620
+      mapping:
+        gain: 0x04
+        mic_volume: 0x11
+        mic_side_tone: 0x12
+        line_out: 0x13
+        # The reply has one stream_main (0x16) and an unused byte at 0x17;
+        # the write sends main twice, which ASM shows as left and right.
+        line_out_stream_main_left_volume: 0x16
+        line_out_stream_main_right_volume: 0x16
+        line_out_stream_aux_volume: 0x18
+    - request: 0x06b0
+      starts_with: 0x06b0
+      mapping:
+        bluetooth_power_status: 0x02
+        bluetooth_auto_mute: 0x03
+        mic_led_brightness: 0x0b
+        pm_shutdown: 0x0c
+        wireless_mode: 0x0d
+    - request: 0x0680
+      starts_with: 0x0680
+      mapping:
+        station_home_screen_view: 0x05
+
   # Read-only queries for `asm-cli tools probe` (generated from the
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: battery_status, frame: [0x06, 0xb7]}
-    - {name: audio_settings, frame: [0x06, 0x20]}
-    - {name: ux_settings, frame: [0x06, 0x80]}
-    - {name: wireless_settings, frame: [0x06, 0xb0]}
+    - name: battery_status
+      frame: [0x06, 0xb7]
+      fields: {headset_battery_level: 1, charger_battery_level: 2, charging_status: 3}
+    - name: audio_settings
+      frame: [0x06, 0x20]
+      fields: {audio_input: 1, volume: 2, device_gain: 3, surround: 4, eq_preset: 5, custom_eq_band1: 6, custom_eq_band2: 7, custom_eq_band3: 8, custom_eq_band4: 9, custom_eq_band5: 10, custom_eq_band6: 11, custom_eq_band7: 12, custom_eq_band8: 13, custom_eq_band9: 14, custom_eq_band10: 15, mic_volume: 16, sidetone: 17, line_out_mode: 18, chatmix_game: 19, chatmix_chat: 20, stream_main: 21, stream_aux: 23, stream_mic: 24}
+    - name: ux_settings
+      frame: [0x06, 0x80]
+      fields: {dim_timer: 1, oled_brightness: 2, idle_brightness: 3, home_screen_type: 4, home_screen_mic_mute: 5, sonar_present: 6}
+    - name: wireless_settings
+      frame: [0x06, 0xb0]
+      fields: {bt_power_default: 1, bt_call_default: 2, bt_connection_mode: 3, bt_connection_status: 4, headset_batt_level: 5, charger_batt_level: 6, transparent_level: 7, mic_muted: 8, transparency_mode: 9, muted_mic_brightness: 10, power_inactivity_timer: 11, wireless_mode: 12, radio_connection_status: 13, headset_batt_status: 14}
 
   settings:
     headset:
@@ -340,6 +382,15 @@ device:
         visible_when:
           line_out: 2
         update_sequence: [0x06, 0x47, 'settings.line_out_stream_main_left_volume', 'settings.line_out_stream_main_right_volume', 'value']
+      station_home_screen_view:
+        # home_screen_type (0x89): 0 detailed, 1 simple, per the spec's own
+        # comment; read back from ux_settings offset 5 above.
+        type: button_group
+        default: 0x00
+        update_sequence: [0x06, 0x89, 'value']
+        values_mapping:
+          0x00: detailed
+          0x01: simple
     audio:
       noise_cancelling:
         type: slider

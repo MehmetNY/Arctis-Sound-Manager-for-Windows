@@ -187,10 +187,21 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: headset_settings, frame: [0xb0]}
-    - {name: audio_settings, frame: [0x20], reply: feature, size: 515, report_id: 0x00}
-    - {name: get_volume_24g, frame: [0x24]}
-    - {name: get_volume_bt, frame: [0x22]}
+    - name: headset_settings
+      frame: [0xb0]
+      fields: {bt_left_connect_status: 1, bt_right_connect_status: 2, left_connect_status: 3, right_connect_status: 4, left_battery_level: 5, right_battery_level: 6, transparency_level: 7, anc_level: 8, transparency_anc_mode: 9, mute_led_brightness: 10, inactivity_timer: 11, wear_sense_config: 12, wear_sense_status: 13, right_1_tap: [14, 3], right_2_tap: [17, 3], right_3_tap: [20, 3], left_1_tap: [23, 3], left_2_tap: [26, 3], left_3_tap: [29, 3], right_med_hold: [32, 3], left_med_hold: [35, 3], right_hold: 38, left_hold: 39, audio_mode: 40, eq_sync: 41, left_spin_color: 42, right_spin_color: 43, dongle_spin_color: 44}
+    - name: audio_settings
+      frame: [0x20]
+      reply: feature
+      size: 515
+      report_id: 0x00
+      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11], eq_band_6: [56, 11], eq_band_7: [67, 11], eq_band_8: [78, 11], eq_band_9: [89, 11], eq_band_10: [100, 11], eq_band_bt_1: [111, 11], eq_band_bt_2: [122, 11], eq_band_bt_3: [133, 11], eq_band_bt_4: [144, 11], eq_band_bt_5: [155, 11], eq_band_bt_6: [166, 11], eq_band_bt_7: [177, 11], eq_band_bt_8: [188, 11], eq_band_bt_9: [199, 11], eq_band_bt_10: [210, 11], mic_volume: 221, sidetone: 222, volume_limiter: 223, onboard_effect_status: 224, mic_mute: 225}
+    - name: get_volume_24g
+      frame: [0x24]
+      fields: {level: 1}
+    - name: get_volume_bt
+      frame: [0x22]
+      fields: {level: 1}
 
   settings:
     microphone:

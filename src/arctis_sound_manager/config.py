@@ -43,18 +43,35 @@ class ConfigStatusParser:
     type: StatusParseType
     init_kwargs: dict[str, Any]
 
+def _hex_bytes(value: int) -> list[int]:
+    """0x20 → [0x20], 0x0620 → [0x06, 0x20]: the bytes a hex literal spells,
+    the way a status `starts_with` is read (`06b0` matches 06 b0 …)."""
+    digits = f'{value:02x}'
+    if len(digits) % 2:
+        digits = '0' + digits
+    return list(bytes.fromhex(digits))
+
+
 class SettingsReadback:
     """A query whose reply carries the device's current value for some settings.
 
     `request` is the command to send, `starts_with` identifies the reply, and
     `mapping` gives the offset of each setting inside it — same indexing as a
-    status response_mapping, i.e. without the report id.
+    status response_mapping. Both read like a status `starts_with`: as many
+    bytes as the hex value has, so a family whose frames carry the report id
+    writes `0x0620` (report id 0x06, opcode 0x20) and indexes from it.
     """
 
-    def __init__(self, request: int, starts_with: int, mapping: dict[str, int]):
-        self.request = int(request)
+    def __init__(self, request: int | list[int], starts_with: int,
+                 mapping: dict[str, int]):
+        self.request = (_hex_bytes(int(request)) if isinstance(request, int)
+                        else [int(b) for b in request])
         self.starts_with = int(starts_with)
+        self.prefix = _hex_bytes(self.starts_with)
         self.mapping = {str(k): int(v) for k, v in mapping.items()}
+
+    def matches(self, response: list[int]) -> bool:
+        return list(response[:len(self.prefix)]) == self.prefix
 
     def values_from(self, response: list[int]) -> dict[str, int]:
         return {name: response[offset] for name, offset in self.mapping.items()
@@ -332,7 +349,7 @@ class DeviceConfiguration:
     # Read-only queries `asm-cli tools probe` sends to dump the raw replies,
     # so a reply layout taken from the spec can be checked on a user's
     # hardware in one pass: [{name, frame, reply: interrupt|feature, size,
-    # report_id}].
+    # report_id, fields}].
     probe_queries: list[dict]
     # Opt-in escalation for issue #238: force a USB reset on system resume
     # instead of relying on the generic post-resume status probe. Only the
@@ -579,6 +596,10 @@ class DeviceConfiguration:
                 # GET_REPORT's id: not always frame[0], profiles that keep
                 # the report id out of their frames start with the opcode.
                 'report_id': int(q.get('report_id', frame[0])),
+                # Reply layout from the spec, offsets counted from the opcode
+                # byte: {field: offset} or {field: [offset, size]}.
+                'fields': {str(k): ([int(x) for x in v] if isinstance(v, list) else int(v))
+                           for k, v in (q.get('fields') or {}).items()},
             })
 
         raw_status = raw_config.get('status', {})

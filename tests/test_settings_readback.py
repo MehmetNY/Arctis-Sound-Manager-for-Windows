@@ -130,3 +130,52 @@ def test_settings_file_marks_values_as_user_chosen(tmp_path, monkeypatch):
     assert settings.was_chosen_by_user("mic_volume") is True
     assert settings.was_chosen_by_user("mic_side_tone") is False
     assert settings.get("mic_volume") == 5
+
+
+# The real 0x0620 reply of a Nova Pro Wireless (0x12e0), from asm-cli tools probe.
+_NPW_AUDIO_SETTINGS = [int(b, 16) for b in (
+    "06 20 00 15 02 00 00 14 14 14 00 00 00 00 00 00 00 08 00 01 4b 64 64 00 64 00"
+).split()]
+
+
+def _npw_engine() -> MagicMock:
+    config = DeviceConfiguration(YAML(typ="safe").load(DEVICES / "nova_pro_wireless.yaml"))
+    engine = MagicMock()
+    engine.device_config = config
+    engine.device_settings = DeviceSettings(0x1038, 0x12E0)
+    engine.logger = MagicMock()
+    engine.get_command_endpoint_address.return_value = 0
+    engine._readback_done = threading.Event()
+    return engine
+
+
+def test_frames_that_carry_the_report_id_are_queried_and_matched_on_two_bytes():
+    """Every Nova Pro Wireless reply starts with its report id 0x06, so one
+    byte cannot tell them apart: `0x0620` is sent as 06 20 and matches only
+    the frame that begins 06 20."""
+    engine = _npw_engine()
+    sent = []
+    engine.send_command = lambda payload, ep: sent.append(payload)
+
+    CoreEngine._request_settings_readback(engine)
+    assert sent == [[0x06, 0x20], [0x06, 0xB0], [0x06, 0x80]]
+
+    CoreEngine._absorb_settings_readback(engine, _NPW_AUDIO_SETTINGS)
+    got = engine.device_settings.settings
+    assert (got["gain"], got["mic_volume"], got["mic_side_tone"], got["line_out"]) == (2, 8, 0, 1)
+    # one stream_main in the reply, shown as both left and right
+    assert got["line_out_stream_main_left_volume"] == got["line_out_stream_main_right_volume"] == 100
+
+
+def test_init_waits_for_every_reply_before_pushing_settings():
+    """device_init reads `settings.*` when it sends them: the wait is released
+    only once each declared query has been answered."""
+    engine = _npw_engine()
+    engine.send_command = lambda payload, ep: None
+    done = CoreEngine._request_settings_readback(engine)
+
+    CoreEngine._absorb_settings_readback(engine, _NPW_AUDIO_SETTINGS)
+    assert not done.is_set()
+    CoreEngine._absorb_settings_readback(engine, [0x06, 0xB0] + [0] * 14)
+    CoreEngine._absorb_settings_readback(engine, [0x06, 0x80] + [0] * 6)
+    assert done.is_set()

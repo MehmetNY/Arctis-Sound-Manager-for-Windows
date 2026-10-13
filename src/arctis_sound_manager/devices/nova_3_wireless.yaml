@@ -186,11 +186,21 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: audio_settings, frame: [0x20]}
-    - {name: audio_settings_bt, frame: [0x22]}
-    - {name: ux_settings, frame: [0xa0]}
-    - {name: mic_status, frame: [0x52]}
-    - {name: headset_status, frame: [0xb0]}
+    - name: audio_settings
+      frame: [0x20]
+      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11]}
+    - name: audio_settings_bt
+      frame: [0x22]
+      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11]}
+    - name: ux_settings
+      frame: [0xa0]
+      fields: {inactivity_timer: 1, color_spin: 3, eq_sync_status: 4, audio_mode: 5}
+    - name: mic_status
+      frame: [0x52]
+      fields: {mic_jack_state: 1, mic_mute_state: 2}
+    - name: headset_status
+      frame: [0xb0]
+      fields: {connection_status: 1, battery_status: 3, charging_status: 4, chatmix_game: 5, chatmix_chat: 6}
 
   settings:
     headset:

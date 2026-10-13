@@ -59,3 +59,27 @@ def test_probe_queries_are_bare_queries(profile):
         assert 1 <= len(q["frame"]) <= 2, q
         assert q["reply"] in ("interrupt", "feature")
 
+
+
+def test_a_reply_is_decoded_from_its_opcode_whichever_byte_it_sits_on():
+    """Offsets count from the opcode, found first or after the report id; a
+    status frame that arrived in the same window is not mistaken for it."""
+    from arctis_sound_manager.cli_tools import probe_field_values
+
+    entry = {"sent": "06 20", "fields": {"volume": 2, "name": [3, 6]},
+             "frames": ["06 b0 00 02", "06 20 00 15 41 42 43 00 00 00"]}
+    assert probe_field_values(entry) == {"volume": 0x15, "name": "ABC"}
+
+    bare = {"sent": "20", "fields": {"volume": 2}, "frames": ["20 00 33"]}
+    assert probe_field_values(bare) == {"volume": 0x33}
+
+    assert probe_field_values({"sent": "06 80", "fields": {"x": 1}, "frames": []}) is None
+
+
+def test_every_profile_field_points_inside_a_64_byte_frame_or_its_feature_size():
+    for path in sorted(DEVICES.glob("*.yaml")):
+        for q in _config(path.name).probe_queries:
+            limit = q["size"] if q["reply"] == "feature" else 64
+            for name, where in q["fields"].items():
+                at, size = (where, 1) if isinstance(where, int) else where
+                assert 0 < at and at + size <= limit, (path.name, q["name"], name)

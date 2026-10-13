@@ -143,6 +143,10 @@ _DERIVED_TOKENS = {
 # The settle delay exists because the connection event fires when the link is
 # up, not when the headset is ready to be configured; the minimum interval is
 # flap protection, for a headset sitting at the edge of its range.
+# How long init_device() waits for settings-readback replies before pushing
+# the profile's settings anyway. A reply takes milliseconds; this only bounds
+# a headset that never answers.
+_READBACK_WAIT_S = 0.5
 _SETTINGS_REPLAY_SETTLE_S = 1.5
 _SETTINGS_REPLAY_MIN_INTERVAL_S = 5.0
 
@@ -358,6 +362,11 @@ class CoreEngine:
         # registered — probe_device() records what follows each query without
         # knowing in advance which byte its reply starts with.
         self._frame_taps: list[list[list[int]]] = []
+        # Settings-readback replies still awaited by init_device(): it must not
+        # push settings before they are in, or a never-chosen setting goes out
+        # as the profile default while the reply adopts the device's own value.
+        self._readback_pending: set[int] = set()
+        self._readback_done = threading.Event()
 
         # Requests sent whose replies carry no opcode (status mappings with
         # `reply_to`), oldest first: the device answers in order, so the next
@@ -3115,7 +3124,13 @@ class CoreEngine:
         # Ask the headset what it currently has, before pushing anything. The
         # replies land on the listen loop and only fill in settings the user
         # never chose here — see _absorb_settings_readback().
-        self._request_settings_readback()
+        replies = self._request_settings_readback()
+        # device_init resolves `settings.*` when it sends them, so give the
+        # replies a moment to land first; past that, defaults go out as they
+        # always did.
+        if replies is not None and not replies.wait(_READBACK_WAIT_S):
+            self.logger.debug("settings readback: a query went unanswered before "
+                              "device_init")
         failed, attempted = self._send_device_init_sequence(context="init_device")
 
         # Not _apply_stored_eq() directly: in Sonar mode the stored curve must
@@ -4546,18 +4561,25 @@ class CoreEngine:
         self.permission_error = had_eacces
         return not had_eacces
 
-    def _request_settings_readback(self) -> None:
-        """Send the queries whose replies carry the device's current settings."""
+    def _request_settings_readback(self) -> threading.Event | None:
+        """Send the queries whose replies carry the device's current settings.
+
+        Returns the event set once every reply has been absorbed, or None when
+        the profile declares no readback.
+        """
         if self.device_config is None or not self.device_config.settings_readback:
-            return
+            return None
         endpoint = self.get_command_endpoint_address()
+        self._readback_pending = set(range(len(self.device_config.settings_readback)))
+        self._readback_done.clear()
         for readback in self.device_config.settings_readback:
             try:
-                self.send_command([readback.request], endpoint)
+                self.send_command(list(readback.request), endpoint)
             except usb.core.USBError as e:
                 # Not worth a retry: the settings simply stay at their defaults.
-                self.logger.warning("Settings readback 0x%02x failed: %r",
-                                    readback.request, e)
+                self.logger.warning("Settings readback %s failed: %r",
+                                    bytes(readback.request).hex(' '), e)
+        return self._readback_done
 
     def _absorb_settings_readback(self, response: list[int]) -> None:
         """Adopt values the headset reports for settings the user never set.
@@ -4577,9 +4599,12 @@ class CoreEngine:
         if not response:
             return
 
-        for readback in self.device_config.settings_readback:
-            if response[0] != readback.starts_with:
+        for index, readback in enumerate(self.device_config.settings_readback):
+            if not readback.matches(response):
                 continue
+            self._readback_pending.discard(index)
+            if not self._readback_pending:
+                self._readback_done.set()
             for name, value in readback.values_from(response).items():
                 if self.device_settings.was_chosen_by_user(name):
                     continue
@@ -4648,7 +4673,8 @@ class CoreEngine:
         hexed = lambda frame: ' '.join(f'{b & 0xFF:02x}' for b in frame)  # noqa: E731
         endpoint = self.get_command_endpoint_address()
         for query in config.probe_queries:
-            entry: dict = {'name': query['name'], 'sent': hexed(query['frame'])}
+            entry: dict = {'name': query['name'], 'sent': hexed(query['frame']),
+                           'fields': query['fields']}
             tap: list[list[int]] = []
             self._frame_taps.append(tap)
             try:

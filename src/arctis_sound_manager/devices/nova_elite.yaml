@@ -314,12 +314,36 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: wireless_settings, frame: [0x01, 0xb0]}
-    - {name: ux_settings, frame: [0x01, 0x80]}
-    - {name: read_radio_eq_settings, frame: [0x01, 0x1a], reply: feature, size: 1036, report_id: 0x01}
-    - {name: read_bluetooth_eq_settings, frame: [0x01, 0x1e], reply: feature, size: 1036, report_id: 0x01}
-    - {name: read_microphone_eq_settings, frame: [0x01, 0x1c], reply: feature, size: 1036, report_id: 0x01}
-    - {name: audio_settings, frame: [0x01, 0x20], reply: feature, size: 1036, report_id: 0x01}
+    - name: wireless_settings
+      frame: [0x01, 0xb0]
+      fields: {bt_power_default: 1, bt_call_default: 2, bt_connection_mode: 3, bt_connection_status: 4, headset_batt_level: 5, charger_batt_level: 6, transparent: 7, mic_mute: 8, transparent_anc_mode: 9, muted_mic_brightness: 10, inactivity_timer: 11, wireless_mode: 12, radio_connection_status: 13, charging_status: 14, active_noise_cancellation: 15}
+    - name: ux_settings
+      frame: [0x01, 0x80]
+      fields: {oled_screen_saver_timer: 1, oled_screen_brightness: 2, home_screen_view: 4, oled_screen_saver_mode: 9, home_screen_option: 10}
+    - name: read_radio_eq_settings
+      frame: [0x01, 0x1a]
+      reply: feature
+      size: 1036
+      report_id: 0x01
+      fields: {radio_selected_eq_preset: 1, alias_name: [2, 6], name: [8, 61], eq_band_1: [69, 11], eq_band_2: [80, 11], eq_band_3: [91, 11], eq_band_4: [102, 11], eq_band_5: [113, 11], eq_band_6: [124, 11], eq_band_7: [135, 11], eq_band_8: [146, 11], eq_band_9: [157, 11], eq_band_10: [168, 11]}
+    - name: read_bluetooth_eq_settings
+      frame: [0x01, 0x1e]
+      reply: feature
+      size: 1036
+      report_id: 0x01
+      fields: {bluetooth_selected_eq_preset: 1, alias_name: [2, 6], name: [8, 61], bt_gain1: 69, bt_gain2: 70, bt_gain3: 71, bt_gain4: 72, bt_gain5: 73, bt_gain6: 74, bt_gain7: 75, bt_gain8: 76, bt_gain9: 77, bt_gain10: 78}
+    - name: read_microphone_eq_settings
+      frame: [0x01, 0x1c]
+      reply: feature
+      size: 1036
+      report_id: 0x01
+      fields: {microphone_selected_eq_preset: 1, alias_name: [2, 6], name: [8, 61], mic_gain1: 69, mic_gain2: 70, mic_gain3: 71, mic_gain4: 72, mic_gain5: 73, mic_gain6: 74, mic_gain7: 75, mic_gain8: 76, mic_gain9: 77, mic_gain10: 78}
+    - name: audio_settings
+      frame: [0x01, 0x20]
+      reply: feature
+      size: 1036
+      report_id: 0x01
+      fields: {custom_eq_band_1: [1, 11], custom_eq_band_2: [12, 11], custom_eq_band_3: [23, 11], custom_eq_band_4: [34, 11], custom_eq_band_5: [45, 11], custom_eq_band_6: [56, 11], custom_eq_band_7: [67, 11], custom_eq_band_8: [78, 11], custom_eq_band_9: [89, 11], custom_eq_band_10: [100, 11], eq_band_1: [111, 11], eq_band_2: [122, 11], eq_band_3: [133, 11], eq_band_4: [144, 11], eq_band_5: [155, 11], eq_band_6: [166, 11], eq_band_7: [177, 11], eq_band_8: [188, 11], eq_band_9: [199, 11], eq_band_10: [210, 11], bt_gain1: 221, bt_gain2: 222, bt_gain3: 223, bt_gain4: 224, bt_gain5: 225, bt_gain6: 226, bt_gain7: 227, bt_gain8: 228, bt_gain9: 229, bt_gain10: 230, mic_gain1: 231, mic_gain2: 232, mic_gain3: 233, mic_gain4: 234, mic_gain5: 235, mic_gain6: 236, mic_gain7: 237, mic_gain8: 238, mic_gain9: 239, mic_gain10: 240, audio_input: 241, volume: 242, volume_limiter: 243, surround_mode: 244, mic_volume: 245, boom_sidetone_level: 246, line_out_mode: 247, radio_selected_eq_preset: 248, microphone_selected_eq_preset: 249, bluetooth_selected_eq_preset: 250, chatmix_game: 251, chatmix_chat: 252, stream_main: 255, stream_aux: 257, stream_mic: 258, mic_noise_reduction_setting: 264, mic_boom_reduction_level: 265, on_ear_mic_reduction_level: 266, boom_sidetone_state: 269, on_ear_sidetone_level: 270, on_ear_sidetone_state: 271}
 
   settings:
     audio:

@@ -69,13 +69,20 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: get_eq, frame: [0x13, 0x00]}
-    - {name: get_sidetone_gain, frame: [0x16, 0x00]}
-    - {name: get_surround, frame: [0x17, 0x00]}
-    - {name: get_surround_source, frame: [0x1d, 0x00]}
-    - {name: get_microphone_gain, frame: [0x15, 0x00]}
-    - {name: get_inactivity_timer, frame: [0x14, 0x00]}
-    - {name: info_table, frame: [0x20, 0x00]}
+    - name: get_eq
+      frame: [0x13, 0x00]
+    - name: get_sidetone_gain
+      frame: [0x16, 0x00]
+    - name: get_surround
+      frame: [0x17, 0x00]
+    - name: get_surround_source
+      frame: [0x1d, 0x00]
+    - name: get_microphone_gain
+      frame: [0x15, 0x00]
+    - name: get_inactivity_timer
+      frame: [0x14, 0x00]
+    - name: info_table
+      frame: [0x20, 0x00]
 
   settings:
     microphone:

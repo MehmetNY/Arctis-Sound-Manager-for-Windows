@@ -107,7 +107,9 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: headset_status, frame: [0xb0]}
+    - name: headset_status
+      frame: [0xb0]
+      fields: {connection_status: 1, battery_status: 2, charging_status: 3, game_chatmix_level: 4, chat_chatmix_level: 5}
 
   settings:
     headset:

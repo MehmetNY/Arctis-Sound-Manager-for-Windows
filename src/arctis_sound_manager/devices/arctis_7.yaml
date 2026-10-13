@@ -62,12 +62,24 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: connection_status, frame: [0x06, 0x14]}
-    - {name: battery_status, frame: [0x06, 0x18]}
-    - {name: game_chat_status, frame: [0x06, 0x24]}
-    - {name: mic_status, frame: [0x06, 0x30]}
-    - {name: get_mic_volume, frame: [0x06, 0x32]}
-    - {name: get_sidetone, frame: [0x06, 0x34]}
+    - name: connection_status
+      frame: [0x06, 0x14]
+      fields: {connection: 1}
+    - name: battery_status
+      frame: [0x06, 0x18]
+      fields: {battery: 1}
+    - name: game_chat_status
+      frame: [0x06, 0x24]
+      fields: {game: 1, chat: 2}
+    - name: mic_status
+      frame: [0x06, 0x30]
+      fields: {mic: 1}
+    - name: get_mic_volume
+      frame: [0x06, 0x32]
+      fields: {amplitude: 2}
+    - name: get_sidetone
+      frame: [0x06, 0x34]
+      fields: {enabled: 1, amplitude: 3}
 
   settings:
     microphone:

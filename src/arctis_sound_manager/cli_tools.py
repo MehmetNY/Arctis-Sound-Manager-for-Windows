@@ -282,3 +282,48 @@ def usb_reenumerate_current_device(vendor_id: int = 0x1038) -> int:
     print('  systemctl --user restart arctis-manager')
     return 0
 
+
+
+def probe_field_values(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Values of a probe reply's fields, or None when no frame answers it.
+
+    Field offsets count from the reply's opcode byte — the query's last byte —
+    which sits first or right after the report id depending on the family,
+    so the opcode is looked for at both places rather than assumed.
+    """
+    opcode = int(entry['sent'].split()[-1], 16)
+    frames = [[int(b, 16) for b in f.split()] for f in entry.get('frames') or []]
+    if entry.get('feature'):
+        frames.insert(0, [int(b, 16) for b in entry['feature'].split()])
+    for frame in frames:
+        start = next((p for p in (0, 1) if len(frame) > p and frame[p] == opcode), None)
+        if start is None:
+            continue
+        values: dict[str, Any] = {}
+        for name, where in entry.get('fields', {}).items():
+            at, size = (where, 1) if isinstance(where, int) else where
+            raw = bytes(frame[start + at:start + at + size])
+            if len(raw) < size:
+                continue
+            values[name] = (raw.split(b'\0')[0].decode(errors='replace') if size > 4
+                            else int.from_bytes(raw, 'little'))
+        return values
+    return None
+
+
+def print_probe(result: dict[str, Any]) -> None:
+    """One block per query: its decoded fields, or the raw frames when the
+    profile has no layout for it or nothing answered with its opcode."""
+    for entry in result['replies']:
+        print(f"\n{entry['name']}  (sent {entry['sent']})")
+        values = probe_field_values(entry) if entry.get('fields') else None
+        if values:
+            width = max(len(n) for n in values)
+            for name, value in values.items():
+                print(f"  {name:<{width}}  {value}")
+            continue
+        raw = ([entry['feature']] if entry.get('feature') else []) + (entry.get('frames') or [])
+        if not raw:
+            print("  no reply")
+        for frame in raw[:3]:
+            print(f"  {frame[:95]}{'…' if len(frame) > 95 else ''}")

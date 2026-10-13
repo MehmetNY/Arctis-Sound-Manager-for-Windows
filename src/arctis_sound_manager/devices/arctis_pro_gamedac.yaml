@@ -128,9 +128,15 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: get_audio_settings, frame: [0x20]}
-    - {name: get_ux_settings, frame: [0x80]}
-    - {name: get_preset_settings, frame: [0xa0]}
+    - name: get_audio_settings
+      frame: [0x20]
+      fields: {host_mode: 1, volume: 2, dac_gain: 3, volume_limiter: 4, surround: 5, surround_offload: 6, eq_preset: 7, custom_eq1: [8, 4], custom_eq2: [12, 4], custom_eq3: [16, 4], custom_eq4: [20, 4], custom_eq5: [24, 4], custom_eq6: [28, 4], custom_eq7: [32, 4], custom_eq8: [36, 4], custom_eq9: [40, 4], custom_eq10: [44, 4], mic_volume: [48, 4], sidetone: 52, mic_agc: 53, mic_noise_gate: 54, aux_mode: 55, line_out_mode: 56, hp_speaker_game: 57, hp_speaker_chat: 58, stream_game: 59, stream_chat: 60, stream_aux: 61, stream_mic: 62}
+    - name: get_ux_settings
+      frame: [0x80]
+      fields: {timer_delay: [1, 4], active_brightness: 5, idle_brightness: 6, screensaver: 7}
+    - name: get_preset_settings
+      frame: [0xa0]
+      fields: {left_preset: 1, right_preset: 2, mic_preset: 3, mute_preset: 4}
 
   settings:
     microphone:

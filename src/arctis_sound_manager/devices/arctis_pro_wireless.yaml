@@ -80,14 +80,23 @@ device:
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
   probe_queries:
-    - {name: get_mode_setting, frame: [0x15]}
-    - {name: get_settings, frame: [0x12]}
-    - {name: battery_status, frame: [0x40]}
-    - {name: rf_status, frame: [0x41]}
-    - {name: charger_status, frame: [0x42]}
-    - {name: read_onboard_profile_0, frame: [0x82, 0x00]}
-    - {name: read_onboard_eq_0, frame: [0x84, 0x00]}
-    - {name: read_source_0, frame: [0x86, 0x00]}
+    - name: get_mode_setting
+      frame: [0x15]
+      fields: {mode: 1}
+    - name: get_settings
+      frame: [0x12]
+    - name: battery_status
+      frame: [0x40]
+    - name: rf_status
+      frame: [0x41]
+    - name: charger_status
+      frame: [0x42]
+    - name: read_onboard_profile_0
+      frame: [0x82, 0x00]
+    - name: read_onboard_eq_0
+      frame: [0x84, 0x00]
+    - name: read_source_0
+      frame: [0x86, 0x00]
 
   settings:
     microphone:

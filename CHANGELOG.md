@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Arctis Nova Pro Wireless: ASM starts from what the base station already has.** Line out, the stream mix, mic volume, sidetone, gain, Bluetooth, the mute-LED brightness, the sleep timer and the wireless mode are read from the base station before ASM sends anything, so a setting you never changed in ASM keeps the value it had (set in GG or on the DAC) instead of being reset to ASM's default. Also new: the base station's **home screen view** (detailed or simple). Confirmed on hardware with `asm-cli tools probe`.
+- **`asm-cli tools probe` shows what the headset reported**, field by field (volume, line out mode, battery levels…), instead of only saving raw bytes.
+
+### Fixed
+
+- **A setting read back from the headset could disagree with what the headset actually had.** The reply was absorbed on its own schedule while the start-up commands went out, so a value ASM had never set could be pushed as its default to the headset just as the app adopted the headset's own value. ASM now waits for the replies (half a second at most) before sending anything.
+
 ## [1.6.2] - 14 October 2026
 
 ### Added

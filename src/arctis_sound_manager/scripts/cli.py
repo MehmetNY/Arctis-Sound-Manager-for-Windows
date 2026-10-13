@@ -806,14 +806,15 @@ def main():
             sys.exit(print_hardware_eq_readback(result))
         elif args.action == 'probe':
             import json
-            from arctis_sound_manager.cli_tools import probe_device_via_dbus
+            from arctis_sound_manager.cli_tools import print_probe, probe_device_via_dbus
             result = probe_device_via_dbus()
             if not result.get('ok'):
                 print(f"Probe failed: {result.get('error', 'unknown_error')}")
                 sys.exit(1)
             Path(args.output).write_text(json.dumps(result, indent=2))
             answered = sum(1 for r in result['replies'] if r.get('frames') or r.get('feature'))
-            print(f"{result['device']}: {answered}/{len(result['replies'])} queries answered.")
+            print_probe(result)
+            print(f"\n{result['device']}: {answered}/{len(result['replies'])} queries answered.")
             print(f"Saved to {args.output} — please attach this file to the GitHub issue.")
             sys.exit(0)
 
