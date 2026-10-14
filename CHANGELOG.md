@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A setting read back from the headset could disagree with what the headset actually had.** The reply was absorbed on its own schedule while the start-up commands went out, so a value ASM had never set could be pushed as its default to the headset just as the app adopted the headset's own value. ASM now waits for the replies (half a second at most) before sending anything.
+- **The DAC screen showed a Sonar preset while the Custom EQ was playing** ([#330](https://github.com/loteran/Arctis-Sound-Manager/issues/330)). In Custom EQ mode the curve plays on the headset itself and Sonar is out of the path, but the screen kept naming the channel's Sonar preset (and the Chat one). It now shows "EQ: Custom", the mode badge reads C, and the Chat preset line is hidden.
+- **"Show city name" did nothing on the DAC screen for most cities** ([#330](https://github.com/loteran/Arctis-Sound-Manager/issues/330)). A name too long to fit beside the temperature went on a line below it, outside the area actually drawn, so only very short names (Paris) ever appeared. The line is now part of the screen and scrolls into view like the rest.
 
 ## [1.6.2] - 14 October 2026
 

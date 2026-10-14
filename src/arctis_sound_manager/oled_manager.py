@@ -521,7 +521,7 @@ class OledManager:
             self._eq_channel = eq_channel
             self._eq_scroll_offset = 0
             self._eq_reset_event.set()
-        eq_preset = _active_eq_preset(eq_channel)
+        eq_label, eq_preset = self._displayed_eq(eq_channel)
 
         gs = self._core.general_settings
 
@@ -533,9 +533,11 @@ class OledManager:
 
         # New OLED data sources
         mic_status = str(parsed.get("mic_status", ""))
-        eq_chat_preset = _active_eq_preset("chat")
-        eq_mode_file = _CFG / ".eq_mode"
-        eq_mode = eq_mode_file.read_text().strip() if eq_mode_file.exists() else "custom"
+        hardware_eq = self._hardware_eq_active()
+        # The Chat line names a Sonar preset, and in custom mode no Sonar EQ
+        # is in the path: hide it rather than show one that does nothing.
+        eq_chat_preset = "" if hardware_eq else _active_eq_preset("chat")
+        eq_mode = "custom" if hardware_eq else "sonar"
 
         # Only asked when shown: the MPRIS lookup is a few D-Bus round trips.
         now_playing = self._session.now_playing() if gs.oled_show_media else ""
@@ -559,7 +561,7 @@ class OledManager:
             active_profile=active_profile,
             blink_state=self._blink,
             eq_preset=eq_preset,
-            eq_label=eq_channel.capitalize(),
+            eq_label=eq_label,
             weather=weather_data,
             show_time=gs.oled_show_time,
             # Nothing to say beats saying the wrong thing: a device with no
@@ -908,6 +910,24 @@ class OledManager:
             return self._eq_channel
         return next(ch for ch in _EQ_CHANNEL_PRIORITY if ch in playing)
 
+    def _hardware_eq_active(self) -> bool:
+        """True when the headset's own EQ is what plays (custom mode)."""
+        core = self._core
+        return core.has_hardware_eq() and not core._read_eq_mode_is_sonar()
+
+    def _displayed_eq(self, channel: str) -> tuple[str, str]:
+        """Label and name for the EQ line.
+
+        In custom mode the loopbacks bypass Sonar and the curve plays on the
+        headset itself, but the line kept naming the channel's Sonar preset,
+        so the screen showed an EQ that was not in the path (#330). The
+        on-device EQ is one curve for every channel, stored in the "Custom"
+        slot.
+        """
+        if self._hardware_eq_active():
+            return "EQ", "Custom"
+        return channel.capitalize(), _active_eq_preset(channel)
+
     def _update_scroll_frame(self) -> None:
         """Re-render _current_image with current eq/profile scroll offsets and send it."""
         params = self._last_render_params
@@ -952,9 +972,9 @@ class OledManager:
                         continue
                     continue
 
-                eq_preset = _active_eq_preset(self._eq_channel)
+                eq_label, eq_preset = self._displayed_eq(self._eq_channel)
                 text_w = self._renderer.measure_eq_text(
-                    eq_preset, gs.oled_font_eq, self._eq_channel.capitalize())
+                    eq_preset, gs.oled_font_eq, eq_label)
                 # Draw origin is x=1; we want the last pixel at x=127 (WIDTH-1).
                 # text_w is the full advance → place advance end at x=127 → offset = text_w - 126.
                 max_offset = text_w - (self._renderer.WIDTH - 1)
@@ -1148,7 +1168,7 @@ class OledManager:
                         continue
                     continue
 
-                eq_chat_preset = _active_eq_preset("chat")
+                eq_chat_preset = "" if self._hardware_eq_active() else _active_eq_preset("chat")
                 text_w = self._renderer.measure_eq_chat_text(eq_chat_preset, gs.oled_font_eq_chat)
                 max_offset = text_w - (self._renderer.WIDTH - 1)
 

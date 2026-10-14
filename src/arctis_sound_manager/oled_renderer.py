@@ -337,6 +337,7 @@ class OledRenderer:
             sz_eq=sz_eq, sz_weather_tmp=sz_weather_tmp,
             sz_sonar_mode=sz_sonar_mode, sz_eq_chat=sz_eq_chat,
             display_order=order,
+            show_weather_city=show_weather_city,
         )
         buf_h = max(self.HEIGHT, natural_h)
 
@@ -417,15 +418,14 @@ class OledRenderer:
                 self._draw_weather_icon_id(draw, 1, y + (icon_h - _ICON_SIZE) // 2, weather.icon_id)
                 temp_str = f"{weather.temp:g}{weather.unit_label}"
                 draw.text((_ICON_SIZE + 4, y), temp_str, font=font_wtmp, fill=1)
-                if show_weather_city:
-                    city = weather.city[:10] if len(weather.city) > 10 else weather.city
-                    temp_w = int(font_wtmp.getlength(temp_str))
-                    city_x = _ICON_SIZE + 4 + temp_w + 4
-                    if city_x + int(font_small.getlength(city)) <= self.WIDTH:
-                        draw.text((city_x, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
-                    else:
+                if show_weather_city and weather.city:
+                    city = weather.city[:10]
+                    if self._weather_city_below(weather, font_wtmp):
                         draw.text((_ICON_SIZE + 4, y + sz_weather_tmp + 2), city, font=font_small, fill=1)
-                y += icon_h + 1
+                    else:
+                        temp_w = int(font_wtmp.getlength(temp_str))
+                        draw.text((_ICON_SIZE + 4 + temp_w + 4, y + sz_weather_tmp - 8), city, font=font_small, fill=1)
+                y += self._weather_row_height(weather, show_weather_city, sz_weather_tmp) + 1
             elif element == 'sonar_mode':
                 # The EQ-mode badge is now drawn on the time row (right of the
                 # clock), not as its own body row — nothing to do here.
@@ -441,6 +441,29 @@ class OledRenderer:
 
         return image, header_h
 
+    def _weather_city_below(self, weather: "WeatherData", font_wtmp) -> bool:
+        """True when the city does not fit beside the temperature."""
+        temp_w = int(font_wtmp.getlength(f"{weather.temp:g}{weather.unit_label}"))
+        city_x = _ICON_SIZE + 4 + temp_w + 4
+        return city_x + int(self._font.getlength(weather.city[:10])) > self.WIDTH
+
+    def _weather_row_height(
+        self, weather: "WeatherData", show_city: bool, sz_weather_tmp: int,
+    ) -> int:
+        """Height of the weather row, city line included when it wraps.
+
+        A city too wide to sit beside the temperature is drawn on a line of its
+        own, but the row used to keep the icon's height: the buffer ended above
+        that line, so any city longer than a few letters ("Fort Worth") was
+        never on screen and the "show city" toggle did nothing (#330).
+        """
+        row_h = max(_ICON_SIZE, sz_weather_tmp)
+        if not (show_city and weather.city):
+            return row_h
+        if self._weather_city_below(weather, _load_font(sz_weather_tmp)):
+            return max(row_h, sz_weather_tmp + 2 + _FONT_SMALL_SIZE + 2)
+        return max(row_h, sz_weather_tmp - 8 + _FONT_SMALL_SIZE + 2)
+
     def _natural_height(
         self,
         show_time: bool, show_battery: bool, show_profile: bool,
@@ -452,6 +475,7 @@ class OledRenderer:
         sz_sonar_mode: int = 8, sz_eq_chat: int = 8,
         show_media: bool = False, now_playing: str = "", sz_media: int = 8,
         display_order: "list[str] | None" = None,
+        show_weather_city: bool = False,
     ) -> int:
         y = 1
         if show_time or show_battery:
@@ -466,7 +490,7 @@ class OledRenderer:
             elif element == 'eq' and show_eq:
                 y += sz_eq + 3
             elif element == 'weather' and weather is not None:
-                y += 2 + max(_ICON_SIZE, sz_weather_tmp) + 1
+                y += 2 + self._weather_row_height(weather, show_weather_city, sz_weather_tmp) + 1
             elif element == 'sonar_mode':
                 # Drawn on the time row now — adds no body height.
                 pass

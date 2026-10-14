@@ -28,6 +28,15 @@ from arctis_sound_manager.oled_manager import OledManager
 
 
 class _Core:
+    hardware_eq = False
+    eq_mode_sonar = True
+
+    def has_hardware_eq(self) -> bool:
+        return self.hardware_eq
+
+    def _read_eq_mode_is_sonar(self) -> bool:
+        return self.eq_mode_sonar
+
     def __init__(self, status: dict) -> None:
         self.usb_device = None
         self._usb_write_lock = threading.Lock()
