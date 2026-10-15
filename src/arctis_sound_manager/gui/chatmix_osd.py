@@ -474,11 +474,7 @@ class ChatMixWatcher(QObject):
                 except Exception as exc:  # noqa: BLE001 — daemon not up yet, retry
                     logger.debug("DAC wheel OSD watcher: %r", exc)
                 finally:
-                    # Always, not only on the way out of a good connection: a
-                    # bus left open is never freed (the event loop's reader
-                    # keeps it alive), so with the daemon down each 2 s retry
-                    # leaked one until the session bus hit its file limit and
-                    # took the desktop session down with it.
+                    # Always disconnect to free connection
                     if bus is not None:
                         bus.disconnect()
                 await asyncio.sleep(2)
