@@ -456,8 +456,12 @@ class ChatMixWatcher(QObject):
 
         async def run() -> None:
             while not self._is_stopping():
+                bus = None
                 try:
-                    bus = await MessageBus().connect()
+                    # Kept apart from connect(): MessageBus() already opens the
+                    # socket, which must be closed even when connecting fails.
+                    bus = MessageBus()
+                    await bus.connect()
                     intro = await bus.introspect(DBUS_BUS_NAME, DBUS_STATUS_OBJECT_PATH)
                     iface = bus.get_proxy_object(
                         DBUS_BUS_NAME, DBUS_STATUS_OBJECT_PATH, intro,
@@ -467,9 +471,16 @@ class ChatMixWatcher(QObject):
                         lambda payload: self.wheel_changed.emit(dac_wheel_level(payload)))
                     while not self._is_stopping() and bus.connected:
                         await asyncio.sleep(1)
-                    bus.disconnect()
                 except Exception as exc:  # noqa: BLE001 — daemon not up yet, retry
                     logger.debug("DAC wheel OSD watcher: %r", exc)
+                finally:
+                    # Always, not only on the way out of a good connection: a
+                    # bus left open is never freed (the event loop's reader
+                    # keeps it alive), so with the daemon down each 2 s retry
+                    # leaked one until the session bus hit its file limit and
+                    # took the desktop session down with it.
+                    if bus is not None:
+                        bus.disconnect()
                 await asyncio.sleep(2)
 
         asyncio.run(run())
