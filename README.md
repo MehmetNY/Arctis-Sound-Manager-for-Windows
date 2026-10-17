@@ -1280,6 +1280,7 @@ Thanks to everyone who has contributed code, fixes, or community support:
 | [Kolaigg](https://github.com/Kolaigg) | Fixed the NixOS build, which was missing the script that generates the Plasma widget translations ([#310](https://github.com/loteran/Arctis-Sound-Manager/pull/310)) |
 | [rasmus91](https://github.com/rasmus91) | Logs that exposed the SteamOS link-permission errors, including the Game Mode case the repair did not cover ([#181](https://github.com/loteran/Arctis-Sound-Manager/issues/181)) |
 | [TheV-git](https://github.com/TheV-git) | Narrowed the Nova Pro Wired volume-knob failures down to the custom display and ASM's commands ([#321](https://github.com/loteran/Arctis-Sound-Manager/issues/321)) |
+| [justfaked](https://github.com/justfaked) | Tracked a desktop session that kept dying on Bazzite down to ASM: the DAC wheel watcher leaked a D-Bus connection on every failed retry until the session bus ran out of file descriptors, and fixed it ([#336](https://github.com/loteran/Arctis-Sound-Manager/pull/336)) |
 
 ---
 
