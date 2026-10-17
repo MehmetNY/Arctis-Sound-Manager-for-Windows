@@ -1392,7 +1392,8 @@ def clip_dep_checks() -> list[DepCheck]:
         ),
         DepCheck(
             # One row for the encode/mux chain: appsrc and opusenc (base),
-            # pulsesrc and matroskamux (good), and an H.264 encoder. The
+            # pulsesrc and matroskamux (good), h264parse (bad), and an H.264
+            # encoder. The
             # encoder varies by distro: Fedora/Nobara ship `openh264enc`
             # in gstreamer1-plugin-openh264 rather than x264enc (the latter
             # is in RPM Fusion's ugly). We accept whichever is present and
@@ -1400,18 +1401,25 @@ def clip_dep_checks() -> list[DepCheck]:
             name="GStreamer: encoding and muxing",
             severity=Severity.BLOCKING,
             feature="clip capture",
+            # h264parse (bad) sits after every encoder in video_branch(): left
+            # out of this list, the row read "installed" on a system without
+            # it and the capture failed on its first frame with
+            # gst_parse_error: no element "h264parse" (#334).
             detect=lambda: _gst_elements("appsrc", "opusenc", "pulsesrc",
-                                         "matroskamux")
+                                         "matroskamux", "h264parse")
                            and _any_h264_encoder_available(),
             install_commands={
                 "fedora": ["dnf", "install", "-y", "gstreamer1-plugins-base",
                            "gstreamer1-plugins-good",
+                           "gstreamer1-plugins-bad-free",
                            "gstreamer1-plugins-ugly-free",
                            "gstreamer1-plugin-openh264"],
                 "debian": ["apt-get", "install", "-y", "gstreamer1.0-plugins-base",
-                           "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-ugly"],
+                           "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-bad",
+                           "gstreamer1.0-plugins-ugly"],
                 "arch":   ["pacman", "-S", "--noconfirm", "gst-plugins-base",
-                           "gst-plugins-good", "gst-plugins-ugly"],
+                           "gst-plugins-good", "gst-plugins-bad-libs",
+                           "gst-plugins-ugly"],
             },
             remove_commands={
                 "fedora": ["dnf", "remove", "-y",

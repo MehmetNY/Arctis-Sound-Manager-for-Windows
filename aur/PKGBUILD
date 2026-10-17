@@ -64,6 +64,7 @@ optdepends=(
     'gst-plugin-pipewire: clip capture — pipewiresrc, the portal screen stream'
     'gst-plugins-base: clip capture — appsrc, audioconvert/audioresample, opusenc'
     'gst-plugins-good: clip capture — pulsesrc, matroskamux'
+    'gst-plugins-bad-libs: clip capture — h264parse, after every encoder'
     'gst-plugins-ugly: clip capture — x264enc, the software encoder fallback'
     'ffmpeg: clip thumbnails, track levels and export'
     # Hardware H.264 encoders. Purely a performance choice on top of that: the

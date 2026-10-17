@@ -36,7 +36,7 @@ makes no difference which you use.
 |---|---|---|---|
 | PyGObject | `python-gobject` | `python3-gobject` | `python3-gi` |
 | Screen capture | `gst-plugin-pipewire` | `pipewire-gstreamer` | `gstreamer1.0-pipewire` |
-| Encoding and muxing | `gst-plugins-base`, `gst-plugins-good`, `gst-plugins-ugly` | `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `gstreamer1-plugins-ugly-free` | `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer1.0-plugins-ugly` |
+| Encoding and muxing | `gst-plugins-base`, `gst-plugins-good`, `gst-plugins-bad-libs`, `gst-plugins-ugly` | `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `gstreamer1-plugins-bad-free`, `gstreamer1-plugins-ugly-free` | `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer1.0-plugins-bad`, `gstreamer1.0-plugins-ugly` |
 | Thumbnails, levels, export | `ffmpeg` | `ffmpeg` | `ffmpeg` |
 
 Hardware H.264 encoding is optional: `gst-plugin-va` (Intel/AMD) or
