@@ -10,24 +10,32 @@ This folder has the helpers used for that (first applied to the Arctis Nova
 Pro Omni, issue #70), plus discovery scripts for problems that need no Windows
 step at all — see §3.
 
-## 1. Capture on Windows — `capture-omni-windows.ps1`
+## 1. Capture on Windows — `capture-gg-windows.ps1`
 
-For the user with the device (needs Windows, or a Windows dual-boot).
+For the user with the device (needs Windows, or a Windows dual-boot). Works for
+every Arctis headset, GameDAC and base station.
 
-1. Install **Wireshark** and tick **"Install USBPcap"** in the installer:
+1. Install **SteelSeries GG**, and **Wireshark** with **"Install USBPcap"**
+   ticked in its installer, then reboot:
    <https://www.wireshark.org/download.html>
-2. Plug the headset's base station into USB.
-3. Right-click **Windows PowerShell → Run as administrator**, then run the
-   script. It will:
-   - open a capture window (you pick the device tree showing the headset and an
-     output filename),
-   - walk you through changing **one setting at a time** in SteelSeries GG,
-     timestamping each change,
-   - zip the result to `Desktop\omni-capture.zip`.
-4. Attach that zip to the GitHub issue.
+2. Plug the headset (or its base station / DAC) into USB.
+3. Open **Windows PowerShell as administrator** and run:
+   ```powershell
+   irm https://raw.githubusercontent.com/loteran/Arctis-Sound-Manager/develop/scripts/reverse-engineering/capture-gg-windows.ps1 -OutFile $env:TEMP\asm-capture.ps1
+   powershell -ExecutionPolicy Bypass -File $env:TEMP\asm-capture.ps1
+   ```
+   It finds the SteelSeries device, starts USBPcap, then walks you through
+   changing **one setting at a time** in GG and timestamps each change. The
+   list of settings is the model's own, taken from GG's description of it;
+   anything GG does not show is skipped with `s`.
+4. Attach `Desktop\asm-gg-capture.zip` to the GitHub issue.
 
-The zip contains `omni.pcapng` (USB capture) and `omni-actions.txt` (what you
-changed and when).
+The zip holds `capture.pcapng` (USB capture), `actions.txt` (what was changed
+and when, in UTC) and `device.txt` (the devices plugged in, GG's version).
+
+The per-model lists are generated from the decrypted GG specs by
+`gg_capture_plan.py --write` in the private research repo (setting names and
+ranges only — no opcode). Rerun it when a profile or GG changes.
 
 ## 2. Decode on Linux — `parse_steelseries_capture.py`
 
@@ -35,16 +43,18 @@ For the maintainer, on the `.pcapng`:
 
 ```bash
 sudo pacman -S wireshark-cli            # provides tshark (Arch/CachyOS)
-python3 parse_steelseries_capture.py omni.pcapng omni-actions.txt
+python3 parse_steelseries_capture.py capture.pcapng actions.txt
 ```
 
-It extracts every host→device HID payload starting with the SteelSeries report
-id `0x06`, groups them by opcode, and — using the action log — lists which bytes
-were sent right after each setting change. From that you read off the
-`update_sequence` opcodes for the device YAML (gain, EQ bands, sidetone, ANC,
-volume, mic, …).
-
-Pass `--report-id XX` if a device uses a different leading report id.
+USBPcap records the whole USB tree, so it picks the device that received the
+most commands and the report id most of them start with (`--device N`,
+`--report-id XX` to override). For each change it lists the commands sent
+right after it (minus the background polling seen at baseline) and the frames
+the device sent back that differ from the baseline — where a read-back offset
+is checked. A log written in local time (older captures) is shifted to the
+capture's clock automatically. The differential summary at the end gives, per
+setting, the opcode and the byte that changes: the `update_sequence` for the
+device YAML.
 
 ## 3. Find a missing status field without Windows — `gamebuds_battery_probe.py`
 

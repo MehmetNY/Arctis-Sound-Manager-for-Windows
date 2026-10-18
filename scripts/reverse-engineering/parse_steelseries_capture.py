@@ -4,11 +4,11 @@
 """
 Decode a USBPcap capture of SteelSeries GG and map each setting change to the
 exact HID command bytes, using the timestamped action log from
-capture-omni-windows.ps1.
+capture-gg-windows.ps1.
 
 Usage:
-    python3 parse_steelseries_capture.py omni.pcapng omni-actions.txt
-    python3 parse_steelseries_capture.py omni.pcapng --pid 0x2290
+    python3 parse_steelseries_capture.py capture.pcapng actions.txt
+    python3 parse_steelseries_capture.py capture.pcapng --device 5 --report-id 06
 
 Requires `tshark` (Arch/CachyOS: `sudo pacman -S wireshark-cli`).
 
@@ -21,6 +21,12 @@ Method (differential):
   • Settings are taken to several known values; the decoder groups actions by
     setting name (text before " = ") and shows, per opcode, how the parameter
     byte changes between values — that is the update_sequence for the YAML.
+  • USBPcap records the whole USB tree, so the SteelSeries device is picked as
+    the address that received the most commands (override with --device), and
+    the report id as the leading byte most of them share (override with
+    --report-id).
+  • What the device sends back in each window (status frames that differ from
+    the baseline) is listed too: that is where a read-back offset is checked.
 """
 from __future__ import annotations
 
@@ -29,31 +35,34 @@ import shutil
 import subprocess
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
-def run_tshark(pcap: str) -> list[tuple[float, str]]:
+def run_tshark(pcap: str) -> list[tuple[float, str, int, str]]:
+    """(time, device address, direction 0 = host->device / 1 = device->host, payload)"""
     if not shutil.which("tshark"):
         sys.exit("tshark not found — install it (Arch/CachyOS: sudo pacman -S wireshark-cli).")
-    fields = ["frame.time_epoch", "usb.capdata", "usbhid.data", "usb.data_fragment"]
+    fields = ["frame.time_epoch", "usb.device_address", "usb.endpoint_address.direction",
+              "usb.capdata", "usbhid.data", "usb.data_fragment"]
     cmd = ["tshark", "-r", pcap,
-           "-Y", "usb.endpoint_address.direction == 0",  # host -> device
+           "-Y", "usb.capdata or usbhid.data or usb.data_fragment",
            "-T", "fields"] + sum((["-e", f] for f in fields), [])
     out = subprocess.run(cmd, capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"tshark failed:\n{out.stderr}")
-    rows: list[tuple[float, str]] = []
+    rows: list[tuple[float, str, int, str]] = []
     for line in out.stdout.splitlines():
         parts = line.split("\t")
-        if not parts or not parts[0]:
+        if len(parts) < 4 or not parts[0]:
             continue
         try:
             ts = float(parts[0])
+            direction = int(parts[2])
         except ValueError:
             continue
-        payload = next((p for p in parts[1:] if p), "").replace(":", "").replace(" ", "").lower()
+        payload = next((p for p in parts[3:] if p), "").replace(":", "").replace(" ", "").lower()
         if payload:
-            rows.append((ts, payload))
+            rows.append((ts, parts[1], direction, payload))
     return rows
 
 
@@ -66,8 +75,12 @@ def load_actions(path: str) -> list[tuple[float, str]]:
                 continue
             try:
                 stamp, label = line.split("  ", 1)
-                dt = datetime.strptime(stamp.strip(), "%Y-%m-%d %H:%M:%S.%f")
-                actions.append((dt.astimezone().timestamp(), label.strip()))
+                stamp = stamp.strip()
+                if stamp.endswith("Z"):   # capture-gg-windows.ps1 writes UTC
+                    dt = datetime.strptime(stamp[:-1], "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                else:                     # older logs: the capturing PC's local time
+                    dt = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S.%f").astimezone()
+                actions.append((dt.timestamp(), label.strip()))
             except ValueError:
                 continue
     return actions
@@ -82,13 +95,24 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pcap")
-    ap.add_argument("actions", nargs="?", help="omni-actions.txt from the capture script")
-    ap.add_argument("--report-id", default="06", help="HID report id prefix (default 06)")
+    ap.add_argument("actions", nargs="?", help="actions.txt from the capture script")
+    ap.add_argument("--device", help="USB device address to decode (default: the one that received the most commands)")
+    ap.add_argument("--report-id", help="HID report id prefix (default: the most common leading byte)")
     args = ap.parse_args()
 
-    rid = args.report_id.lower()
-    rows = [(t, p) for t, p in run_tshark(args.pcap) if p.startswith(rid)]
-    print(f"{len(rows)} host->device commands starting with 0x{rid}\n")
+    allrows = run_tshark(args.pcap)
+    per_dev = Counter(d for _, d, dirn, _ in allrows if dirn == 0)
+    if not per_dev:
+        sys.exit("No host->device data in this capture — wrong USB tree picked?")
+    print("Commands received per device address:",
+          ", ".join(f"{d}: {c}" for d, c in per_dev.most_common()))
+    dev = args.device or per_dev.most_common(1)[0][0]
+    out_rows = [(t, p) for t, d, dirn, p in allrows if d == dev and dirn == 0]
+    rid = (args.report_id or Counter(p[:2] for _, p in out_rows).most_common(1)[0][0]).lower()
+    rows = [(t, p) for t, p in out_rows if p.startswith(rid)]
+    in_rows = [(t, p) for t, d, dirn, p in allrows if d == dev and dirn == 1]
+    print(f"Device {dev}: {len(rows)} host->device commands starting with 0x{rid}, "
+          f"{len(in_rows)} frames back\n")
 
     if not args.actions:
         # No log: just list unique commands grouped by opcode.
@@ -106,13 +130,24 @@ def main() -> None:
     actions = load_actions(args.actions)
     if not actions:
         sys.exit("Could not read any timestamped actions from the log.")
+    # A log in the capturing PC's local time is off by whole (or half) hours
+    # from the capture's UTC clock: shift it to where the commands are.
+    start, end = actions[0][0] - 5.0, actions[-1][0]
+    def inside(shift: float) -> int:
+        return sum(1 for t, _ in rows if start + shift < t <= end + shift)
+    shift = max((h * 1800.0 for h in range(-28, 29)), key=lambda s: (inside(s), -abs(s)))
+    if shift and inside(shift) > inside(0.0):
+        print(f"Action log shifted by {shift / 3600:+.1f} h to match the capture's clock\n")
+        actions = [(t + shift, label) for t, label in actions]
 
     # Window (t[i-1], t[i]] per action; first window starts a bit before t[0].
     windows: list[tuple[str, list[str]]] = []
     prev = actions[0][0] - 5.0
+    replies: list[list[str]] = []
     for ts, label in actions:
         cmds = [p for ct, p in rows if prev < ct <= ts]
         windows.append((label, cmds))
+        replies.append([p for ct, p in in_rows if prev < ct <= ts])
         prev = ts
 
     # Noise = commands in the BASELINE window, or present in most windows.
@@ -128,13 +163,19 @@ def main() -> None:
     # Per-action signal commands.
     print("\n== Setting → command(s) ==")
     by_setting: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)
-    for label, cmds in windows:
+    in_baseline = {p for (label, _), back in zip(windows, replies)
+                   if label.lower().startswith("baseline") for p in back}
+    in_freq = Counter(p for back in replies for p in set(back))
+    in_noise = in_baseline | {p for p, c in in_freq.items() if c >= max(2, n // 2)}
+    for (label, cmds), back in zip(windows, replies):
         if label.lower().startswith("baseline"):
             continue
         sig = list(dict.fromkeys(p for p in cmds if p not in noise))
         print(f"\n• {label}")
         for p in sig:
             print(f"    {fmt(p)}")
+        for p in list(dict.fromkeys(p for p in back if p not in in_noise))[:6]:
+            print(f"    <- {fmt(p, 32)}")
         setting = label.split("=")[0].strip()
         by_setting[setting].append((label, sig))
 
