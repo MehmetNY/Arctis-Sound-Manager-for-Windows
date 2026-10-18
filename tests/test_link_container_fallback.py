@@ -25,6 +25,7 @@ def _r(rc=0, err=b''):
 
 @pytest.fixture(autouse=True)
 def _state(monkeypatch):
+    monkeypatch.delenv('PIPEWIRE_CONFIG_NAME', raising=False)
     pw_utils._host_link_works = False
     pw_utils._host_link_logged.clear()
     yield
@@ -136,3 +137,14 @@ def test_warning_logged_once_per_pair(monkeypatch, caplog):
         pw_utils._pw_link(1, 2)
     warns = [r for r in caplog.records if r.levelname == 'WARNING']
     assert len(warns) == 1 and '#181' in warns[0].getMessage()
+
+
+def test_host_retry_carries_the_wireplumber_exemption(monkeypatch):
+    # distrobox-host-exec drops the environment; the #325 client config must
+    # reach the host pw-link anyway, or it is hidden the Sonar nodes there too.
+    monkeypatch.setenv('PIPEWIRE_CONFIG_NAME', '/home/deck/client-asm.conf')
+    _env(monkeypatch, True)
+    calls = _runner(monkeypatch, lambda a: _r(1, ENOENT), lambda a: _r(0))
+    assert pw_utils._pw_link(280, 151).returncode == 0
+    assert calls[1] == [HOST, 'env', 'PIPEWIRE_CONFIG_NAME=/home/deck/client-asm.conf',
+                        'pw-link', '280', '151']

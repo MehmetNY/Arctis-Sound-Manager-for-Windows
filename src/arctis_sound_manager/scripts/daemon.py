@@ -251,6 +251,15 @@ async def main_async():
     if not is_udev_rules_valid():
         logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')
 
+    # Before the first pw-* spawn: on WirePlumber < 0.5.18 with a hide-parent
+    # rule (SteamOS), every tool ASM starts would be denied ASM's own nodes
+    # (#325). Sets PIPEWIRE_CONFIG_NAME for this process and its children.
+    try:
+        from arctis_sound_manager.pw_utils import exempt_from_software_dsp_hiding
+        exempt_from_software_dsp_hiding()
+    except Exception as exc:
+        logger.warning('could not check for the WirePlumber hide-parent bug: %r', exc)
+
     _ensure_media_router_running(logger)
 
     dbus_manager = DbusManager.getInstance()

@@ -7,6 +7,7 @@ Used to detect and move apps like mpv/haruna that bypass PulseAudio.
 """
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -52,6 +53,117 @@ def _pw_run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
     resolved = [_abs_exe(argv[0]), *argv[1:]]
     kwargs.setdefault("close_fds", False)
     return subprocess.run(resolved, **kwargs)
+
+
+# --- WirePlumber < 0.5.18 hiding ASM's nodes (#325) ------------------------
+# WirePlumber's node/software-dsp.lua hides the parent of every node a
+# `hide-parent` rule matches, from every client but its own, and re-applies
+# that to each client that connects afterwards. Up to 0.5.17 it forgets the
+# real id when the parent goes away (it reads node["bound-id"] once the proxy
+# is unbound), so the id stays in its list; PipeWire hands it to the next new
+# object. On SteamOS, which wraps every ALSA node in such a rule, those next
+# objects are ASM's Sonar nodes: each pw-link, pw-dump and pw-loopback ASM
+# starts is denied them at connect, and no grant on the owners helps since the
+# denial is on the caller itself. Restarting WirePlumber does not help either —
+# device churn refills the list (#325, 15/10).
+#
+# The script skips any client carrying `wireplumber.daemon`, and nothing else
+# in WirePlumber reads that property from a client, so ASM sets it on the
+# PipeWire tools the daemon starts: a client config whose context.properties
+# carry it, named by PIPEWIRE_CONFIG_NAME in the daemon's environment.
+_SOFTWARE_DSP_FIXED = (0, 5, 18)
+_ASM_CLIENT_CONF = (Path.home() / ".local" / "share" / "arctis-sound-manager"
+                    / "pipewire" / "client-asm.conf")
+_ASM_CLIENT_CONF_TEXT = """\
+# Written by Arctis Sound Manager, for the PipeWire tools its daemon starts on a
+# system whose WirePlumber (< 0.5.18) would hide ASM's own nodes from them (#325).
+# PipeWire's default client.conf, plus wireplumber.daemon.
+context.properties = {
+    log.level = 0
+    wireplumber.daemon = true
+}
+context.spa-libs = {
+    audio.convert.* = audioconvert/libspa-audioconvert
+    support.*       = support/libspa-support
+}
+context.modules = [
+    { name = libpipewire-module-rt args = { } flags = [ ifexists nofail ] }
+    { name = libpipewire-module-protocol-native }
+    { name = libpipewire-module-client-node }
+    { name = libpipewire-module-client-device }
+    { name = libpipewire-module-adapter }
+    { name = libpipewire-module-metadata }
+    { name = libpipewire-module-session-manager }
+]
+"""
+
+
+def _host_roots() -> list[str]:
+    """Where to read the host's files: in a distrobox, the host is /run/host."""
+    return ["/run/host", ""] if Path("/run/host/usr").is_dir() else [""]
+
+
+def wireplumber_version() -> tuple[int, int, int] | None:
+    """The session's WirePlumber, from its library file name.
+
+    libwireplumber-0.5.so.0.514.0 is 0.5.14. Read from the file rather than
+    asked over PipeWire, which may not be up yet when the daemon starts.
+    """
+    for root in _host_roots():
+        for libdir in ("usr/lib", "usr/lib64", "usr/lib/x86_64-linux-gnu",
+                       "usr/lib/aarch64-linux-gnu"):
+            d = Path(root or "/") / libdir
+            for lib in d.glob("libwireplumber-0.*.so.0.*.*") if d.is_dir() else ():
+                m = re.search(r"libwireplumber-0\.(\d+)\.so\.0\.(\d+)\.", lib.name)
+                if m:
+                    return (0, int(m.group(1)), int(m.group(2)) % 100)
+    return None
+
+
+def _hide_parent_rule_present() -> bool:
+    dirs = [Path(root or "/") / d for root in _host_roots()
+            for d in ("usr/share/wireplumber", "etc/wireplumber")]
+    dirs.append(Path.home() / ".config" / "wireplumber")
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for conf in d.rglob("*.conf"):
+            try:
+                if "hide-parent" in conf.read_text(errors="replace"):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def exempt_from_software_dsp_hiding() -> bool:
+    """Make the PipeWire tools this process starts immune to #325, if needed.
+
+    Call once, early, in the daemon: it sets PIPEWIRE_CONFIG_NAME in
+    os.environ, which every pw-* spawn inherits. Leaves a config the user set
+    alone. Returns whether the exemption is on.
+    """
+    if os.environ.get("PIPEWIRE_CONFIG_NAME"):
+        return False
+    version = wireplumber_version()
+    if version is None or version >= _SOFTWARE_DSP_FIXED or not _hide_parent_rule_present():
+        return False
+    try:
+        _ASM_CLIENT_CONF.parent.mkdir(parents=True, exist_ok=True)
+        if not _ASM_CLIENT_CONF.exists() or _ASM_CLIENT_CONF.read_text() != _ASM_CLIENT_CONF_TEXT:
+            _ASM_CLIENT_CONF.write_text(_ASM_CLIENT_CONF_TEXT)
+    except OSError as exc:
+        logger.warning("WirePlumber %s hides nodes from new clients (#325), but %s "
+                       "could not be written: %r", ".".join(map(str, version)),
+                       _ASM_CLIENT_CONF, exc)
+        return False
+    os.environ["PIPEWIRE_CONFIG_NAME"] = str(_ASM_CLIENT_CONF)
+    logger.warning("WirePlumber %s with a hide-parent rule: ASM's PipeWire tools run "
+                   "with wireplumber.daemon so its stale hidden ids cannot hide "
+                   "ASM's nodes from them (#325, fixed in WirePlumber 0.5.18)",
+                   ".".join(map(str, version)))
+    return True
+
 
 _LINK_DENIED = "not permitted"
 
@@ -105,8 +217,16 @@ def _pw_link(out_port, in_port, delete: bool = False) -> subprocess.CompletedPro
     if container.running_in_container():
         prefix = container.host_exec() or None
 
+    if prefix:
+        host_argv = [*prefix, *argv]
+        # distrobox-host-exec does not carry the environment across: hand the
+        # #325 exemption over explicitly (the home folder is shared).
+        if os.environ.get("PIPEWIRE_CONFIG_NAME"):
+            host_argv = [*prefix, "env",
+                         f"PIPEWIRE_CONFIG_NAME={os.environ['PIPEWIRE_CONFIG_NAME']}", *argv]
+
     if prefix and _host_link_works:
-        return _link_exists_ok(_pw_run([*prefix, *argv], **kw), delete)
+        return _link_exists_ok(_pw_run(host_argv, **kw), delete)
 
     r = _link_exists_ok(_pw_run(argv, **kw), delete)
     if not prefix or _LINK_NOT_FOUND not in _link_err(r).lower():
@@ -121,7 +241,7 @@ def _pw_link(out_port, in_port, delete: bool = False) -> subprocess.CompletedPro
     else:
         logger.debug("pw-link %s -> %s: retrying from the host", *pair)
     try:
-        h = _link_exists_ok(_pw_run([*prefix, *argv], **kw), delete)
+        h = _link_exists_ok(_pw_run(host_argv, **kw), delete)
     except Exception as exc:  # noqa: BLE001
         logger.debug("host pw-link could not run: %r", exc)
         return r
