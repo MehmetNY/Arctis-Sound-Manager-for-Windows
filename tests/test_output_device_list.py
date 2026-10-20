@@ -74,6 +74,20 @@ def test_external_list_still_filters_out_virtual_nodes():
 
 def test_duplicate_ids_are_not_repeated():
     result = _options([_sink("alsa_output.one", nick="dup"),
-                        _sink("alsa_output.two", nick="dup")], "external_audio_devices")
+                        _sink("alsa_output.one", nick="dup")], "external_audio_devices")
 
     assert len(result) == 1
+
+
+@pytest.mark.parametrize("list_name", ["external_audio_devices", "pulse_audio_devices"])
+def test_shared_nick_lists_every_sink_by_node_name(list_name):
+    """Every output of one USB card is "USB Audio" (#339)."""
+    names = ["alsa_output.usb-Generic_USB_Audio-00.HiFi__SPDIF__sink",
+             "alsa_output.usb-Generic_USB_Audio-00.HiFi__Speaker__sink",
+             "alsa_output.usb-Generic_USB_Audio-00.HiFi__Headphones__sink"]
+    result = _options([_sink(n, nick="USB Audio", description=n.split("__")[1])
+                       for n in names] + [_sink("alsa_output.pci", nick="Built-in")],
+                      list_name)
+
+    assert [r["id"] for r in result] == names + ["Built-in"]
+    assert [r["name"] for r in result][:3] == ["SPDIF", "Speaker", "Headphones"]

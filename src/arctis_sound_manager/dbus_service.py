@@ -312,21 +312,35 @@ def build_sink_options(sinks, list_name: str) -> list[dict[str, str]]:
     Bluetooth alike. The headset itself is included: pointing the Output
     channel at it is a deliberate, supported setup (#139). ASM still never
     auto-selects it — that stays gated by is_external_output_sink()'s default.
+
+    A nick several sinks share is no id at all: every output of one USB card
+    is "USB Audio" (WirePlumber's alsa.lua), so only the first one was listed
+    and the setting resolved to it whichever the user meant (#339). Those
+    sinks get their node.name instead.
     """
     from arctis_sound_manager.pw_utils import is_external_output_sink
 
-    result: list[dict[str, str]] = []
+    listed = []
     for sink in sinks:
         node_name = sink.proplist.get('node.name', '')
-
         if list_name == 'external_audio_devices' and not is_external_output_sink(
             SimpleNamespace(name=node_name, proplist=sink.proplist),
             allow_headset=True,
         ):
             continue
+        listed.append((sink, node_name))
 
+    nick_owners: dict[str, set[str]] = {}
+    for sink, node_name in listed:
         nick = sink.proplist.get('node.nick', '')
-        identifier = nick or node_name
+        if nick:
+            nick_owners.setdefault(nick, set()).add(node_name)
+
+    result: list[dict[str, str]] = []
+    for sink, node_name in listed:
+        nick = sink.proplist.get('node.nick', '')
+        shared = len(nick_owners.get(nick, ())) > 1
+        identifier = node_name if (shared and node_name) else (nick or node_name)
         name = (sink.proplist.get('node.description', '') or nick
                 or getattr(sink, 'description', '') or node_name)
 
