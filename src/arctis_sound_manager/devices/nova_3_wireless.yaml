@@ -188,10 +188,10 @@ device:
   probe_queries:
     - name: audio_settings
       frame: [0x20]
-      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11]}
+      fields: {eq_band_1: [1, 6], eq_band_2: [7, 6], eq_band_3: [13, 6], eq_band_4: [19, 6], eq_band_5: [25, 6], eq_band_6: [31, 6], eq_band_7: [37, 6], eq_band_8: [43, 6], eq_band_9: [49, 6], eq_band_10: [55, 6], mic_volume: 61, sidetone: 62, volume_limiter: 63}
     - name: audio_settings_bt
       frame: [0x22]
-      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11]}
+      fields: {eq_band_1: [1, 6], eq_band_2: [7, 6], eq_band_3: [13, 6], eq_band_4: [19, 6], eq_band_5: [25, 6], eq_band_6: [31, 6], eq_band_7: [37, 6], eq_band_8: [43, 6], eq_band_9: [49, 6], eq_band_10: [55, 6]}
     - name: ux_settings
       frame: [0xa0]
       fields: {inactivity_timer: 1, color_spin: 3, eq_sync_status: 4, audio_mode: 5}

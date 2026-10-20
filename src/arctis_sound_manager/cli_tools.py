@@ -284,6 +284,14 @@ def usb_reenumerate_current_device(vendor_id: int = 0x1038) -> int:
 
 
 
+def _eq_band_text(raw: bytes) -> str:
+    """An EQ band as the headset sends it back (6 bytes), readable (#331)."""
+    from arctis_sound_manager.hardware_eq import decode_band
+    band = decode_band(raw)
+    return (f"{band.frequency} Hz, type {band.filter_type}, "
+            f"{band.gain_db:+.1f} dB, Q {band.q}")
+
+
 def probe_field_values(entry: dict[str, Any]) -> dict[str, Any] | None:
     """Values of a probe reply's fields, or None when no frame answers it.
 
@@ -305,7 +313,8 @@ def probe_field_values(entry: dict[str, Any]) -> dict[str, Any] | None:
             raw = bytes(frame[start + at:start + at + size])
             if len(raw) < size:
                 continue
-            values[name] = (raw.split(b'\0')[0].decode(errors='replace') if size > 4
+            values[name] = (_eq_band_text(raw) if size == 6 and 'eq_band' in name
+                            else raw.split(b'\0')[0].decode(errors='replace') if size > 4
                             else int.from_bytes(raw, 'little'))
         return values
     return None

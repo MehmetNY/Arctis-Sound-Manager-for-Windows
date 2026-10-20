@@ -83,3 +83,23 @@ def test_every_profile_field_points_inside_a_64_byte_frame_or_its_feature_size()
             for name, where in q["fields"].items():
                 at, size = (where, 1) if isinstance(where, int) else where
                 assert 0 < at and at + size <= limit, (path.name, q["name"], name)
+
+
+def test_nova5_probe_decodes_bands_and_settings_at_their_wire_offsets():
+    """A real Nova 5 reply (#331): bands are 6 bytes on the wire, not the
+    spec's 11-byte engine form, so mic volume sits at 61, not 111."""
+    from ruamel.yaml import YAML
+
+    from arctis_sound_manager.cli_tools import probe_field_values
+
+    profile = YAML(typ="safe").load(DEVICES / "nova_5.yaml")
+    query = next(q for q in profile["device"]["probe_queries"]
+                 if q["name"] == "audio_settings")
+    entry = {"sent": "20", "fields": query["fields"], "frames": [
+        "20 1f 00 01 00 82 05 3e 00 01 00 82 05 7d 00 01 00 82 05 fa 00 01 00 82 05"
+        " f4 01 01 00 82 05 e8 03 01 00 82 05 d0 07 01 00 82 05 a0 0f 01 00 82 05"
+        " 40 1f 01 00 82 05 80 3e 01 00 82 05 0f 00 00"]}
+    values = probe_field_values(entry)
+    assert values["eq_band_1"] == "31 Hz, type 1, +0.0 dB, Q 1.41"
+    assert values["eq_band_10"] == "16000 Hz, type 1, +0.0 dB, Q 1.41"
+    assert (values["mic_volume"], values["sidetone"], values["volume_limiter"]) == (15, 0, 0)

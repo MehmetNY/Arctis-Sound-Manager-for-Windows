@@ -195,7 +195,7 @@ device:
       reply: feature
       size: 515
       report_id: 0x00
-      fields: {eq_band_1: [1, 11], eq_band_2: [12, 11], eq_band_3: [23, 11], eq_band_4: [34, 11], eq_band_5: [45, 11], eq_band_6: [56, 11], eq_band_7: [67, 11], eq_band_8: [78, 11], eq_band_9: [89, 11], eq_band_10: [100, 11], eq_band_bt_1: [111, 11], eq_band_bt_2: [122, 11], eq_band_bt_3: [133, 11], eq_band_bt_4: [144, 11], eq_band_bt_5: [155, 11], eq_band_bt_6: [166, 11], eq_band_bt_7: [177, 11], eq_band_bt_8: [188, 11], eq_band_bt_9: [199, 11], eq_band_bt_10: [210, 11], mic_volume: 221, sidetone: 222, volume_limiter: 223, onboard_effect_status: 224, mic_mute: 225}
+      fields: {eq_band_1: [1, 6], eq_band_2: [7, 6], eq_band_3: [13, 6], eq_band_4: [19, 6], eq_band_5: [25, 6], eq_band_6: [31, 6], eq_band_7: [37, 6], eq_band_8: [43, 6], eq_band_9: [49, 6], eq_band_10: [55, 6], eq_band_bt_1: [61, 6], eq_band_bt_2: [67, 6], eq_band_bt_3: [73, 6], eq_band_bt_4: [79, 6], eq_band_bt_5: [85, 6], eq_band_bt_6: [91, 6], eq_band_bt_7: [97, 6], eq_band_bt_8: [103, 6], eq_band_bt_9: [109, 6], eq_band_bt_10: [115, 6], mic_volume: 121, sidetone: 122, volume_limiter: 123, onboard_effect_status: 124, mic_mute: 125}
     - name: get_volume_24g
       frame: [0x24]
       fields: {level: 1}
