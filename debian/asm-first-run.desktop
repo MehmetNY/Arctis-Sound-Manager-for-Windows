@@ -2,6 +2,6 @@
 Type=Application
 Name=Arctis Sound Manager First Run
 Comment=One-time setup for Arctis Sound Manager (PipeWire configs, services)
-Exec=sh -c '[ -f "$HOME/.config/arctis_manager/.setup_done" ] || asm-setup'
+Exec=sh -c "test -f ~/.config/arctis_manager/.setup_done || asm-setup"
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
