@@ -52,7 +52,10 @@ device:
     - [0x06, 0x3b] # Correction?
     # Burst of commands (device init?)
     - [0x06, 0x8d, 0x01]
-    - [0x06, 0x33, 0x14, 0x14, 0x14]              # Equalizer with 3 bands
+    # No custom_eq (0x33) here: it fills the base station's Custom slot, and
+    # three gains (the old capture's) left bands 4-10 at 0, i.e. -10 dB,
+    # over whatever curve the user had set there in GG or on the DAC. ASM
+    # writes all ten bands itself when the EQ mode is Custom.
     - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
     - [0x06, 0x2e, 0x00]                          # Set equalizer preset (0)
     - [0x06, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)

@@ -32,7 +32,7 @@ def test_config_parse():
     assert config.command_padding.filler == 0x00
 
     assert config.device_init is not None
-    assert len(config.device_init) == 38
+    assert len(config.device_init) == 37  # the stray 3-band custom_eq write is gone
 
     assert config.status is not None
     assert config.status.request == 0x06b0

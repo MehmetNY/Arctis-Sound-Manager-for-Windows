@@ -210,3 +210,11 @@ def test_nova5_reads_its_settings_after_the_eq_bands():
     assert (got["mic_volume"], got["mic_side_tone"], got["volume_limiter"]) == (15, 0, 0)
     assert (got["pm_shutdown"], got["mic_mute_led_brightness"]) == (30, 10)
     assert done.is_set()
+
+
+def test_npw_init_never_overwrites_the_custom_eq_slot():
+    """device_init used to send [0x06, 0x33, 20, 20, 20]: bands 4-10 of the
+    Custom slot at 0 (-10 dB) on every start, over the user's own curve."""
+    config = DeviceConfiguration(YAML(typ="safe").load(DEVICES / "nova_pro_wireless.yaml"))
+    assert not any(list(step[:2]) == [0x06, 0x33] for step in config.device_init)
+
