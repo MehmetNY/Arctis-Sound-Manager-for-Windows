@@ -240,6 +240,22 @@ def test_reassess_applies_new_target_and_clears_override():
     assert c.tick(A, "PX", 3) is None
 
 
+def test_failed_apply_is_not_remembered():
+    """The apply failed, the old preset is still active: not a manual choice."""
+    c, _ = make()
+    assert c.tick(A, "Flat", 0) == Action("apply", "PA", A)
+    c.apply_failed("PA")
+    assert c.tick(A, "Flat", 1) is None
+    assert c.tick(A, "Mine", 2) == Action("remember", "Mine", A)
+
+
+def test_stale_failure_ignored():
+    c, _ = make()
+    c.tick(A, "Flat", 0)
+    c.apply_failed("Other")
+    assert c.tick(A, "Flat", 1) == Action("remember", "Flat", A)
+
+
 def test_reset_forgets():
     c, _ = make()
     c.tick(A, "Flat", 0)

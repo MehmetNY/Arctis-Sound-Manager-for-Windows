@@ -139,6 +139,8 @@ class GamePresetWatcher(QObject):
                 return
             if action.kind == "remember":
                 self._gp.set_association(action.game.key, action.game.title, action.preset)
+                self.notify.emit(I18n.translate("ui", "auto_preset_remembered").format(
+                    preset=action.preset, game=action.game.title))
                 return
             self._pending = (action.kind, action.preset)
             self._applier.apply("game", action.preset)
@@ -149,6 +151,9 @@ class GamePresetWatcher(QObject):
     @Slot(bool, str, str)
     def _on_applier_done(self, ok: bool, channel: str, name: str) -> None:
         pending, self._pending = self._pending, None
-        if not ok or pending is None or pending[1] != name:
+        if pending is None or pending[1] != name:
+            return
+        if not ok:
+            self._controller.apply_failed(name)
             return
         self.notify.emit(I18n.translate("ui", "auto_preset_applied").format(preset=name))

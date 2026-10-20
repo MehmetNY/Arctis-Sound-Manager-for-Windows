@@ -379,6 +379,12 @@ class AutoPresetController:
         if self._game is not None:
             self._reassess = True
 
+    def apply_failed(self, preset: str) -> None:
+        """An "apply" did not go through: the preset still active is not a
+        manual choice and must not be remembered for the game."""
+        if self._expected == preset:
+            self._expected = None
+
     def _evaluate(self, game: DetectedGame, current: str | None) -> Action | None:
         target = self._resolve(game)
         if target is not None and target != current:
