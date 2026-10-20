@@ -231,3 +231,28 @@ def test_elite_readback_without_echo_is_refused():
     from arctis_sound_manager.hardware_eq import decode_elite_eq_settings
     with pytest.raises(ValueError):
         decode_elite_eq_settings([0x01, 0x20] + [0] * 200)
+
+
+def test_shelving_layout_matches_gg_frames():
+    """GG's Bass Boost on an Omni (#327): low shelf, eight peaks, high shelf,
+    32/64 Hz, Q 1.414 — byte for byte what its 0x1B frame carries."""
+    from arctis_sound_manager.hardware_eq import (FILTER_HIGH_SHELF, FILTER_LOW_SHELF,
+                                                  FILTER_PEAK, encode_band,
+                                                  shelving_bands_from_gains)
+    bands = shelving_bands_from_gains([3.5, 5.5, 4, 1, -1.5, -1.5, -1, -1, -1, -1])
+
+    assert [b.filter_type for b in bands] == (
+        [FILTER_LOW_SHELF] + [FILTER_PEAK] * 8 + [FILTER_HIGH_SHELF])
+    assert [b.frequency for b in bands][:2] == [32, 64]
+    assert list(encode_band(bands[0])) == [0x20, 0x00, 0x04, 0x23, 0x86, 0x05]
+    assert list(encode_band(bands[9])) == [0x80, 0x3E, 0x05, 0xF6, 0x86, 0x05]
+
+
+def test_elite_family_profiles_use_the_shelving_layout():
+    from pathlib import Path
+    from ruamel.yaml import YAML
+    devices = Path(__file__).parent.parent / "src" / "arctis_sound_manager" / "devices"
+    for name in ("nova_elite.yaml", "nova_pro_omni.yaml"):
+        profile = YAML(typ="safe").load((devices / name).read_text())
+        eq = profile["device"]["hardware_eq"] if "device" in profile else profile["hardware_eq"]
+        assert eq["band_layout"] == "shelving", name

@@ -294,6 +294,9 @@ device:
   # the spec, not yet confirmed on a real Elite.
   hardware_eq:
     format: elite_parametric
+    # GG's own layout for this family: 32/64 Hz, low shelf on band 1, high
+    # shelf on band 10 (read off its 0x1B frames, #327).
+    band_layout: shelving
     eq_command: 0x1b
     report_id: 0x01
     feature_report_size: 1036

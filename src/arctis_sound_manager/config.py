@@ -499,6 +499,9 @@ class DeviceConfiguration:
         feature_readback = hardware_eq.get('feature_readback', None)
         self.hardware_eq_feature_readback = (
             int(feature_readback) if feature_readback is not None else None)
+        # Which hardware_eq.BAND_LAYOUTS entry turns the ten sliders into
+        # bands: plain peaks, or GG's shelving ends (the Elite family, #327).
+        self.hardware_eq_band_layout = str(hardware_eq.get('band_layout', 'graphic'))
         if 'bands_carry_connection' in hardware_eq:
             self.hardware_eq_options['bands_carry_connection'] = bool(
                 hardware_eq['bands_carry_connection'])

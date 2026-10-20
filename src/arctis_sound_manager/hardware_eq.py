@@ -78,6 +78,34 @@ def bands_from_gains(gains_db: list[float],
             for f, g in zip(frequencies, gains_db)]
 
 
+# GG's own ten-band layout for the Elite family, read off the 0x1B frames it
+# sends a Nova Pro Omni (#327): 32 and 64 Hz rather than 31/62, Q 1.414, and
+# the two end bands shelving — its Bass Boost, and every Custom curve GG
+# derives from it, put a low shelf on band 1 and a high shelf on band 10.
+# A peak at 31 Hz or 16 kHz is next to inaudible on music, which is how the
+# Elite's Custom EQ seemed to do nothing on exactly the two sliders the test
+# in #327 asked for (62 Hz and 8 kHz were heard plainly).
+GG_SHELVING_FREQUENCIES = (32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+GG_SHELVING_Q = 1.414
+
+
+def shelving_bands_from_gains(gains_db: list[float]) -> list[EqBand]:
+    """ASM's ten gains on GG's layout: low shelf, eight peaks, high shelf."""
+    bands = bands_from_gains(gains_db, GG_SHELVING_FREQUENCIES, GG_SHELVING_Q)
+    last = len(bands) - 1
+    return [EqBand(b.frequency, b.gain_db, b.q,
+                   FILTER_LOW_SHELF if i == 0
+                   else FILTER_HIGH_SHELF if i == last else b.filter_type)
+            for i, b in enumerate(bands)]
+
+
+#: How a profile's `hardware_eq.band_layout` turns the sliders into bands.
+BAND_LAYOUTS = {
+    "graphic": bands_from_gains,
+    "shelving": shelving_bands_from_gains,
+}
+
+
 def encode_parametric_eq(bands: list[EqBand], name: str = "Custom",
                          connection: int = CONNECTION_WIRELESS,
                          preset_type: int = PRESET_CUSTOM,

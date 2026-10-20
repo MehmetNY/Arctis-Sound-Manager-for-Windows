@@ -3483,7 +3483,7 @@ class CoreEngine:
             # described band by band and sent over three frames, the last of
             # which commits it. ASM's sliders are 0-40 with 20 = 0 dB, half a
             # decibel per step, which is the -10..+10 dB the hardware takes.
-            from arctis_sound_manager.hardware_eq import ENCODERS, bands_from_gains
+            from arctis_sound_manager.hardware_eq import BAND_LAYOUTS, ENCODERS
 
             encoder = ENCODERS.get(eq_format)
             if encoder is None:
@@ -3496,8 +3496,13 @@ class CoreEngine:
             # (and its USB timeout to 1200 ms) for the Nova 5 and the GameBuds.
             # Sending both back to back risks the curve not landing.
             frame_delay = options.pop('frame_delay_ms', 0) / 1000
-            frames = encoder(bands_from_gains([(b - 20) / 2 for b in bands]),
-                             **options)
+            layout = BAND_LAYOUTS.get(self.device_config.hardware_eq_band_layout)
+            if layout is None:
+                self.logger.error("Unknown hardware EQ band layout %r for %s",
+                                  self.device_config.hardware_eq_band_layout,
+                                  self.device_config.name)
+                return False
+            frames = encoder(layout([(b - 20) / 2 for b in bands]), **options)
             feature_size = self.device_config.hardware_eq_feature_report_size
             for index, frame in enumerate(frames):
                 if index and frame_delay:
