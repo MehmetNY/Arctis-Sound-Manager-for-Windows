@@ -297,6 +297,8 @@ device:
     # GG's own layout for this family: 32/64 Hz, low shelf on band 1, high
     # shelf on band 10 (read off its 0x1B frames, #327).
     band_layout: shelving
+    # eqBand gain is -12.0..12.0 in the spec, and GG sends the full ±12.
+    range_db: 12
     eq_command: 0x1b
     report_id: 0x01
     feature_report_size: 1036

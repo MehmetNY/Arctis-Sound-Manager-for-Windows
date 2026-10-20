@@ -597,6 +597,9 @@ class QMainApp(QBaseDesktopApp):
         if 'has_hardware_eq' in settings:
             self._equalizer_page.set_hardware_eq_available(
                 bool(settings['has_hardware_eq']))
+        if 'hardware_eq_range_db' in settings:
+            self._equalizer_page.set_hardware_eq_range(
+                int(settings['hardware_eq_range_db']))
 
         # Daemon flagged a USB EACCES on the currently-attached device. The
         # rules file might be valid (so the startup dialog at gui.py:142

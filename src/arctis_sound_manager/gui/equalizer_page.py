@@ -123,9 +123,9 @@ def _update_routing_overrides(new_mode: str) -> None:
         pass
 
 
-def _round_to_half(db: float) -> float:
-    """Round to nearest 0.5 dB and clamp to [-10, +10]."""
-    db = max(-10.0, min(10.0, db))
+def _round_to_half(db: float, range_db: int = 10) -> float:
+    """Round to nearest 0.5 dB and clamp to the headset's [-range, +range]."""
+    db = max(-float(range_db), min(float(range_db), db))
     return round(db * 2) / 2
 
 
@@ -420,15 +420,24 @@ class _TickSlider(FaderSlider):
 # ── dB scale labels (left or right of sliders) ───────────────────────────────
 
 class _ScaleWidget(QWidget):
-    """Vertical dB scale: +10, +5, 0, -5, -10 aligned to slider track."""
-
-    _LABELS = [(20, "+10"), (10, "+5"), (0, "0"), (-10, "-5"), (-20, "-10")]
+    """Vertical dB scale: +range, +half, 0, -half, -range on the slider track."""
 
     def __init__(self, align_right: bool = False, parent: QWidget | None = None):
         super().__init__(parent)
         self._align_right = align_right
+        self._range_db = 10
         self.setFixedWidth(46)
         self.setFixedHeight(FREQ_LBL_H + SLIDER_H + VAL_LBL_H)
+
+    def set_range_db(self, range_db: int) -> None:
+        self._range_db = range_db
+        self.update()
+
+    def _labels(self) -> list[tuple[int, str]]:
+        """(slider value, text): steps are half a decibel."""
+        r, half = self._range_db, self._range_db / 2
+        fmt = lambda db: f"{db:+g}" if db else "0"
+        return [(int(2 * db), fmt(db)) for db in (r, half, 0, -half, -r)]
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -440,12 +449,13 @@ class _ScaleWidget(QWidget):
         painter.setFont(font)
         painter.setPen(QPen(QColor("#666666"), 1))
 
-        total   = 40
+        span    = 2 * self._range_db          # slider steps from 0 to the top
+        total   = 2 * span
         track_h = SLIDER_H - 2 * SLIDER_M
         w       = self.width()
 
-        for val, text in self._LABELS:
-            y_in_track = SLIDER_M + int((total - (val + 20)) / total * track_h)
+        for val, text in self._labels():
+            y_in_track = SLIDER_M + int((total - (val + span)) / total * track_h)
             y = FREQ_LBL_H + y_in_track
 
             fm   = painter.fontMetrics()
@@ -465,11 +475,12 @@ class _ScaleWidget(QWidget):
 # ── Single band slider ────────────────────────────────────────────────────────
 
 class _EqSlider(QWidget):
-    value_changed = Signal(int, int)  # band_index, raw_value (0-40)
+    value_changed = Signal(int, int)  # band_index, raw_value (20 = 0 dB, 0.5 dB steps)
 
     def __init__(self, index: int, label: str, parent: QWidget | None = None):
         super().__init__(parent)
         self._index = index
+        self._range_db = 10
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 0, 4, 0)
@@ -519,6 +530,15 @@ class _EqSlider(QWidget):
         self._val_edit.editingFinished.connect(self._on_value_edited)
         layout.addWidget(self._val_edit, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+    def set_range_db(self, range_db: int) -> None:
+        """±10 dB for most headsets, ±12 for the Elite family (#327)."""
+        self._range_db = range_db
+        self._slider.blockSignals(True)
+        self._slider.setMinimum(-2 * range_db)
+        self._slider.setMaximum(2 * range_db)
+        self._slider.blockSignals(False)
+        self._val_edit.setText(self._format_db(self._slider.value()))
+
     def _format_db(self, slider_val: int) -> str:
         db = slider_val * 0.5
         if db == 0:
@@ -532,7 +552,7 @@ class _EqSlider(QWidget):
     def _on_value_edited(self):
         text = self._val_edit.text().replace(",", ".")
         try:
-            db      = _round_to_half(float(text))
+            db      = _round_to_half(float(text), self._range_db)
             new_val = int(db * 2)
             self._slider.setValue(new_val)
             # update display in case value didn't change (no signal)
@@ -708,7 +728,8 @@ class EqualizerPage(QWidget):
         sc_layout.setContentsMargins(0, 0, 0, 0)
         sc_layout.setSpacing(4)
 
-        sc_layout.addWidget(_ScaleWidget(align_right=True))
+        self._scales = [_ScaleWidget(align_right=True), _ScaleWidget(align_right=False)]
+        sc_layout.addWidget(self._scales[0])
 
         self._sliders: list[_EqSlider] = []
         for i, label in enumerate(EQ_BANDS):
@@ -718,7 +739,7 @@ class EqualizerPage(QWidget):
             sc_layout.addWidget(s)
             self._sliders.append(s)
 
-        sc_layout.addWidget(_ScaleWidget(align_right=False))
+        sc_layout.addWidget(self._scales[1])
 
         eq_card_layout.addWidget(sliders_container)
 
@@ -862,6 +883,16 @@ class EqualizerPage(QWidget):
             self._preset_status.setText(I18n.translate('ui', 'preset_loaded'))
 
     # ── Toggle ───────────────────────────────────────────────────────────────
+
+    def set_hardware_eq_range(self, range_db: int) -> None:
+        """Size the sliders to what this headset's curve reaches."""
+        if getattr(self, '_hardware_eq_range', None) == range_db:
+            return
+        self._hardware_eq_range = range_db
+        for widget in (*self._scales, *self._sliders):
+            widget.set_range_db(range_db)
+        for i, slider in enumerate(self._sliders):
+            slider.set_raw_value(self._band_values[i])
 
     def set_hardware_eq_available(self, available: bool) -> None:
         """Offer the custom EQ only to headsets that have one.

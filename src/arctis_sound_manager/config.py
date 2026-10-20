@@ -502,6 +502,9 @@ class DeviceConfiguration:
         # Which hardware_eq.BAND_LAYOUTS entry turns the ten sliders into
         # bands: plain peaks, or GG's shelving ends (the Elite family, #327).
         self.hardware_eq_band_layout = str(hardware_eq.get('band_layout', 'graphic'))
+        # Gain the on-device curve reaches either way, in dB: ±10 for most,
+        # ±12 for the Elite family (#327). Sets the sliders' range.
+        self.hardware_eq_range_db = int(hardware_eq.get('range_db', 10))
         if 'bands_carry_connection' in hardware_eq:
             self.hardware_eq_options['bands_carry_connection'] = bool(
                 hardware_eq['bands_carry_connection'])

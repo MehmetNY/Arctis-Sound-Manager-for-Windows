@@ -423,6 +423,9 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             # checking only the latter hid the control from the very headsets
             # the parametric support was written for (reported in #146).
             settings['has_hardware_eq'] = self.core_engine.has_hardware_eq()
+            config = self.core_engine.device_config
+            settings['hardware_eq_range_db'] = (
+                config.hardware_eq_range_db if config is not None else 10)
 
         return json.dumps(settings)
     
@@ -437,7 +440,10 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             # an out-of-domain curve was replayed by _apply_stored_eq() at
             # every daemon start — the file outlived the call that produced it.
             from arctis_sound_manager.core import sanitise_eq_bands
-            bands = sanitise_eq_bands(bands, self.logger)
+            config = self.core_engine.device_config
+            bands = sanitise_eq_bands(
+                bands, self.logger,
+                config.hardware_eq_range_db if config is not None else 10)
             if bands is None:
                 return False
             eq_file = Path.home() / '.config' / 'arctis_manager' / 'eq_bands.json'

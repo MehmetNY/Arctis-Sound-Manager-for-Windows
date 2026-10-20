@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Arctis Nova 5: ASM starts from what the headset already has.** Mic volume, sidetone, volume limiter, the sleep timer and the muted-mic LED brightness are read from the headset before ASM sends anything, so a setting you never changed in ASM keeps its value (set in GG, for instance) instead of being reset to ASM's default. Confirmed on hardware with `asm-cli tools probe` (#331), thanks @Fabi0699.
 - **Nova Elite and Nova Pro Omni: the Custom EQ uses GG's own band layout** (#327). The lowest and highest sliders were peaks at 31 Hz and 16 kHz, which you can barely hear on music, so the Custom EQ seemed to do little or nothing on exactly those two. GG makes them a low shelf at 32 Hz and a high shelf at 16 kHz (read off the frames it sends an Omni), and ASM now does the same, with GG's 32/64 Hz and Q. Thanks @PointyKite and @ninjapinja2 for testing.
+- **Nova Elite and Nova Pro Omni: the Custom EQ sliders go to ±12 dB**, the range of their on-device equaliser and what GG uses, instead of ASM's ±10. Other headsets keep ±10, and a curve saved on one headset keeps the same decibels on another.
 - **A notification tells you when a preset is remembered for a game** (#338). Picking a preset by hand while a game runs saves it for that game; this used to happen silently, so the game then kept "its" preset with no visible reason. The tray menu → "Preset for <game>" → "Automatic" undoes it.
 
 ## [1.6.3] - 18 October 2026

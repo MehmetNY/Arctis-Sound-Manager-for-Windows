@@ -239,9 +239,21 @@ def resolve_mic_autoswitch_target(
 EQ_BAND_MIN = 0
 EQ_BAND_MAX = 40
 EQ_BAND_COUNT = 10
+EQ_BAND_ZERO = 20
 
 
-def sanitise_eq_bands(bands, logger) -> list[int] | None:
+def eq_band_bounds(range_db: int = 10) -> tuple[int, int]:
+    """Slider bounds for a family whose curve reaches ±range_db.
+
+    Most go to ±10 dB, which is the 0-40 scale above. The Elite family takes
+    ±12 (its eqBand gain range, and what GG sends it, #327): same half-decibel
+    steps and the same 20 = 0 dB, so its scale simply runs -4 to 44 and a
+    curve saved on one headset still means the same decibels on another.
+    """
+    return EQ_BAND_ZERO - 2 * range_db, EQ_BAND_ZERO + 2 * range_db
+
+
+def sanitise_eq_bands(bands, logger, range_db: int = 10) -> list[int] | None:
     """Ten in-domain integers, or None when the input cannot be trusted.
 
     The D-Bus surface checked that the payload was a list of ten items and
@@ -256,6 +268,7 @@ def sanitise_eq_bands(bands, logger) -> list[int] | None:
                        EQ_BAND_COUNT, bands)
         return None
 
+    low, high = eq_band_bounds(range_db)
     cleaned: list[int] = []
     clamped = False
     for band in bands:
@@ -265,15 +278,15 @@ def sanitise_eq_bands(bands, logger) -> list[int] | None:
                            band)
             return None
         value = int(round(band))
-        if value < EQ_BAND_MIN or value > EQ_BAND_MAX:
+        if value < low or value > high:
             clamped = True
-            value = max(EQ_BAND_MIN, min(EQ_BAND_MAX, value))
+            value = max(low, min(high, value))
         cleaned.append(value)
 
     if clamped:
         logger.warning(
             "custom EQ: band values outside %d-%d were clamped before reaching "
-            "the headset (got %r)", EQ_BAND_MIN, EQ_BAND_MAX, list(bands),
+            "the headset (got %r)", low, high, list(bands),
         )
     return cleaned
 
@@ -3471,7 +3484,8 @@ class CoreEngine:
         if self.device_config is None:
             return False
 
-        bands = sanitise_eq_bands(bands, self.logger)
+        bands = sanitise_eq_bands(bands, self.logger,
+                                  self.device_config.hardware_eq_range_db)
         if bands is None:
             return False
 
