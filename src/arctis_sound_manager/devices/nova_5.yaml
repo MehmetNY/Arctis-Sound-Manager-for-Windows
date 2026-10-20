@@ -109,6 +109,26 @@ device:
   audio:
     spatial_engine: hesuvi
 
+  # The headset's own current values, read before device_init so a setting
+  # the user never chose in ASM keeps what it had (set in GG on a dual-boot)
+  # instead of ASM's default. Confirmed on a 0x2232 by `asm-cli tools probe`
+  # (#331). Offsets count from the opcode, like response_mapping. Unlike the
+  # Nova 7 Gen 2, the 0x20 reply starts with the ten 6-byte EQ bands, so mic
+  # volume, sidetone and volume limiter are its last three bytes (61-63) —
+  # the spec's 11-byte band struct is the engine's float form, not the wire.
+  settings_readback:
+    - request: 0x20
+      starts_with: 0x20
+      mapping:
+        mic_volume: 0x3d
+        mic_side_tone: 0x3e
+        volume_limiter: 0x3f
+    - request: 0xa0
+      starts_with: 0xa0
+      mapping:
+        pm_shutdown: 0x01
+        mic_mute_led_brightness: 0x02
+
   # Read-only queries for `asm-cli tools probe` (generated from the
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.
