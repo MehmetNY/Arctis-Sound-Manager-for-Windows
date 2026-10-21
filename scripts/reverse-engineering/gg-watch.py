@@ -307,14 +307,12 @@ def compare_to_state(edevice_files: list[str], spec_hashes: dict[str, str],
 
     new_files = sorted(set(edevice_files) - old_edevice)
 
-    # Changed = hash differs, plus new decoded files not in old index.
-    changed = []
-    for name, h in spec_hashes.items():
-        if name not in old_hashes:
-            changed.append(name)
-        elif old_hashes[name] != h:
-            changed.append(name)
-    changed = sorted(set(changed))
+    # Changed = a hash that differs. A decoded file the old index never
+    # tracked has nothing to differ from: GG 122 (#341) reported 15 shared
+    # specs as changed that were byte-identical to 121's, only newly decoded.
+    # A spec that is genuinely new arrives with its .edevice, in new_files.
+    changed = sorted(name for name, h in spec_hashes.items()
+                     if name in old_hashes and old_hashes[name] != h)
 
     return new_files, changed
 
