@@ -219,15 +219,15 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 | Arctis 7+ / PS5 / Xbox / Destiny | ✅ | 41 | $\color{royalblue}{\textbf{220e}}$, $\color{royalblue}{\textbf{2212}}$, $\color{royalblue}{\textbf{2216}}$, 2236 |
 | Arctis 9 Wireless | ✅ | 21 | $\color{royalblue}{\textbf{12c2}}$ |
 | Arctis Pro Wireless | ✅ | 60 | $\color{royalblue}{\textbf{1290}}$, $\color{royalblue}{\textbf{1294}}$ |
-| Arctis Nova Pro Wireless / X | ✅ | 464 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
-| Arctis Nova Pro Wired / Xbox Wired | ✅ | 52 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
+| Arctis Nova Pro Wireless / X | ✅ | 467 | $\color{royalblue}{\textbf{12e0}}$, $\color{royalblue}{\textbf{12e5}}$, $\color{royalblue}{\textbf{225d}}$ |
+| Arctis Nova Pro Wired / Xbox Wired | ✅ | 53 | $\color{royalblue}{\textbf{12cb}}$, $\color{royalblue}{\textbf{12cd}}$ |
 | Arctis Nova Pro Omni | ✅ | 59 | $\color{royalblue}{\textbf{2290}}$ |
 | Arctis Nova 3 | ✅ | 15 | $\color{royalblue}{\textbf{12ec}}$ |
-| Arctis Nova 3P / 3X Wireless | ✅ | 42 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
-| Arctis Nova 5 / 5X | ✅ | 100 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
+| Arctis Nova 3P / 3X Wireless | ✅ | 43 | $\color{royalblue}{\textbf{2269}}$, $\color{royalblue}{\textbf{226d}}$ |
+| Arctis Nova 5 / 5X | ✅ | 101 | $\color{royalblue}{\textbf{2232}}$, $\color{royalblue}{\textbf{2253}}$, $\color{royalblue}{\textbf{2255}}$, $\color{royalblue}{\textbf{2264}}$ |
 | Arctis Nova 7 Gen 1 | ✅ | 58 | $\color{royalblue}{\textbf{2202}}$, $\color{royalblue}{\textbf{2206}}$, 223a, $\color{royalblue}{\textbf{227a}}$, $\color{royalblue}{\textbf{22a4}}$ |
-| Arctis Nova 7 Gen 2 | ✅ | 219 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, $\color{royalblue}{\textbf{2258}}$, $\color{royalblue}{\textbf{229e}}$, $\color{royalblue}{\textbf{22a9}}$, $\color{royalblue}{\textbf{22a5}}$, $\color{royalblue}{\textbf{22ab}}$ |
-| Arctis Nova 7P | ✅ | 22 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
+| Arctis Nova 7 Gen 2 | ✅ | 220 | $\color{royalblue}{\textbf{22a1}}$, $\color{royalblue}{\textbf{227e}}$, $\color{royalblue}{\textbf{2258}}$, $\color{royalblue}{\textbf{229e}}$, $\color{royalblue}{\textbf{22a9}}$, $\color{royalblue}{\textbf{22a5}}$, $\color{royalblue}{\textbf{22ab}}$ |
+| Arctis Nova 7P | ✅ | 23 | $\color{royalblue}{\textbf{220a}}$, $\color{royalblue}{\textbf{22a7}}$ |
 | Arctis Nova Elite | ✅ | 38 | $\color{royalblue}{\textbf{2244}}$, 2249, $\color{royalblue}{\textbf{2270}}$ |
 | Arctis GameBuds / GameBuds X | ✅ | 32 | $\color{royalblue}{\textbf{230a}}$, $\color{royalblue}{\textbf{2317}}$ |
 <!-- STATS:DEVICES:END -->
@@ -898,7 +898,7 @@ To request a new language, open a [GitHub issue](https://github.com/loteran/Arct
 ## Community stats
 
 <!-- STATS:META:START -->
-_Based on **1301** unique users (**71787** anonymous data points) — last updated 2026-10-21_
+_Based on **1310** unique users (**71961** anonymous data points) — last updated 2026-10-22_
 <!-- STATS:META:END -->
 
 > Anonymous usage data shared voluntarily by opted-in users.
@@ -910,17 +910,17 @@ _Based on **1301** unique users (**71787** anonymous data points) — last updat
 <!-- STATS:TESTED_DISTROS:START -->
 | Distribution | Install method | Users |
 |---|---|---|
-| CachyOS | 🎯 AUR | 👥 512 |
-| Arch Linux | 🎯 AUR | 👥 271 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 80 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 74 |
+| CachyOS | 🎯 AUR | 👥 515 |
+| Arch Linux | 🎯 AUR | 👥 274 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 81 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 76 |
 | Linux Mint 22.3 | 🎯 PPA | 👥 66 |
-| Ubuntu 26.04.1 LTS | 🎯 PPA | 👥 40 |
+| Ubuntu 26.04.1 LTS | 🎯 PPA | 👥 41 |
 | EndeavourOS | 🎯 AUR | 👥 29 |
 | Pop!_OS 24.04 LTS | 🎯 PPA | 👥 28 |
 | Omarchy | 🎯 AUR | 👥 26 |
 | Fedora Linux 44 (Workstation Edition) | 🎯 COPR | 👥 24 |
-| Ubuntu 26.04 LTS | 🎯 PPA | 👥 19 |
+| Ubuntu 26.04 LTS | 🎯 PPA | 👥 18 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 🎯 COPR | 👥 14 |
 | Garuda Linux | 🎯 AUR | 👥 14 |
 | Manjaro Linux | 🎯 AUR | 👥 10 |
@@ -949,16 +949,16 @@ _Based on **1301** unique users (**71787** anonymous data points) — last updat
 <!-- STATS:HEADSETS:START -->
 | Headset | Installs |
 |---|---|
-| Arctis Nova Pro Wireless | 464 |
-| Arctis Nova 7 (Gen 2) | 219 |
-| Arctis Nova 5 Wireless | 100 |
+| Arctis Nova Pro Wireless | 467 |
+| Arctis Nova 7 (Gen 2) | 220 |
+| Arctis Nova 5 Wireless | 101 |
 | Arctis Pro Wireless | 60 |
 | Arctis Nova Pro Omni | 59 |
 | Arctis Nova 7 (Gen 1) | 58 |
-| Arctis Nova Pro Wired | 52 |
+| Arctis Nova Pro Wired | 53 |
 | Arctis 7+ | 41 |
 | Arctis Nova Elite | 38 |
-| Arctis Nova 3 Wireless | 35 |
+| Arctis Nova 3 Wireless | 36 |
 | Arctis GameBuds | 32 |
 | Arctis Nova 3 | 22 |
 | Arctis 7/Pro Gaming | 21 |
@@ -966,23 +966,23 @@ _Based on **1301** unique users (**71787** anonymous data points) — last updat
 | Arctis Nova 7P (Gen 2) | 17 |
 | Arctis 1/7X/7P Wireless | 7 |
 | Arctis Pro GameDAC | 7 |
-| Arctis Nova 7P (Gen 1) | 5 |
+| Arctis Nova 7P (Gen 1) | 6 |
 <!-- STATS:HEADSETS:END -->
 
 <!-- STATS:DISTROS:START -->
 | Distribution | Installs |
 |---|---|
-| CachyOS | 512 |
-| Arch Linux | 271 |
-| Nobara Linux 44 (KDE Plasma Desktop Edition) | 80 |
-| Fedora Linux 44 (KDE Plasma Desktop Edition) | 74 |
+| CachyOS | 515 |
+| Arch Linux | 274 |
+| Nobara Linux 44 (KDE Plasma Desktop Edition) | 81 |
+| Fedora Linux 44 (KDE Plasma Desktop Edition) | 76 |
 | Linux Mint 22.3 | 66 |
-| Ubuntu 26.04.1 LTS | 40 |
+| Ubuntu 26.04.1 LTS | 41 |
 | EndeavourOS | 29 |
 | Pop!_OS 24.04 LTS | 28 |
 | Omarchy | 26 |
 | Fedora Linux 44 (Workstation Edition) | 24 |
-| Ubuntu 26.04 LTS | 19 |
+| Ubuntu 26.04 LTS | 18 |
 | Nobara Linux 43 (KDE Plasma Desktop Edition) | 14 |
 | Garuda Linux | 14 |
 | Manjaro Linux | 10 |
