@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.4] - 23 October 2026
 
 ### Fixed
 - **Nix: the package builds again on recent nixpkgs** ([#344](https://github.com/loteran/Arctis-Sound-Manager/pull/344)). nixpkgs switched Python packages to structured attributes in October, which passed each grouped wrapper option as a single argument that makeWrapper rejected. Each argument now stands on its own. Contributed by @jgopel.
@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nova Elite and Nova Pro Omni: the Custom EQ uses GG's own band layout** (#327). The lowest and highest sliders were peaks at 31 Hz and 16 kHz, which you can barely hear on music, so the Custom EQ seemed to do little or nothing on exactly those two. GG makes them a low shelf at 32 Hz and a high shelf at 16 kHz (read off the frames it sends an Omni), and ASM now does the same, with GG's 32/64 Hz and Q. Thanks @PointyKite and @ninjapinja2 for testing.
 - **Nova Elite and Nova Pro Omni: the Custom EQ sliders go to ±12 dB**, the range of their on-device equaliser and what GG uses, instead of ASM's ±10. Other headsets keep ±10, and a curve saved on one headset keeps the same decibels on another.
 - **A notification tells you when a preset is remembered for a game** (#338). Picking a preset by hand while a game runs saves it for that game; this used to happen silently, so the game then kept "its" preset with no visible reason. The tray menu → "Preset for <game>" → "Automatic" undoes it.
+- **`asm-cli tools probe` reads EQ bands right.** A band is 6 bytes in a headset's reply, but the probe counted the 11 of GG's internal form, so every field after the bands (mic volume, sidetone…) was read from the wrong place or left out on the Nova 5, Nova 3 Wireless, GameBuds, Nova Elite and Nova Pro Omni. Bands now print as frequency, filter, gain and Q (#331).
+
+### Added
+- **3 new Sonar presets from SteelSeries GG 122:** Ace Combat 8: Wings of Theve, Control Resonant and Silent Hill: Townfall.
 
 ## [1.6.3] - 18 October 2026
 
