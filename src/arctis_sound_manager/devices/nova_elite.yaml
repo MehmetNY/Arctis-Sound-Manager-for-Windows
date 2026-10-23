@@ -308,7 +308,12 @@ device:
     report_id: 0x01
     wvalue: 0x0300
     width: 128
-    height: 64
+    # GG draws 128x52 at y=12 (draw_bitmap in base_arctis_nova_elite_tx): the
+    # 12 rows above are the base station's own status strip. Painted over, the
+    # Omni (same spec) redraws its whole screen whenever its charging
+    # indicator changes (#330); the Nova Pro Wired did the same (#321).
+    height: 52
+    y_offset: 12
     # SteelSeries' spec for this base station (base_arctis_nova_elite_tx):
     # draw_bitmap goes out as HIDFEATURE chunks of 1036 bytes, not the Nova
     # Pro's; brightness 0x85 takes 1-10, so 0 cannot switch the panel off.

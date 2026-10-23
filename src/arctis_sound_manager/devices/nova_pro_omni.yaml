@@ -256,7 +256,13 @@ device:
     report_id: 0x01    # First byte of every HID report sent to the OLED
     wvalue: 0x0301     # SET_REPORT wValue: 0x0301 = HID Feature report, id 1
     width: 128         # Panel width in pixels
-    height: 64         # Panel height in pixels
+    # GG draws 128x52 at y=12 on this family (draw_bitmap in
+    # base_arctis_nova_elite_tx): the 12 rows above are the base station's own
+    # status strip. Painting over them made the Omni redraw its whole screen
+    # each time its charging indicator changed (#330), as on the Nova Pro
+    # Wired (#321).
+    height: 52
+    y_offset: 12
     # SteelSeries' spec for this base station (base_arctis_nova_elite_tx):
     # draw_bitmap goes out as HIDFEATURE chunks of 1036 bytes, not the Nova
     # Pro's; brightness 0x85 takes 1-10, so 0 cannot switch the panel off.

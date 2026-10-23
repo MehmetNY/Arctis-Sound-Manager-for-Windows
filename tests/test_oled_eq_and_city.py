@@ -86,3 +86,26 @@ def test_a_long_city_name_is_inside_the_image():
 def test_the_city_toggle_changes_the_image():
     assert _render("Paris", True).tobytes() != _render("Paris", False).tobytes()
     assert _render("Fort Worth", True).tobytes() != _render("Fort Worth", False).tobytes()
+
+
+def test_elite_family_draws_below_the_status_strip():
+    """GG draws 128x52 at y=12 on the Elite and the Omni; the base's own
+    status strip above must be left alone, or the Omni redraws its whole
+    screen over ASM's whenever its charging indicator changes (#330)."""
+    from pathlib import Path
+
+    from ruamel.yaml import YAML
+
+    from arctis_sound_manager.config import DeviceConfiguration
+    from arctis_sound_manager.oled_protocol import OledProtocol
+
+    devices = Path(__file__).parent.parent / "src" / "arctis_sound_manager" / "devices"
+    for name in ("nova_elite.yaml", "nova_pro_omni.yaml"):
+        oled = DeviceConfiguration(YAML(typ="safe").load(devices / name)).oled
+        assert (oled.width, oled.height, oled.y_offset) == (128, 52, 12), name
+        proto = OledProtocol(report_id=1, width=128, height=52,
+                             frame_report_size=1036, y_offset=12)
+        packets = proto.build_frame_packets(bytes(16 * 52), 128, 52)
+        # Two halves, as GG's sub-payload split: x, y=12, w=64, h padded to 56.
+        assert [p[:6] for p in packets] == [[1, 0x93, 0, 12, 64, 56],
+                                            [1, 0x93, 64, 12, 64, 56]]
