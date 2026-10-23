@@ -850,6 +850,82 @@ def reapply_routing_overrides(timeout_s: float = 6.0) -> int:
     return moved
 
 
+def _stream_key(props) -> str:
+    return app_override_key(props.get("application.name", "") or "",
+                            props.get("application.process.binary", "") or "")
+
+
+def snapshot_channel_streams() -> dict[str, str]:
+    """{app key: Arctis_* sink} for every app stream on an ASM channel now.
+
+    Taken just before the channels go away (dongle unplugged, headset off):
+    the streams then fall back to another output, and only the pinned ones
+    (routing_overrides.json) used to come back. An app left on its channel by
+    default — a game on Game — stayed on the monitor speakers (#343).
+    """
+    try:
+        import pulsectl  # type: ignore
+    except Exception:
+        return {}
+    snapshot: dict[str, str] = {}
+    try:
+        with pulsectl.Pulse("asm-snapshot-streams") as pulse:
+            names = {s.index: s.name for s in pulse.sink_list()}
+            for si in pulse.sink_input_list():
+                props = si.proplist
+                if props.get("application.process.binary", "") in ("", "pipewire", "pw-loopback"):
+                    continue
+                sink = names.get(si.sink, "")
+                if sink.startswith("Arctis_"):
+                    snapshot[_stream_key(props)] = sink
+    except Exception as exc:
+        logger.warning("snapshot_channel_streams failed: %s", exc)
+    return snapshot
+
+
+def restore_channel_streams(snapshot: dict[str, str], timeout_s: float = 6.0) -> int:
+    """Put the apps of *snapshot* back on their channel once it exists again.
+
+    Only streams sitting outside ASM are moved: an app the user has since sent
+    to another ASM channel is theirs to keep there, and a pin in
+    routing_overrides.json, replayed separately, has the last word.
+    """
+    if not snapshot:
+        return 0
+    try:
+        import pulsectl  # type: ignore
+    except Exception:
+        return 0
+    pinned = _load_overrides()
+    moved = 0
+    try:
+        with pulsectl.Pulse("asm-restore-streams") as pulse:
+            deadline = time.monotonic() + timeout_s
+            while True:
+                sinks = pulse.sink_list()
+                by_name = {s.name: s.index for s in sinks}
+                if all(n in by_name for n in set(snapshot.values())) or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.2)
+            names = {s.index: s.name for s in sinks}
+            for si in pulse.sink_input_list():
+                key = _stream_key(si.proplist)
+                target = snapshot.get(key)
+                if target is None or key in pinned or target not in by_name:
+                    continue
+                if _is_asm_sink(names.get(si.sink, "")):
+                    continue
+                try:
+                    pulse.sink_input_move(si.index, by_name[target])
+                    moved += 1
+                    logger.info("Restored '%s' to %s after reconnect", key, target)
+                except Exception as exc:
+                    logger.warning("Failed to restore '%s' -> %s: %s", key, target, exc)
+    except Exception as exc:
+        logger.warning("restore_channel_streams failed: %s", exc)
+    return moved
+
+
 def _parse_pw_dump_output(text: str) -> list | None:
     """Recover a usable dump from ``pw-dump`` output that failed a plain
     ``json.loads`` (issue: random ASM audio dropouts, diagnosed on PipeWire

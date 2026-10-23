@@ -664,8 +664,14 @@ class CoreEngine:
             # Chat recreate in the watchdog did — so after a replug, Firefox,
             # games and video players silently stopped following the headset.
             try:
-                from arctis_sound_manager.pw_utils import reapply_routing_overrides
+                from arctis_sound_manager.pw_utils import (
+                    reapply_routing_overrides, restore_channel_streams)
                 reapply_routing_overrides()
+                # And the apps that were on a channel without a pin (#343).
+                snapshot = getattr(self, '_channel_streams_before_teardown', None)
+                if snapshot:
+                    self._channel_streams_before_teardown = None
+                    restore_channel_streams(snapshot)
             except Exception as exc:
                 self.logger.warning(
                     "setup_loopbacks: could not reapply routing overrides: %r", exc
@@ -5439,6 +5445,17 @@ class CoreEngine:
                     self.kernel_attach(self.usb_device, self.device_config)
             except usb.core.USBError as e:
                 self.logger.warning(f"Error re-attaching kernel driver: {e}")
+
+        # Which app was on which channel, while the channels still exist: once
+        # the loopbacks stop, every stream falls back to another output and
+        # only the pinned ones used to come back on reconnect (#343).
+        try:
+            from arctis_sound_manager.pw_utils import snapshot_channel_streams
+            snapshot = snapshot_channel_streams()
+            if snapshot:
+                self._channel_streams_before_teardown = snapshot
+        except Exception as e:
+            self.logger.warning(f"Error remembering channel streams: {e}")
 
         try:
             self.redirect_audio_on_disconnect()
