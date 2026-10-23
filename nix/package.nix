@@ -111,11 +111,14 @@ python3Packages.buildPythonApplication {
   #     GUI quit), plus /run/wrappers/bin for the setuid pkexec (a BLOCKING dep
   #     check) that systemd user services don't otherwise inherit.
   #
-  # Set as Nix-level strings rather than via wrapQtAppsHook's qtWrapperArgs: the
+  # Set at the Nix level rather than via wrapQtAppsHook's qtWrapperArgs: the
   # hook only wraps ELF binaries (it skips the Python entry points), and the
   # usual `makeWrapperArgs+=("''${qtWrapperArgs[@]}")` merge silently drops the
-  # Qt entries here because, without structuredAttrs, makeWrapperArgs is a
-  # scalar string and the array append mangles it.
+  # Qt entries when makeWrapperArgs is a scalar string (no structuredAttrs).
+  # One list element per argument: nixpkgs' Python packages use structuredAttrs
+  # since Oct 2026 (NixOS/nixpkgs#554025), where "--prefix PATH : x" would reach
+  # makeWrapper as a single word; older nixpkgs join and re-split the list,
+  # which gives the same words since store paths hold no spaces (#344).
   makeWrapperArgs = [
     "--prefix"
     "QT_PLUGIN_PATH"
