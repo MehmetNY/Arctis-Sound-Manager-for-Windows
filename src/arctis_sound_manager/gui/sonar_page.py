@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from arctis_sound_manager import service_control as sc
+from arctis_sound_manager.constants import IS_WINDOWS
 from arctis_sound_manager.gui.channel_output_selector import ChannelOutputSelector
 from arctis_sound_manager.gui.output_selector import OutputSelector
 from arctis_sound_manager.gui.search_pick_dialog import SearchPickDialog
@@ -407,6 +408,36 @@ def _delete_custom_preset(channel: str, name: str) -> bool:
 
 # ── Apply worker ──────────────────────────────────────────────────────────────
 
+def _channel_bands_and_macro(channel: str):
+    """The active preset's bands and the macro sliders of *channel*, as the Apply-all path reads them."""
+    try:
+        presets = _list_presets(channel)
+        bands = _parse_preset(presets.get(_active_preset_name(channel), next(iter(presets.values()))))
+    except Exception:
+        bands = []
+    return bands, _load_macro(channel)
+
+
+def _windows_apply_channel(channel: str, bands, basses: float, voix: float, aigus: float,
+                           reload: bool = True) -> None:
+    """Windows: save one channel's EQ state where the audio engine reads it, then tell the engine."""
+    from arctis_sound_manager.win.audio import apply as win_apply
+    try:
+        boost_state = _load_boost()
+        boost_db = boost_state.get("db", 0.0) if boost_state.get("enabled") else 0.0
+    except Exception:
+        boost_db = 0.0
+    try:
+        smart_state = _load_smart_volume()
+    except Exception:
+        smart_state = {"enabled": False, "level": 0.0, "loudness": "balanced"}
+    micro_proc = _load_micro_proc() if channel == "micro" else None
+    saved = win_apply.save_channel_state(channel, bands, basses, voix, aigus, boost_db=boost_db,
+                                         smart_volume=smart_state, micro_processing=micro_proc)
+    if saved and reload:
+        win_apply.reload_engine()
+
+
 class _ApplyWorker(QThread):
     done = Signal(bool)
 
@@ -503,6 +534,16 @@ class _ApplyWorker(QThread):
         import json as _json
         import logging
         log = logging.getLogger(__name__)
+        if IS_WINDOWS:
+            # No PipeWire graph here: the Windows audio engine builds its own from the state files this
+            # writes (see win/audio/apply.py). Nothing is written to ~/.config/pipewire.
+            try:
+                _windows_apply_channel(self._channel, self._bands, self._basses, self._voix, self._aigus)
+                self.done.emit(True)
+            except Exception as e:  # noqa: BLE001
+                log.error("Windows: could not save the %s EQ for the audio engine: %s", self._channel, e)
+                self.done.emit(False)
+            return
         try:
             try:
                 boost_state = _load_boost()
@@ -840,6 +881,22 @@ class _ApplyAllWorker(QThread):
     def run(self):
         import logging
         log = logging.getLogger(__name__)
+        if IS_WINDOWS:
+            try:
+                for channel in ("game", "media", "chat"):
+                    bands, macro = _channel_bands_and_macro(channel)
+                    _windows_apply_channel(channel, bands, macro.get("basses", 0.0), macro.get("voix", 0.0),
+                                           macro.get("aigus", 0.0), reload=False)
+                bands, macro = _channel_bands_and_macro("micro")
+                _windows_apply_channel("micro", bands, macro.get("basses", 0.0), macro.get("voix", 0.0),
+                                       macro.get("aigus", 0.0), reload=False)
+                from arctis_sound_manager.win.audio.apply import reload_engine
+                reload_engine()
+                self.done.emit(True)
+            except Exception as e:  # noqa: BLE001
+                log.error("Windows: could not save the EQ profile for the audio engine: %s", e)
+                self.done.emit(False)
+            return
         try:
             try:
                 boost_state = _load_boost()
@@ -3760,6 +3817,8 @@ class SonarPage(QWidget):
 
         Falls back to auto-detecting the first non-SteelSeries ALSA output sink.
         """
+        if IS_WINDOWS:   # external-output routing is a PulseAudio/PipeWire feature
+            return
         try:
             import pulsectl
         except ImportError:

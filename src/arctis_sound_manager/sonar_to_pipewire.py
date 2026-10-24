@@ -26,6 +26,7 @@ Arctis device is currently attached (`device_state.is_device_set()` == False).
 from __future__ import annotations
 
 import logging
+from arctis_sound_manager.platform_guard import linux_audio_only
 import json
 import math
 import os
@@ -1137,6 +1138,7 @@ def clear_safe_mode_and_restore() -> None:
     _restart_filter_chain()
 
 
+@linux_audio_only(False)
 def maybe_recover_from_safe_mode() -> bool:
     """Auto-clear safe mode when the environment changed since it was armed.
 
@@ -1335,6 +1337,7 @@ def _restart_filter_chain() -> None:
         _enter_filter_chain_safe_mode()
 
 
+@linux_audio_only(False)
 def ensure_filter_chain_healthy() -> bool:
     """Detect a crash-looping filter-chain at boot or device-attach time and arm
     the safe-mode fallback if needed (Correctif 1, issue #88; start-then-poll
@@ -3152,6 +3155,7 @@ def _purge_duplicate_pipewire_confs(bad_dir: Path, log) -> list[str]:
     return removed
 
 
+@linux_audio_only((False, False))
 def check_and_fix_stale_configs() -> tuple[bool, bool]:
     """Detect and fix stale Sonar configs.
 

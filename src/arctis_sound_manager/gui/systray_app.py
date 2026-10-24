@@ -20,7 +20,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from arctis_sound_manager import service_control as sc
-from arctis_sound_manager.constants import (DBUS_BUS_NAME,
+from arctis_sound_manager.constants import (IS_WINDOWS, DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH,
                                             SETTINGS_FOLDER)
@@ -391,6 +391,8 @@ class QSystrayApp(QBaseDesktopApp):
         # Save the current default sink so sig_stop() can restore it.
         # The daemon owns redirect logic (redirect_audio_on_connect / on_disconnect).
         try:
+            if IS_WINDOWS:  # no PulseAudio: there is no default sink to save
+                raise FileNotFoundError
             result = subprocess.run(
                 ["pactl", "get-default-sink"], capture_output=True, text=True
             )
@@ -399,10 +401,11 @@ class QSystrayApp(QBaseDesktopApp):
             # pactl (pulseaudio-utils) missing — degrade gracefully instead of
             # crashing at startup (#117). Default-sink save/restore is skipped;
             # the system-deps check surfaces the missing package to the user.
-            self.logger.warning(
-                'pactl not found (install pulseaudio-utils) — '
-                'skipping default-sink save/restore'
-            )
+            if not IS_WINDOWS:
+                self.logger.warning(
+                    'pactl not found (install pulseaudio-utils) — '
+                    'skipping default-sink save/restore'
+                )
             self._previous_default_sink = ''
 
         self.dbus_bus = await MessageBus().connect()
@@ -926,7 +929,7 @@ class QSystrayApp(QBaseDesktopApp):
         """Build the main window, hidden, when a page has work to do while
         the window is closed — today that is Clips (global shortcut, rolling
         capture). Nothing is built when the feature is off."""
-        if hasattr(self, '_main_app'):
+        if hasattr(self, '_main_app') or IS_WINDOWS:   # no Clips on Windows: nothing runs in the background
             return
         try:
             from arctis_sound_manager.gui import clips_setup

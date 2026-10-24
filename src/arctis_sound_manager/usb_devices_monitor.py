@@ -4,6 +4,8 @@
 
 import asyncio
 import logging
+
+from arctis_sound_manager.constants import IS_WINDOWS
 import threading
 import time
 from typing import Callable
@@ -103,7 +105,9 @@ class USBDevicesMonitor:
                 self.monitor = None
                 self._backend = 'polling'
         else:
-            self.logger.warning(
+            # Windows has no udev at all: polling is the designed backend there, not a
+            # degraded one, so it must not read as a problem in every log.
+            (self.logger.info if IS_WINDOWS else self.logger.warning)(
                 f"pyudev not available ({_PYUDEV_IMPORT_ERROR!r}) — using polling fallback."
             )
             self._backend = 'polling'

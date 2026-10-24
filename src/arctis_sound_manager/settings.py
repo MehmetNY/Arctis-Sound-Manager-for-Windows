@@ -4,6 +4,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,14 @@ def validate_config_setting_value(config: ConfigSetting, value: Any) -> bool:
     return False
 
 
+# Windows refuses to rename over, or to open, a file that something else has open at that
+# instant - the GUI reading the settings, an antivirus or a cloud-sync client looking at the new
+# file. It lasts milliseconds; waiting it out is the difference between "saved" and "PermissionError,
+# and the setting silently did not stick". POSIX never raises it here, so nothing changes there.
+_SHARING_RETRIES = 40
+_SHARING_RETRY_DELAY_S = 0.05
+
+
 def _atomic_yaml_dump(data: dict, path: Path) -> None:
     """Write *data* as YAML to *path* without ever leaving it half-written.
 
@@ -87,7 +96,14 @@ def _atomic_yaml_dump(data: dict, path: Path) -> None:
                 os.fsync(fh.fileno())
             except OSError:
                 pass
-        tmp.replace(path)
+        for attempt in range(_SHARING_RETRIES):
+            try:
+                tmp.replace(path)
+                break
+            except PermissionError:
+                if attempt == _SHARING_RETRIES - 1:
+                    raise
+                time.sleep(_SHARING_RETRY_DELAY_S)
     finally:
         if tmp.exists():
             try:
@@ -113,7 +129,19 @@ def _load_yaml_with_backup(path: Path, *, logger: logging.Logger) -> dict | None
 
     yaml = YAML(typ='safe')
     try:
-        data = yaml.load(path)
+        for attempt in range(_SHARING_RETRIES):
+            try:
+                data = yaml.load(path)
+                break
+            except PermissionError:
+                if attempt == _SHARING_RETRIES - 1:
+                    raise
+                time.sleep(_SHARING_RETRY_DELAY_S)
+    except PermissionError as e:
+        # Held open by someone else for the whole wait. That says nothing about the file's
+        # contents, so it is NOT renamed to .broken: that would throw away every setting.
+        logger.warning(f"{path.name} is locked by another program ({e!r}); using defaults for now.")
+        return None
     except Exception as e:
         logger.warning(
             f"{path.name} is unreadable ({e!r}); backing up and using defaults."
@@ -362,6 +390,12 @@ class GeneralSettings(JsonSerializable):
     # would run for nothing for anyone not streaming. Toggled through
     # SetSetting, which writes the conf and restarts the filter-chain once.
     streamer_mode: bool = False
+
+    # Windows only: run the ASM audio engine (win/audio/), which does there what the PipeWire
+    # filter-chains do on Linux — channel mixing, ChatMix, EQ, spatial audio, the microphone chain.
+    # The daemon starts it with ASM when the cables are set up; off, ASM leaves the sound alone
+    # (headset and DAC controls still work). Ignored on Linux.
+    windows_audio_engine: bool = True
 
     # Purely a display preference (#262): unlike aux_enabled above, this
     # never reaches the daemon — Output isn't a channel it creates or tears

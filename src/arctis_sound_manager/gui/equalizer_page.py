@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from arctis_sound_manager import service_control as sc
+from arctis_sound_manager.constants import IS_WINDOWS
 from arctis_sound_manager.gui.sonar_page import SonarPage
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.fader_slider import CAP_H, FADER_HANDLE_QSS, FaderSlider
@@ -296,6 +297,19 @@ class _ToggleWorker(QThread):
         """
         import logging
         log = logging.getLogger(__name__)
+        if IS_WINDOWS:
+            # No PipeWire graph to rebuild on Windows (and no audio engine yet): the choice is
+            # remembered, nothing is restarted, no device YAML is rewritten, no stream is moved.
+            try:
+                STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                STATE_FILE.write_text(self._new_mode)
+            except OSError as exc:
+                log.warning("could not remember the EQ mode: %r", exc)
+                self.done.emit(False, self._old_mode)
+                return
+            log.info("Windows: EQ mode %r saved, not applied to sound (no audio engine yet)", self._new_mode)
+            self.done.emit(True, self._new_mode)
+            return
         try:
             self._run_guarded(log)
         except Exception as exc:

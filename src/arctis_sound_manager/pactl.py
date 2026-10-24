@@ -8,13 +8,19 @@ import shutil
 import subprocess
 import time
 
-import pulsectl
-
-from arctis_sound_manager.constants import (PULSE_AUX_NODE_NAME,
+from arctis_sound_manager.constants import (IS_WINDOWS, PULSE_AUX_NODE_NAME,
                                             PULSE_CHAT_NODE_NAME,
                                             PULSE_GAME_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
                                             STEELSERIES_VENDOR_ID)
+
+if IS_WINDOWS:
+    # There is no PulseAudio/PipeWire on Windows and pulsectl is not installed
+    # there. Everything below that needs it is reached only through
+    # PulseAudioManager, and get_instance() hands Windows a NullPulseAudioManager.
+    pulsectl = None  # type: ignore[assignment]
+else:
+    import pulsectl  # noqa: E402  (Linux: a missing dependency must still fail loudly)
 
 ONLY_PHYSICAL = 1
 ONLY_VIRTUAL = 2
@@ -65,6 +71,8 @@ def volume_to_mix(volume: float) -> int:
 def mix_stream_levels(pulse) -> dict[str, int | None]:
     """Current ChatMix level (0-100) of each channel, None where the channel's
     loopback isn't running."""
+    if getattr(type(pulse), 'mix_levels', None) is not None:    # the Windows engine (win/audio/winpulse.py)
+        return pulse.mix_levels()
     return {
         ch: (volume_to_mix(sis[0].volume.value_flat) if sis else None)
         for ch, sis in _mix_streams(pulse).items()
@@ -79,6 +87,9 @@ def apply_mix_to_streams(pulse, channels_pct: int, chat_pct: int, channels: list
     Only streams not already at their level are written: a no-op write still
     fires a server volume event.
     """
+    if getattr(type(pulse), 'apply_mix', None) is not None:     # the Windows engine (win/audio/winpulse.py)
+        pulse.apply_mix(channels_pct, chat_pct, channels)
+        return
     levels = {'chat': chat_pct}
     for ch in ('game', 'media', 'aux'):
         levels[ch] = channels_pct if ch in channels else 100
@@ -111,7 +122,7 @@ def _pid_matches(product_id_attr: str, product_id: 'int | list[int] | None') -> 
     lst = product_id if isinstance(product_id, list) else [product_id]
     return attr_int in lst
 
-class TypedPulseSinkInfo(pulsectl.PulseSinkInfo):
+class TypedPulseSinkInfo(pulsectl.PulseSinkInfo if pulsectl is not None else object):  # type: ignore[misc]
     name: str
 
 
@@ -121,7 +132,13 @@ class PulseAudioManager:
     @staticmethod
     def get_instance() -> 'PulseAudioManager':
         if PulseAudioManager._instance is None:
-            PulseAudioManager._instance = PulseAudioManager()
+            if IS_WINDOWS:
+                # no PulseAudio here: ChatMix and the channel volumes go to the ASM audio engine
+                from arctis_sound_manager.win.audio.winpulse import WindowsAudioManager
+                PulseAudioManager._instance = WindowsAudioManager()
+            else:
+                PulseAudioManager._instance = (
+                    NullPulseAudioManager() if pulsectl is None else PulseAudioManager())
 
         return PulseAudioManager._instance
 
@@ -504,6 +521,80 @@ class PulseAudioManager:
             chat_mix = 100
 
         apply_mix_to_streams(self.pulse, media_mix, chat_mix, self._chatmix_channels())
+
+
+class _NullPulse:
+    """Stands in for ``pulsectl.Pulse`` where there is no sound server to talk to."""
+
+    def sink_list(self) -> list:
+        return []
+
+    def source_list(self) -> list:
+        return []
+
+    def sink_input_list(self) -> list:
+        return []
+
+    def source_output_list(self) -> list:
+        return []
+
+    def disconnect(self) -> None:
+        return None
+
+
+class NullPulseAudioManager(PulseAudioManager):
+    """PulseAudioManager for platforms without PulseAudio/PipeWire (Windows).
+
+    Every query answers "nothing there" at once, every command is a no-op.
+    Without it ``PulseAudioManager()`` would retry for ~40 s and then raise,
+    which takes the whole CoreEngine down with it.
+    """
+
+    def __init__(self):  # deliberately not calling super().__init__(): it connects
+        self.logger = logging.getLogger('PulseAudioManager')
+        self.pulse = _NullPulse()
+
+    def _connect_with_retry(self):
+        return _NullPulse()
+
+    def _reconnect(self):
+        return None
+
+    def sink_list_wrapper(self) -> list:
+        return []
+
+    def get_arctis_sinks_classified(self, vendor_id: int = STEELSERIES_VENDOR_ID,
+                                    product_id: 'int | list[int] | None' = None):
+        return None, None
+
+    def get_arctis_sinks(self, mode: int = ALL_SINKS, vendor_id: int = STEELSERIES_VENDOR_ID,
+                         product_id: 'int | list[int] | None' = None) -> list:
+        return []
+
+    def redirect_audio(self, output_sink_node_name: str) -> None:
+        return None
+
+    def get_default_device(self):
+        return None
+
+    def get_physical_source(self, vendor_id: int = STEELSERIES_VENDOR_ID,
+                            product_id: 'int | list[int] | None' = None):
+        return None
+
+    def has_source(self, node_name: str) -> bool:
+        return False
+
+    def set_default_source(self, name: str) -> None:
+        return None
+
+    def set_sink_volume_by_node(self, node_name: str, pct: int) -> bool:
+        return False
+
+    def _chatmix_channels(self) -> list:
+        return []
+
+    def set_mix(self, media_mix: int, chat_mix: int):
+        return None
 
 
 def micro_source_options(sources) -> list[tuple[str, str]]:

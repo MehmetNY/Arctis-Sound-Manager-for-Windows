@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from arctis_sound_manager.platform_guard import linux_audio_only
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -82,6 +83,7 @@ def _render_headroom_conf(headroom: int) -> str:
     )
 
 
+@linux_audio_only(False)
 def apply_alsa_headroom_quirk(device_config: "DeviceConfiguration") -> bool:
     """Write, update or remove the WirePlumber ALSA headroom quirk fragment for
     *device_config*.
@@ -175,6 +177,7 @@ def _render_no_suspend_conf() -> str:
     )
 
 
+@linux_audio_only(False)
 def apply_no_suspend_quirk() -> bool:
     """Write the WirePlumber fragment tuning the physical Arctis ALSA sink
     (see :func:`_render_no_suspend_conf` for what it currently does and why

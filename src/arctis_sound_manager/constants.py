@@ -3,9 +3,51 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import os
+import sys
 from pathlib import Path
 
-_XDG_CONFIG = Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config'))
+IS_WINDOWS: bool = sys.platform == 'win32'
+
+
+def _config_home() -> Path:
+    """Per-user config root: ``~/.config`` on Windows, XDG_CONFIG_HOME elsewhere.
+
+    About sixty places in the code base spell ``Path.home() / ".config" / "arctis_manager"``
+    out by hand (EQ presets, routing overrides, language, channel volumes ...). On Windows that
+    resolves to ``C:\\Users\\<you>\\.config\\arctis_manager``, so the central settings live there
+    too: one folder, instead of half of the files in %APPDATA% and half in ``.config``.
+
+    The name ``_XDG_CONFIG`` below is kept as is because other modules import it.
+    """
+    if IS_WINDOWS:
+        return Path.home() / '.config'
+    return Path(os.environ.get('XDG_CONFIG_HOME') or (Path.home() / '.config'))
+
+
+def _migrate_legacy_windows_config(new_root: Path | None = None) -> bool:
+    """Copy an earlier port's ``%APPDATA%\\arctis_manager`` into the current config folder.
+
+    The first Windows builds kept the central settings (device YAMLs, general settings) in
+    %APPDATA%. Copy, never move: if anything goes wrong the old folder is still intact. Done
+    once: it only happens while the new folder does not exist yet.
+    """
+    try:
+        appdata = os.environ.get('APPDATA')
+        if not IS_WINDOWS or not appdata:
+            return False
+        old = Path(appdata) / 'arctis_manager'
+        new = (new_root or _config_home()) / 'arctis_manager'
+        if not old.is_dir() or new.exists() or old == new:
+            return False
+        import shutil
+        shutil.copytree(old, new)
+        return True
+    except Exception:  # noqa: BLE001 - a failed migration must never stop the app from starting
+        return False
+
+
+_XDG_CONFIG = _config_home()
+_migrate_legacy_windows_config()
 
 
 def _invoking_user_config_home() -> Path | None:
@@ -18,7 +60,8 @@ def _invoking_user_config_home() -> Path | None:
     when the invoking user cannot be resolved. Read-only use only: never write
     into the returned folder as root, that would leave root-owned files behind.
     """
-    if os.geteuid() != 0:
+    # No POSIX uid on Windows: there is no sudo/pkexec indirection to undo.
+    if not hasattr(os, 'geteuid') or os.geteuid() != 0:
         return None
 
     uid = os.environ.get('PKEXEC_UID') or os.environ.get('SUDO_UID')

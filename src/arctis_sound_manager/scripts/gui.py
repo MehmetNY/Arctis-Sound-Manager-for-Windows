@@ -54,6 +54,12 @@ def _xcb_cursor_help(environ=os.environ, find_library=None) -> str | None:
     that. Only checked when Qt will actually pick xcb — a Wayland session
     never loads it.
     """
+    # Windows loads Qt's own "windows" platform plugin: libxcb is an X11 library and
+    # is neither present nor needed there. Without this the unset QT_QPA_PLATFORM /
+    # WAYLAND_DISPLAY below read as "an X11 session" and the GUI refused to start.
+    from arctis_sound_manager.constants import IS_WINDOWS
+    if IS_WINDOWS:
+        return None
     platform = environ.get('QT_QPA_PLATFORM', '').split(';')[0].split(':')[0]
     if platform and platform != 'xcb':
         return None
@@ -279,6 +285,8 @@ def claim_instance_server(local_server_cls, local_socket_cls, message: bytes):
 
 
 def main():
+    from arctis_sound_manager.constants import IS_WINDOWS
+
     parser = ArgumentParser()
     parser.add_argument('--systray', action='store_true',
                         help='Start systray without opening window (for autostart at login)')
@@ -310,7 +318,8 @@ def main():
     log_level = resolve_level(default=base_level)
     logging.basicConfig(level=log_level, format='%(name)20s %(levelname)8s | %(message)s')
 
-    _check_display_or_exit()
+    if not IS_WINDOWS:  # Windows always has a desktop; DISPLAY/WAYLAND_DISPLAY are X11/Wayland concepts
+        _check_display_or_exit()
     QTimer, QLocalServer, QLocalSocket, QApplication, QDialog = _import_qt_or_exit()
 
     xcb_help = _xcb_cursor_help()
@@ -456,7 +465,8 @@ def main():
     # Detect the missing flag and trigger setup from inside the GUI itself.
     from pathlib import Path as _Path
     setup_done_flag = _Path.home() / ".config" / "arctis_manager" / ".setup_done"
-    setup_was_missing = not setup_done_flag.exists()
+    # asm-setup installs udev rules and PipeWire configs: nothing to set up on Windows.
+    setup_was_missing = not setup_done_flag.exists() and not IS_WINDOWS
     if setup_was_missing:
         from arctis_sound_manager.gui.first_run_dialog import FirstRunDialog
         def _first_run():
@@ -495,7 +505,8 @@ def main():
             else:
                 from arctis_sound_manager.gui.udev_dialog import UdevRulesDialog
                 _exec_foreground(UdevRulesDialog())
-    _queue_dialog(udev_delay_ms, _check_udev)
+    if not IS_WINDOWS:  # no udev on Windows
+        _queue_dialog(udev_delay_ms, _check_udev)
 
     # ── Telemetry consent (first launch only) ─────────────────────────────────
     from arctis_sound_manager.telemetry import get_consent, set_consent
@@ -517,7 +528,8 @@ def main():
         )
         if should_show_dialog():
             _exec_foreground(SystemDepsDialog())
-    _queue_dialog(2500, _check_deps)
+    if not IS_WINDOWS:  # the checker audits distro packages (PipeWire, LADSPA, ...)
+        _queue_dialog(2500, _check_deps)
 
     # -- Preset sync (new Sonar presets added since install) ------------------
     def _announce_new_presets_enabled() -> bool:
@@ -636,7 +648,7 @@ def main():
         # Clips is on; a second later so the tray comes up first.
         QTimer.singleShot(1000, q_object.arm_background_pages)
 
-    if not args.no_enforce_systemd:
+    if not args.no_enforce_systemd and not IS_WINDOWS:
         ensure_systemd_unit(True)
 
     timer = QTimer()

@@ -32,6 +32,11 @@ _SYSTEM_FONT_CANDIDATES = (
     "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     "/usr/share/fonts/gnu-free/FreeSans.ttf",
+    # Windows: Pillow resolves a bare name against %WINDIR%\Fonts. Last, so the
+    # Linux order above is untouched (these simply fail to resolve there).
+    "segoeui.ttf",
+    "arial.ttf",
+    "tahoma.ttf",
 )
 
 

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager.constants import IS_WINDOWS
 from arctis_sound_manager.gui.components import DividerLine
 from arctis_sound_manager.gui.report_dialog import ReportBugDialog
 from arctis_sound_manager.i18n import I18n
@@ -1806,6 +1807,30 @@ _BODY_STYLE = (
 
 # ── HelpPage ───────────────────────────────────────────────────────────────────
 
+# Windows has no Clips (it records through PipeWire and the Linux screen-cast portals), so its Help
+# page must not send anyone looking for it. The Clips section is dropped; the one sentence that only
+# lists Clips among the features that never talk to USB is reworded, per language.
+_WITHOUT_CLIPS = (
+    (", the application router and Clips never", " and the application router never"),
+    (", le routeur d'applications et Clips ne parlent", " et le routeur d'applications ne parlent"),
+    (", el enrutador de aplicaciones y Clips nunca hablan", " y el enrutador de aplicaciones nunca hablan"),
+)
+
+
+def sections_for_platform(sections: list[dict], windows: bool) -> list[tuple[str, str]]:
+    """(heading, body) pairs to show; on Windows with every mention of Clips taken out."""
+    result = []
+    for section in sections:
+        heading, body = section["heading"], section["body"]
+        if windows:
+            if heading == "Clips":
+                continue
+            for old, new in _WITHOUT_CLIPS:
+                body = body.replace(old, new)
+        result.append((heading, body))
+    return result
+
+
 class HelpPage(QWidget):
     _current_lang: str = "en"
 
@@ -1912,8 +1937,8 @@ class HelpPage(QWidget):
 
         # Rebuild content
         self._clear_content()
-        for section in data["sections"]:
-            self._add_section(section["heading"], section["body"])
+        for heading, body in sections_for_platform(data["sections"], windows=IS_WINDOWS):
+            self._add_section(heading, body)
 
     def _clear_content(self) -> None:
         while self._content_layout.count():

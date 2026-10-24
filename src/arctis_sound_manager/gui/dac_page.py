@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from arctis_sound_manager.gui.components import SectionTitle
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSpinBox
 from arctis_sound_manager.gui.home_page import ToggleSwitch
 from arctis_sound_manager.gui.settings_widget import QSettingsWidget
 import arctis_sound_manager.gui.theme as _theme
@@ -461,7 +462,7 @@ class DacPage(QWidget):
         return row
 
     def _build_font_spinbox(self, font_key: str, default_sz: int, sp_style: str) -> QSpinBox:
-        sp = QSpinBox()
+        sp = NoWheelSpinBox()
         sp.setRange(7, 30)
         sp.setValue(default_sz)
         sp.setSuffix(" pt")

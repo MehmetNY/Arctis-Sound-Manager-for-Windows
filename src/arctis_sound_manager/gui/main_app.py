@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from arctis_sound_manager.constants import IS_WINDOWS
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.components import (
     CLIPS_ICON,
@@ -40,11 +41,13 @@ from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
 from arctis_sound_manager.gui.dac_page import DacPage
 from arctis_sound_manager.gui.device_page import DevicePage
 from arctis_sound_manager.gui.headset_page import HeadsetPage
-from arctis_sound_manager.gui.clips_page import ClipsPage
+if not IS_WINDOWS:   # Clips is not part of the Windows build
+    from arctis_sound_manager.gui.clips_page import ClipsPage
 from arctis_sound_manager.gui.help_page import HelpPage
 from arctis_sound_manager.gui.equalizer_page import EqualizerPage
 from arctis_sound_manager.gui.home_page import HomePage
 from arctis_sound_manager.gui.main_app_proto_widget import QMainAppProtoWidget
+from arctis_sound_manager.gui.theme import c as _theme_color
 from arctis_sound_manager.gui.theme import (
     ACCENT,
     APP_QSS,
@@ -74,16 +77,29 @@ PAGE_HOME = 0
 PAGE_EQUALIZER = 1
 PAGE_HEADSET = 2
 PAGE_DAC = 3
-PAGE_CLIPS = 4
-PAGE_SETTINGS = 5
-PAGE_HELP = 6
-PAGE_THEME_EDITOR = 7
+if IS_WINDOWS:
+    # Clips does not exist on Windows: no sidebar entry, no page. The pages after it move up
+    # one place so sidebar index and stack index stay the same number, as everywhere else here.
+    PAGE_CLIPS = -1
+    PAGE_SETTINGS = 4
+    PAGE_HELP = 5
+    PAGE_THEME_EDITOR = 6
+else:
+    PAGE_CLIPS = 4
+    PAGE_SETTINGS = 5
+    PAGE_HELP = 6
+    PAGE_THEME_EDITOR = 7
 
 
 #: Sidebar icon sizes. Help is deliberately smaller — see the note on
 #: top_pages_def in _build_window.
 _SIDEBAR_ICON_SIZE = 44
 _SIDEBAR_HELP_ICON_SIZE = 30
+
+
+
+# Pages whose controls only matter once the audio engine is running to carry them out (Windows).
+_ENGINE_PAGES_ON_WINDOWS = (PAGE_HOME, PAGE_EQUALIZER)
 
 
 class QMainApp(QBaseDesktopApp):
@@ -282,6 +298,9 @@ class QMainApp(QBaseDesktopApp):
             (HELP_ICON,      I18n.translate('ui', 'help'),      current_accent, _SIDEBAR_HELP_ICON_SIZE),
         ]
 
+        if IS_WINDOWS:   # Clips is not part of the Windows build: no entry, not even a hidden one
+            top_pages_def = [entry for entry in top_pages_def if entry[0] != CLIPS_ICON]
+
         self._sidebar_buttons: list[SidebarButton] = []
         for svg_path, label, color_active, icon_size in top_pages_def:
             btn = SidebarButton(
@@ -363,6 +382,15 @@ class QMainApp(QBaseDesktopApp):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
+        # Windows: say plainly when the audio engine (which does the actual sound processing) is not running,
+        # and offer to set it up or start it.
+        self._engine_banner = None
+        if IS_WINDOWS:
+            from arctis_sound_manager.gui.win_engine_banner import EngineBanner
+            banner = EngineBanner()
+            content_layout.addWidget(banner)
+            self._engine_banner = banner
+
         # Stacked pages
         self._stack = QStackedWidget()
 
@@ -374,7 +402,7 @@ class QMainApp(QBaseDesktopApp):
         # The Video tab is always present. When Clips is not on, it shows the
         # install screen (what it does, which packages it needs, and a one-click
         # install) instead of the recorder.
-        self._clips_page = self._build_clips_page()
+        self._clips_page = None if IS_WINDOWS else self._build_clips_page()
         self._help_page      = HelpPage()
 
         self._theme_editor_page = ThemeEditorPage()
@@ -383,10 +411,13 @@ class QMainApp(QBaseDesktopApp):
         self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
         self._stack.addWidget(self._headset_page)     # index 2 → Headset
         self._stack.addWidget(self._dac_page)         # index 3 → DAC
-        self._stack.addWidget(self._clips_page)       # index 4 → Clips
-        self._stack.addWidget(self._device_page)      # index 5 → Settings
-        self._stack.addWidget(self._help_page)        # index 6 → Help
-        self._stack.addWidget(self._theme_editor_page) # index 7 → Theme Editor
+        if not IS_WINDOWS:
+            self._stack.addWidget(self._clips_page)   # index 4 → Clips
+        # From here on the numbers are PAGE_SETTINGS, PAGE_HELP and PAGE_THEME_EDITOR (one lower on
+        # Windows, where there is no Clips page).
+        self._stack.addWidget(self._device_page)      # Settings
+        self._stack.addWidget(self._help_page)        # Help
+        self._stack.addWidget(self._theme_editor_page) # Theme Editor
 
         content_layout.addWidget(self._stack)
         root_layout.addWidget(content_wrapper, stretch=1)
@@ -406,6 +437,14 @@ class QMainApp(QBaseDesktopApp):
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
         for i, btn in enumerate(self._sidebar_buttons):
             btn.set_active(i == active_idx)
+        self._update_engine_banner(index)
+
+    def _update_engine_banner(self, index: int) -> None:
+        banner = getattr(self, "_engine_banner", None)
+        if banner is None:
+            return
+        banner.apply_theme()
+        banner.set_page_visible(index in _ENGINE_PAGES_ON_WINDOWS)
 
     def apply_clips_visibility(self) -> None:
         """Make sure the Video tab is present, and showing the right face.
@@ -422,6 +461,10 @@ class QMainApp(QBaseDesktopApp):
         module imports GStreamer at module level, which is what lets a machine
         without any of it still build this window.
         """
+        if IS_WINDOWS:
+            # Clips records through PipeWire and the Wayland/X11 screen-cast portals; none of
+            # that exists on Windows. The tab, its page and its code path are not built at all.
+            return
         buttons = getattr(self, "_sidebar_buttons", None) or []
         if PAGE_CLIPS < len(buttons):
             buttons[PAGE_CLIPS].setVisible(True)
@@ -433,6 +476,9 @@ class QMainApp(QBaseDesktopApp):
     def _build_clips_page(self):
         """The recorder when Clips is on and usable, the install screen when it
         is not, wired so either can hand over to the other."""
+        if IS_WINDOWS:
+            return None
+
         from arctis_sound_manager.gui import clips_setup
         from arctis_sound_manager.gui.clips_install_page import ClipsInstallPage
 
@@ -456,6 +502,8 @@ class QMainApp(QBaseDesktopApp):
         after the packages landed — the install screen stays up and asks for a
         restart rather than taking the window down with it.
         """
+        if IS_WINDOWS:
+            return
         stack = getattr(self, "_stack", None)
         old = getattr(self, "_clips_page", None)
         if stack is None or old is None:

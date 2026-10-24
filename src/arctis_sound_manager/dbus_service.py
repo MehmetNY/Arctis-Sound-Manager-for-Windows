@@ -23,7 +23,7 @@ from arctis_sound_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_SETTINGS_INTERFACE_NAME,
                                             DBUS_SETTINGS_OBJECT_PATH,
                                             DBUS_STATUS_INTERFACE_NAME,
-                                            DBUS_STATUS_OBJECT_PATH)
+                                            DBUS_STATUS_OBJECT_PATH, IS_WINDOWS)
 from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.pactl import TypedPulseSinkInfo
 from arctis_sound_manager.settings import validate_config_setting_value
@@ -502,6 +502,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
             return False
 
+        self.logger.debug('SetSetting %s = %r', setting, value)
+
         # Special case: weather settings (no ConfigSetting entry — managed via
         # SetWeatherSettings, but also written individually by the GUI on some paths)
         _WEATHER_TYPES: dict[str, type] = {
@@ -621,6 +623,26 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 name='asm-streamer-mode-toggle',
                 daemon=True,
             ).start()
+            return True
+
+        # Special case: the Windows audio engine switch (no ConfigSetting entry, same
+        # reasoning as aux_enabled). Saving it has to start or stop the engine process,
+        # which blocks, so that runs off the D-Bus loop. Ignored on Linux, where there
+        # is no such engine - the value is still stored.
+        if setting == 'windows_audio_engine':
+            gs = self.core_engine.general_settings
+            if not isinstance(value, bool):
+                self.logger.error('SetSetting windows_audio_engine: expected bool, got %r', value)
+                return False
+            gs.windows_audio_engine = value
+            gs.write_to_file()
+            if IS_WINDOWS:
+                from arctis_sound_manager.win.audio.service import apply_engine_setting
+                self.logger.info("windows_audio_engine set to %r — applying", value)
+                threading.Thread(
+                    target=apply_engine_setting, args=(self.logger, value),
+                    name='asm-audio-engine-toggle', daemon=True,
+                ).start()
             return True
 
         # Special case: ChatMix channels (#249/#269, no ConfigSetting entry —

@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+from arctis_sound_manager.platform_guard import linux_audio_only
+
 logger = logging.getLogger("pw_utils")
 
 OVERRIDES_FILE = Path.home() / ".config" / "arctis_manager" / "routing_overrides.json"
@@ -973,6 +975,7 @@ def _parse_pw_dump_output(text: str) -> list | None:
     return best
 
 
+@linux_audio_only(None)
 def pw_dump_or_none() -> list | None:
     """Read the PipeWire graph, or ``None`` when it could not be read.
 
@@ -1013,6 +1016,7 @@ def pw_dump_or_none() -> list | None:
         return None
 
 
+@linux_audio_only([])
 def _pw_dump() -> list:
     """:func:`pw_dump_or_none` with an unreadable graph flattened to ``[]``."""
     data = pw_dump_or_none()

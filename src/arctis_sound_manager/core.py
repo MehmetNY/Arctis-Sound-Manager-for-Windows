@@ -24,7 +24,7 @@ from arctis_sound_manager.config import (CommandTransport,
                                          DeviceConfiguration,
                                          load_device_configurations,
                                          parsed_status)
-from arctis_sound_manager.constants import (PULSE_AUX_NODE_NAME,
+from arctis_sound_manager.constants import (IS_WINDOWS, PULSE_AUX_NODE_NAME,
                                             PULSE_CHAT_NODE_NAME,
                                             PULSE_GAME_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME,
@@ -35,6 +35,7 @@ from arctis_sound_manager.channel_volumes import load_channel_volumes
 from arctis_sound_manager.pactl import ONLY_PHYSICAL, PulseAudioManager
 from arctis_sound_manager.settings import DeviceSettings, GeneralSettings
 from arctis_sound_manager.usb_devices_monitor import USBDevicesMonitor
+from arctis_sound_manager.platform_guard import linux_audio_only
 from arctis_sound_manager.charging_case import ChargingCaseMonitor
 from arctis_sound_manager.usb_reenumerate import (reset_via_usbfs,
                                                   sysfs_device_dir)
@@ -610,6 +611,7 @@ class CoreEngine:
         if hushed:
             self.logger.info("chain rebuilt — outputs unmuted: %s", ", ".join(sorted(hushed)))
 
+    @linux_audio_only()
     def setup_loopbacks(self) -> None:
         """Create or recreate the Arctis virtual loopbacks for the current mode.
 
@@ -780,6 +782,7 @@ class CoreEngine:
 
     _MICRO_CAPTURE_OUT = "effect_output.sonar-micro-eq"
 
+    @linux_audio_only()
     def _claim_default_source(self) -> None:
         """Make the Sonar Micro EQ the system's default input — if it carries a mic.
 
@@ -1029,6 +1032,12 @@ class CoreEngine:
         Runs off the D-Bus event loop (blocking restart). No-op when no device
         is attached or when the confs already match the JSON.
         """
+        if IS_WINDOWS:
+            # The audio engine rebuilds its spatial chain from sonar_spatial_audio*.json itself;
+            # this just makes it do so now instead of at its next look at the files.
+            from arctis_sound_manager.win.audio.apply import reload_engine
+            reload_engine()
+            return
         if not device_state.is_device_set():
             return
         if not self._spatial_apply_lock.acquire(blocking=False):
@@ -1071,6 +1080,14 @@ class CoreEngine:
             self.logger.debug("apply_streamer_mode: already in flight — skipping")
             return
         try:
+            if IS_WINDOWS:
+                # No filter-chain to rebuild: the audio engine reads ``streamer_mode`` (already saved by the
+                # caller) and stream_mix.json itself; it only has to be told to look now.
+                from arctis_sound_manager.win.audio.bridge import shared_bridge
+                shared_bridge().reload()
+                self.logger.info("Streamer mode %s — the audio engine was asked to reload",
+                                 "on" if GeneralSettings.read_from_file().streamer_mode else "off")
+                return
             from arctis_sound_manager.sonar_to_pipewire import (
                 _restart_filter_chain, sync_stream_mix_conf)
             enabled = bool(GeneralSettings.read_from_file().streamer_mode)
@@ -2499,7 +2516,7 @@ class CoreEngine:
         """
         try:
             if not self._device_ready:
-                self.configure_virtual_sinks()
+                self.configure_virtual_sinks(only_if_unconfigured=True)
         except Exception as e:
             self.logger.warning("Periodic device re-scan failed: %r", e)
         finally:
@@ -2733,8 +2750,17 @@ class CoreEngine:
         self._device_ready = True
         return True
 
-    def configure_virtual_sinks(self) -> None:
+    def configure_virtual_sinks(self, *, only_if_unconfigured: bool = False) -> None:
         self._detect_lock.acquire()
+        if only_if_unconfigured and self._device_ready:
+            # A periodic re-scan queued on the lock while the first detection
+            # was still inside its deferred-init wait. By the time we got the
+            # lock the device is already configured, so running a second full
+            # detection would treat our own handles as a re-enumeration: it
+            # closes the live listener handle (HID read failed: not open) and
+            # re-initialises the headset. Nothing left to do.
+            self._detect_lock.release()
+            return
         self._device_configured_event.clear()
         deferred = False
         try:
@@ -3058,6 +3084,7 @@ class CoreEngine:
         # return; mark the device as ready so loop() stops re-scanning.
         self._device_ready = True
 
+    @linux_audio_only(('', '', ''))
     def _discover_physical_nodes(
         self,
         vendor_id: int,
@@ -3987,6 +4014,12 @@ class CoreEngine:
         Nothing here touches the device. An unreadable descriptor returns
         None, and None means "not known" - never "not the vendor interface".
         """
+        # Windows (hidapi shim): the HID stack states the usage page itself and
+        # there is no sysfs. Looked up on the *class* so a MagicMock stand-in
+        # device (which invents any attribute on an instance) is never mistaken
+        # for the shim.
+        if getattr(type(self.usb_device), 'hid_usage_page', None) is not None:
+            return self.usb_device.hid_usage_page(interface_number)
         try:
             bus = self.usb_device.bus
             ports = getattr(self.usb_device, 'port_numbers', None)
@@ -5027,6 +5060,7 @@ class CoreEngine:
     _XRUN_CONSECUTIVE = 3         # ~3 minutes of steady xruns before speaking
     _XRUN_NODE_FRAGMENTS = ("virtual-surround-7.1-hesuvi", "sonar-")
 
+    @linux_audio_only()
     async def _xrun_watch_loop(self, period: float | None = None):
         period = period or self._XRUN_SAMPLE_PERIOD_S
         previous: dict[str, int] = {}

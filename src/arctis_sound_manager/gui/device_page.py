@@ -40,6 +40,7 @@ from arctis_sound_manager.gui.settings_widget import (
     status_key_names,
 )
 from arctis_sound_manager.autostart import active_backend_name, autostart_enabled, set_autostart
+from arctis_sound_manager.constants import IS_WINDOWS
 log = logging.getLogger(__name__)
 
 import arctis_sound_manager.gui.theme as _theme
@@ -301,6 +302,17 @@ class DevicePage(QWidget):
                                    self._check_update_btn)
         update_row.layout().insertWidget(2, self._update_status_lbl, 1)
 
+        # ── Audio engine (Windows only: it replaces what PipeWire does on Linux) ─
+        self._engine_card = None
+        if IS_WINDOWS:
+            from arctis_sound_manager.gui.win_engine_card import EngineCard
+            from arctis_sound_manager.win.audio.strings import t as _engine_text
+            self._engine_card = EngineCard(self._content)
+            engine_frame = SettingsCard(_engine_text("card_title", I18n.current_lang()),
+                                        self._engine_card, self._content)
+            content_layout.addWidget(engine_frame)
+            self._cards.append(engine_frame)
+
         # ── Interface & tray: theme, then the tray settings ───────────────────
         interface = self._add_card(content_layout, "settings_group_interface")
 
@@ -537,6 +549,8 @@ class DevicePage(QWidget):
     def update_settings(self, settings: dict):
         for widget in self._settings_groups:
             widget.update_settings(settings)
+        if self._engine_card is not None:
+            self._engine_card.update_settings(settings)
 
     # ── Language ───────────────────────────────────────────────────────────────
 

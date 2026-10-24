@@ -16,13 +16,19 @@ import sys
 import time
 from pathlib import Path
 
-import pulsectl
-
 from arctis_sound_manager import audio_reconfig, singleton
-from arctis_sound_manager.constants import (DBUS_BUS_NAME,
+from arctis_sound_manager.constants import (IS_WINDOWS, DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from arctis_sound_manager.power_status import HeadsetPower, extract_power_status
+
+if IS_WINDOWS:
+    # PipeWire-only helper: never started on Windows. Only the annotations
+    # (`pulse: pulsectl.Pulse`) are evaluated at import time, hence the placeholder.
+    from types import SimpleNamespace as _NS
+    pulsectl = _NS(Pulse=object)  # type: ignore[assignment]
+else:
+    import pulsectl
 from arctis_sound_manager.pw_utils import (app_override_key, get_native_streams,
                                            is_asm_internal_stream, move_native_stream)
 

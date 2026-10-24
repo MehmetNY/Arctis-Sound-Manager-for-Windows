@@ -23,6 +23,8 @@ import logging
 import os
 from pathlib import Path
 
+from arctis_sound_manager.constants import IS_WINDOWS
+
 _log = logging.getLogger(__name__)
 
 STREAM_MIX_INPUT_NODE = "effect_input.sonar-stream-mix"
@@ -130,7 +132,19 @@ def apply_stream_mix(state: dict | None = None) -> bool:
     Returns False when the node is not in the graph (streamer mode off, or the
     filter-chain still starting) — the watchdog re-applies once it appears.
     Never raises.
+
+    On Windows there is no graph to push into: the audio engine (win/audio/)
+    reads this state file itself, so all that is left to do is tell it to look
+    now instead of at its next poll.
     """
+    if IS_WINDOWS:
+        try:
+            from arctis_sound_manager.win.audio.bridge import shared_bridge
+            shared_bridge().reload()
+            return True
+        except Exception as exc:                                 # noqa: BLE001
+            _log.warning("apply_stream_mix failed: %r", exc)
+            return False
     try:
         from arctis_sound_manager.pw_utils import set_filter_controls
         return bool(set_filter_controls(STREAM_MIX_INPUT_NODE,

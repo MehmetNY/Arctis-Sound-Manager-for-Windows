@@ -4,7 +4,6 @@
 
 import argparse
 import asyncio
-import fcntl
 import logging
 import os
 import signal
@@ -13,6 +12,8 @@ import sys
 from arctis_sound_manager.bug_reporter import write_crash_report
 from arctis_sound_manager.core import CoreEngine
 from arctis_sound_manager.dbus_service import DbusManager
+from arctis_sound_manager.constants import IS_WINDOWS
+from arctis_sound_manager.file_lock import lock_nb, runtime_dir
 from arctis_sound_manager.scripts.dbus_awake import DbusAwake
 from arctis_sound_manager.utils import project_version
 
@@ -173,10 +174,10 @@ def _single_instance_lock(logger):
     flock is used rather than a pid file: the kernel releases it when the
     process dies, however it dies, so there is no stale lock to reap.
     """
-    runtime_dir = os.environ.get('XDG_RUNTIME_DIR') or f'/tmp/arctis-{os.getuid()}'
+    runtime_dir_path = str(runtime_dir())
     try:
-        os.makedirs(runtime_dir, exist_ok=True)
-        handle = open(os.path.join(runtime_dir, 'arctis-manager.lock'), 'w')
+        os.makedirs(runtime_dir_path, exist_ok=True)
+        handle = open(os.path.join(runtime_dir_path, 'arctis-manager.lock'), 'w')
     except OSError as exc:
         # No lock is worse than a lock, but refusing to start at all over an
         # unwritable runtime dir is worse still.
@@ -184,7 +185,7 @@ def _single_instance_lock(logger):
         return None
 
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_nb(handle.fileno())
     except OSError:
         handle.close()
         from arctis_sound_manager.init_system import detect_init
@@ -194,7 +195,7 @@ def _single_instance_lock(logger):
             'Another asm-daemon already holds the runtime lock in %s — refusing '
             'to start, so this process does not tear down the running daemon\'s '
             'audio channels. Stop it with `%s` or `pkill -f asm-daemon` and retry.',
-            runtime_dir, stop_cmd,
+            runtime_dir_path, stop_cmd,
         )
         sys.exit(1)
 
@@ -241,33 +242,48 @@ async def main_async():
     # lost it, because the upgrade removed that file and nothing enabled its
     # replacement (#191). The GUI failing to start *is* the symptom, so this
     # cannot live there — the daemon is what still runs.
-    try:
-        from arctis_sound_manager.autostart import migrate_legacy_gui_autostart
-        migrate_legacy_gui_autostart()
-    except Exception as exc:
-        logger.warning('could not migrate the tray autostart unit: %r', exc)
+    if not IS_WINDOWS:  # systemd user units: nothing to migrate on Windows
+        try:
+            from arctis_sound_manager.autostart import migrate_legacy_gui_autostart
+            migrate_legacy_gui_autostart()
+        except Exception as exc:
+            logger.warning('could not migrate the tray autostart unit: %r', exc)
 
-    from arctis_sound_manager.udev_checker import is_udev_rules_valid
-    if not is_udev_rules_valid():
-        logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')
+    if not IS_WINDOWS:
+        from arctis_sound_manager.udev_checker import is_udev_rules_valid
+        if not is_udev_rules_valid():
+            logger.warning('udev rules are missing or invalid — USB access may fail (errno 13). Run: sudo asm-cli udev write-rules --force --reload')
 
-    # Before the first pw-* spawn: on WirePlumber < 0.5.18 with a hide-parent
-    # rule (SteamOS), every tool ASM starts would be denied ASM's own nodes
-    # (#325). Sets PIPEWIRE_CONFIG_NAME for this process and its children.
-    try:
-        from arctis_sound_manager.pw_utils import exempt_from_software_dsp_hiding
-        exempt_from_software_dsp_hiding()
-    except Exception as exc:
-        logger.warning('could not check for the WirePlumber hide-parent bug: %r', exc)
+        # Before the first pw-* spawn: on WirePlumber < 0.5.18 with a hide-parent
+        # rule (SteamOS), every tool ASM starts would be denied ASM's own nodes
+        # (#325). Sets PIPEWIRE_CONFIG_NAME for this process and its children.
+        try:
+            from arctis_sound_manager.pw_utils import exempt_from_software_dsp_hiding
+            exempt_from_software_dsp_hiding()
+        except Exception as exc:
+            logger.warning('could not check for the WirePlumber hide-parent bug: %r', exc)
 
-    _ensure_media_router_running(logger)
+        _ensure_media_router_running(logger)
+    else:
+        # The ASM audio engine (virtual cables -> EQ / spatial / ChatMix -> headset) is its own process.
+        from arctis_sound_manager.win.audio.service import start_engine_for_daemon
+        try:
+            start_engine_for_daemon(logger)
+        except Exception as exc:  # noqa: BLE001 — the headset controls must come up regardless
+            logger.warning('Windows: could not start the audio engine: %r', exc)
 
     dbus_manager = DbusManager.getInstance()
     core_engine = CoreEngine()
 
     core_loop = asyncio.create_task(core_engine.start(), name='core-loop')
-    dbus_awake_loop = asyncio.create_task(DbusAwake.get_instance().start(core_engine), name='dbus-awake')
-    watchdog_loop = asyncio.create_task(core_engine._loopback_watchdog(), name='loopback-watchdog')
+    if IS_WINDOWS:
+        from arctis_sound_manager.win.power_watcher import PowerWatcher
+        dbus_awake_loop = asyncio.create_task(PowerWatcher.get_instance().start(core_engine), name='power-watcher')
+        watchdog_loop = None  # PipeWire loopback watchdog: no loopbacks on Windows
+    else:
+        dbus_awake_loop = asyncio.create_task(DbusAwake.get_instance().start(core_engine), name='dbus-awake')
+        watchdog_loop = asyncio.create_task(core_engine._loopback_watchdog(), name='loopback-watchdog')
+    background_tasks = [t for t in (core_loop, dbus_awake_loop, watchdog_loop) if t is not None]
 
     # Wire SIGINT/SIGTERM into the asyncio loop so the handler can both flip
     # the stop flags AND cancel the long-lived tasks. Plain signal.signal()
@@ -286,7 +302,7 @@ async def main_async():
             dbus_manager.stop()
         except Exception as e:
             logger.warning(f'dbus_manager.stop() raised: {e!r}')
-        for task in (core_loop, dbus_awake_loop, watchdog_loop):
+        for task in background_tasks:
             if not task.done():
                 task.cancel()
 
@@ -303,10 +319,16 @@ async def main_async():
         await dbus_manager.wait_for_stop()
     finally:
         # Best-effort: make sure background tasks really exit.
-        for task in (core_loop, dbus_awake_loop, watchdog_loop):
+        for task in background_tasks:
             if not task.done():
                 task.cancel()
-        await asyncio.gather(core_loop, dbus_awake_loop, watchdog_loop, return_exceptions=True)
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        if IS_WINDOWS:
+            from arctis_sound_manager.win.audio.service import stop_engine_for_daemon
+            try:
+                stop_engine_for_daemon(logger)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning('Windows: could not stop the audio engine: %r', exc)
 
 
 def main():

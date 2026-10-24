@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLa
 
 import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.dbus_wrapper import DbusWrapper
+from arctis_sound_manager.gui.qt_widgets.no_wheel_slider import NoWheelSlider
 
 
 _MODE_LABELS = {
@@ -96,7 +97,7 @@ class QAncWidget(QWidget):
         self._level_title = QLabel("Level:")
         level_layout.addWidget(self._level_title)
 
-        self._level_slider = QSlider(Qt.Orientation.Horizontal)
+        self._level_slider = NoWheelSlider(Qt.Orientation.Horizontal)
         self._level_slider.setMinimum(1)
         self._level_slider.setMaximum(10)
         self._level_slider.setValue(5)

@@ -14,6 +14,7 @@ resume (e.g. by joining a call).  These tests verify:
 """
 
 import threading
+import time
 from unittest.mock import MagicMock, patch, call
 
 import pytest
@@ -225,3 +226,75 @@ def test_no_device_log_emitted_only_once():
     warning_calls = [c for c in engine.logger.warning.call_args_list
                      if 'No supported device' in str(c)]
     assert len(warning_calls) == 1
+
+
+# ── queued re-scan must not re-run a finished detection ──────────────────────
+
+
+def test_rescan_passes_only_if_unconfigured():
+    """The periodic re-scan asks for the guarded variant of the detection."""
+    engine = _make_engine_stub()
+    engine._device_ready = False
+    engine._rescan_in_flight = True
+
+    with patch.object(engine, 'configure_virtual_sinks') as mock_configure:
+        engine._rescan_for_device()
+
+    mock_configure.assert_called_once_with(only_if_unconfigured=True)
+
+
+def test_queued_rescan_is_noop_once_device_became_ready():
+    """A re-scan parked on _detect_lock while the first detection finishes its
+    deferred init must not run a second detection afterwards.
+
+    Real-hardware symptom (Windows, Nova Pro Wireless): the queued re-scan ran
+    after the device was ready, treated it as a re-enumeration, closed the live
+    listener handle ('HID read failed: not open') and re-initialised the
+    headset a second time.
+    """
+    from arctis_sound_manager.core import CoreEngine
+
+    engine = _make_engine_stub()
+    engine._device_ready = False
+    engine.device_configurations = [_make_device_config()]
+
+    # The "first detection" is still running: it holds the lock.
+    engine._detect_lock.acquire()
+
+    finder = MagicMock(return_value=None)
+    done = threading.Event()
+
+    def _queued():
+        with patch.object(CoreEngine, '_find_hid_device', finder):
+            CoreEngine.configure_virtual_sinks(engine, only_if_unconfigured=True)
+        done.set()
+
+    t = threading.Thread(target=_queued, daemon=True)
+    t.start()
+    time.sleep(0.2)
+    assert not done.is_set(), "re-scan should be parked on the detect lock"
+
+    # First detection finishes: device ready, lock released.
+    engine._device_ready = True
+    engine._detect_lock.release()
+
+    assert done.wait(5), "queued re-scan never returned"
+    t.join(5)
+    finder.assert_not_called()
+    assert not engine._detect_lock.locked(), "the guard must release the lock"
+
+
+def test_unguarded_configure_still_runs_when_ready():
+    """Callers that do not pass the flag (udev add, resume) keep their
+    behaviour: they always re-run the detection."""
+    from arctis_sound_manager.core import CoreEngine
+
+    engine = _make_engine_stub()
+    engine._device_ready = True
+    engine.device_configurations = [_make_device_config()]
+
+    finder = MagicMock(return_value=None)
+    with patch.object(CoreEngine, '_find_hid_device', finder):
+        CoreEngine.configure_virtual_sinks(engine)
+
+    finder.assert_called()

@@ -3,8 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import asyncio
+import copy
 import json
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
@@ -35,6 +38,26 @@ class DbusWrapper(QObject):
     _CONNECT_TIMEOUT_SECONDS = 5.0
     _CALL_TIMEOUT_SECONDS = 5.0
     _DEAD_AFTER_FAILURES = 3
+
+    # ── Setting changes: ordered, and not undone by a stale poll ──────────────
+    #
+    # The GUI polls GetSettings about once a second and every reply redraws the pages. A reply
+    # that was read just before a SetSetting landed still carries the *old* value, so it flipped
+    # the control the user had just set back for a moment ("it does not listen and turns itself
+    # on"). Worse, every change used to go out as its own call on one of four pool threads, so a
+    # slider drag (one valueChanged per step) reached the daemon in no particular order and the
+    # *last* value to arrive was not necessarily the last one the user chose.
+    #
+    # So, per setting name: the newest value waits in a one-slot queue and a single sender at a
+    # time drains it (calls for one name can never overtake each other, and a drag collapses to
+    # the few values the daemon can keep up with); and the value the user chose is held over the
+    # poll results until the daemon reports it back, the daemon refuses it, or the hold runs out.
+    _SETTING_HOLD_SECONDS = 6.0
+    _SETTINGS_SECTIONS = ('general', 'dac', 'device')
+    _setting_lock = threading.Lock()
+    _setting_held: dict = {}       # name -> (value, expires_at on time.monotonic())
+    _setting_queued: dict = {}     # name -> newest value that has not been sent yet
+    _setting_senders: set = set()  # names that have a sender running
 
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent)
@@ -189,18 +212,76 @@ class DbusWrapper(QObject):
 
     @staticmethod
     def change_setting(name: str, value: int|bool|str) -> None:
-        DbusWrapper._executor.submit(DbusWrapper.change_setting_thread, name=name, value=value)
+        with DbusWrapper._setting_lock:
+            DbusWrapper._setting_held[name] = (
+                copy.deepcopy(value), time.monotonic() + DbusWrapper._SETTING_HOLD_SECONDS)
+            DbusWrapper._setting_queued[name] = value
+            if name in DbusWrapper._setting_senders:
+                return   # the sender already running for this name will pick the newest value up
+            DbusWrapper._setting_senders.add(name)
+        DbusWrapper._executor.submit(DbusWrapper._send_setting_thread, name)
+
+    @staticmethod
+    def _send_setting_thread(name: str) -> None:
+        """Send the queued values of one setting, one call at a time, until none is left."""
+        try:
+            while True:
+                with DbusWrapper._setting_lock:
+                    if name not in DbusWrapper._setting_queued:
+                        DbusWrapper._setting_senders.discard(name)
+                        return
+                    value = DbusWrapper._setting_queued.pop(name)
+                accepted = False
+                try:
+                    accepted = asyncio.run(DbusWrapper.change_setting_async(name, value))
+                except Exception as e:  # noqa: BLE001 - a failed send must not wedge the sender
+                    DbusWrapper.logger.error('Error in change_setting %s: %s', name, e)
+                with DbusWrapper._setting_lock:
+                    held = DbusWrapper._setting_held.get(name)
+                    if held is not None and held[0] == value:
+                        if accepted:
+                            # polls that were already in flight can still carry the old value:
+                            # keep holding for a while after the daemon said yes
+                            DbusWrapper._setting_held[name] = (
+                                held[0], time.monotonic() + DbusWrapper._SETTING_HOLD_SECONDS)
+                        elif name not in DbusWrapper._setting_queued:
+                            del DbusWrapper._setting_held[name]   # refused: show what the daemon really has
+        except BaseException:
+            with DbusWrapper._setting_lock:
+                DbusWrapper._setting_senders.discard(name)
+            raise
+
+    @staticmethod
+    def _overlay_held_settings(settings: dict) -> dict:
+        """Put the values the user has just chosen over a GetSettings reply (see above)."""
+        now = time.monotonic()
+        with DbusWrapper._setting_lock:
+            for name, (value, expires_at) in list(DbusWrapper._setting_held.items()):
+                if expires_at <= now:
+                    del DbusWrapper._setting_held[name]
+                    continue
+                sections = [section for section in (settings.get(key) for key in DbusWrapper._SETTINGS_SECTIONS)
+                            if isinstance(section, dict) and name in section]
+                if all(section[name] == value for section in sections):
+                    # the daemon has caught up; nothing left to hold unless another change is on its way
+                    if sections and name not in DbusWrapper._setting_senders:
+                        del DbusWrapper._setting_held[name]
+                    continue
+                for section in sections:
+                    section[name] = copy.deepcopy(value)
+        return settings
 
     @staticmethod
     def change_setting_thread(name: str, value: int|bool|str):
         asyncio.run(DbusWrapper.change_setting_async(name, value))
 
     @staticmethod
-    async def change_setting_async(name: str, value: int|bool|str):
+    async def change_setting_async(name: str, value: int|bool|str) -> bool:
+        """Call SetSetting. True only when the daemon accepted the value."""
         dbus_bus = None
         try:
             dbus_bus = await MessageBus().connect()
-            await dbus_bus.call(Message(
+            reply = await dbus_bus.call(Message(
                 destination=DBUS_BUS_NAME,
                 path=DBUS_SETTINGS_OBJECT_PATH,
                 interface=DBUS_SETTINGS_INTERFACE_NAME,
@@ -209,8 +290,20 @@ class DbusWrapper(QObject):
                 signature='ss',
                 body=[name, json.dumps(value)],
             ))
+            if reply is None:
+                DbusWrapper.logger.error('SetSetting %s: no reply', name)
+                return False
+            if reply.message_type == MessageType.ERROR:
+                DbusWrapper.logger.error('SetSetting %s=%r failed: %s', name, value, reply.body)
+                return False
+            if reply.body and reply.body[0] is False:
+                DbusWrapper.logger.warning('SetSetting %s=%r: the daemon refused the value', name, value)
+                return False
+            DbusWrapper.logger.debug('SetSetting %s=%r accepted', name, value)
+            return True
         except Exception as e:
             DbusWrapper.logger.error('Error in change_setting: %s', e)
+            return False
         finally:
             if dbus_bus is not None:
                 dbus_bus.disconnect()
@@ -268,9 +361,10 @@ class DbusWrapper(QObject):
             DBUS_SETTINGS_OBJECT_PATH,
             DBUS_SETTINGS_INTERFACE_NAME,
             'GetSettings',
+            transform=self._overlay_held_settings,
         ))
 
-    async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str, member: str):
+    async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str, member: str, transform=None):
         while not hasattr(self, '_stopping'):
             dbus_bus = None
             try:
@@ -298,7 +392,10 @@ class DbusWrapper(QObject):
                     self.logger.error('Error getting settings: %s', reply.body)
                     self._record_failure()
                 else:
-                    sig.emit(json.loads(reply.body[0]) or {})
+                    payload = json.loads(reply.body[0]) or {}
+                    if transform is not None:
+                        payload = transform(payload)
+                    sig.emit(payload)
                     self._record_success()
             except asyncio.TimeoutError:
                 self.logger.warning(

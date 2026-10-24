@@ -21,7 +21,6 @@ instead of calling ``systemctl``/``dinitctl`` directly. This:
 All functions accept *logical* names. Use :func:`restart` to apply new configs.
 """
 
-import fcntl
 import logging
 import os
 import shutil
@@ -30,6 +29,8 @@ import time
 from pathlib import Path
 from typing import Literal
 
+from arctis_sound_manager.file_lock import lock_nb, runtime_dir, unlock
+from arctis_sound_manager.platform_guard import linux_only
 from arctis_sound_manager.init_system import detect_init
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ def _resolve(logical: str, init: Init) -> str | None:
     return entry.get(init)
 
 
+@linux_only(False)
 def manager_available() -> bool:
     """True if a usable service manager binary is present for the active init."""
     init = detect_init()
@@ -130,6 +132,7 @@ def _run(cmd: list[str], timeout: float | None, capture: bool) -> bool:
         return False
 
 
+@linux_only(None)
 def run_raw(cmd: list[str], timeout: float | None = 10.0) -> subprocess.CompletedProcess | None:
     """Run a literal init-manager command through this module's exception-safe,
     posix_spawn-safe plumbing (issue #123), for one-off/migration callers that
@@ -209,7 +212,7 @@ _GRAPH_REBUILDING = {
 # step (that only prevents killing it *mid-cycle*, not a second restart
 # landing moments after the first). This coalesces same-second requests down
 # to one restart, cross-process.
-_FC_RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
+_FC_RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or ("/tmp" if os.name != "nt" else str(runtime_dir())))
 _FC_LOCK_PATH = _FC_RUNTIME_DIR / "asm-filter-chain-restart.lock"
 _FC_STAMP_PATH = _FC_RUNTIME_DIR / "asm-filter-chain-restart.stamp"
 _FC_COALESCE_WINDOW_S = 0.3
@@ -243,7 +246,7 @@ def _should_restart_filter_chain_now() -> bool:
 
     try:
         try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_nb(lock_fd)
         except OSError:
             return False  # another restart is already in flight — absorbed
 
@@ -266,11 +269,12 @@ def _should_restart_filter_chain_now() -> bool:
         return True
     finally:
         try:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            unlock(lock_fd)
         finally:
             os.close(lock_fd)
 
 
+@linux_only(True)
 def restart(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
     """Restart services. Use this to (re)apply a new config — never ``start``,
     which is a no-op if the service is already running.
@@ -327,17 +331,20 @@ def restart(*services: str, timeout: float | None = None, capture: bool = False)
     return _action("restart", services, timeout, capture)
 
 
+@linux_only(True)
 def start(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
     """Start services (no-op if already running). For applying new config use
     :func:`restart` instead."""
     return _action("start", services, timeout, capture)
 
 
+@linux_only(True)
 def stop(*services: str, timeout: float | None = None, capture: bool = False) -> bool:
     """Stop services."""
     return _action("stop", services, timeout, capture)
 
 
+@linux_only(True)
 def enable(service: str, now: bool = False) -> bool:
     """Enable a service at boot/login. ``now=True`` also starts it (systemd)."""
     init = detect_init()
@@ -357,6 +364,7 @@ def enable(service: str, now: bool = False) -> bool:
     return ok
 
 
+@linux_only(True)
 def disable(service: str) -> bool:
     """Disable a service so it no longer starts at boot/login."""
     init = detect_init()
@@ -370,6 +378,7 @@ def disable(service: str) -> bool:
     return _run(["dinitctl", "disable", real], None, True)
 
 
+@linux_only(False)
 def is_active(service: str) -> bool:
     """True if the service is currently running."""
     init = detect_init()
@@ -394,6 +403,7 @@ def is_active(service: str) -> bool:
         return False
 
 
+@linux_only(False)
 def is_enabled(service: str) -> bool:
     """True if the service is enabled at boot/login."""
     init = detect_init()
@@ -417,6 +427,7 @@ def is_enabled(service: str) -> bool:
     return is_dinit_service_enabled(real)
 
 
+@linux_only(True)
 def daemon_reload() -> bool:
     """Reload unit files (systemd only; no-op on dinit)."""
     if detect_init() != "systemd" or shutil.which("systemctl") is None:
@@ -424,6 +435,7 @@ def daemon_reload() -> bool:
     return _run(["systemctl", "--user", "daemon-reload"], None, True)
 
 
+@linux_only(None)
 def nrestarts(service: str) -> int | None:
     """Return systemd's NRestarts counter for ``service`` (a crash-loop signal),
     or None when it can't be determined (non-systemd, missing binary, parse
@@ -447,6 +459,7 @@ def nrestarts(service: str) -> int | None:
     return None
 
 
+@linux_only(None)
 def restart_detached(*services: str, delay: float = 1.0) -> None:
     """Restart services from a detached child that outlives the caller.
 

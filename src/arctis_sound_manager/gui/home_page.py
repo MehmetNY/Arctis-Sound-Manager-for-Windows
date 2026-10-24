@@ -107,7 +107,7 @@ from arctis_sound_manager.gui.theme import (
 )
 
 from arctis_sound_manager.channel_volumes import save_channel_volume
-from arctis_sound_manager.constants import (PULSE_AUX_NODE_NAME,
+from arctis_sound_manager.constants import (IS_WINDOWS, PULSE_AUX_NODE_NAME,
                                             PULSE_CHAT_NODE_NAME,
                                             PULSE_GAME_NODE_NAME,
                                             PULSE_MEDIA_NODE_NAME)
@@ -2541,6 +2541,10 @@ class HomePage(QWidget):
     def _get_pulse(self):
         if self._pulse is not None:
             return self._pulse
+        if IS_WINDOWS:   # no PulseAudio server: the ASM audio engine answers for it (win/audio/winpulse.py)
+            from arctis_sound_manager.win.audio.winpulse import WinPulse
+            self._pulse = WinPulse()
+            return self._pulse
         try:
             import pulsectl  # type: ignore
             self._pulse = pulsectl.Pulse("arctis-manager-gui")
@@ -3038,6 +3042,8 @@ class HomePage(QWidget):
         False the previous result is reused. The caller repopulates the cards
         on every tick either way — only the graph scan is throttled (#182).
         """
+        if IS_WINDOWS:   # no PipeWire graph to scan; programs pick their output device in Windows itself
+            return {}
         if rescan:
             try:
                 self._native_cache = get_native_streams()
@@ -3616,6 +3622,8 @@ class HomePage(QWidget):
                      if name == fresh_sink.name),
                     None,
                 )
+                if node is None and IS_WINDOWS and getattr(fresh_sink, "channel", None) == "master":
+                    node = "Arctis_Master"       # the engine's headset level (win/audio/winpulse.py)
                 if node is not None:
                     save_channel_volume(node, value)
         except Exception as exc:
