@@ -220,6 +220,75 @@ def encode_elite_parametric_eq(bands: list[EqBand], name: str = "Custom",
     return [frame]
 
 
+# ── Ten-band EQ (Nova Elite / Pro Omni microphone and Bluetooth) ────────────
+#
+# ten_band_eq_mic (0x1D) and ten_band_eq_bt (0x1F) in base_arctis_nova_elite_tx
+# take one HIDFEATURE frame of 1036 bytes, like parametric_eq, but carry ten
+# plain gains instead of filters:
+#
+#   report_id, command, onboard slot, alias (6), name (61), 10 gains
+#
+# each gain one signed byte in tenths of a dB (transform_gains_ui_to_fw:
+# 0x88 = -12 dB ... 0x78 = +12 dB). The slot selects the preset; the spec has
+# no other select command for these two on this family.
+#
+# The presets are GG's own (engine database, device_game_eq_presets, GG 95):
+# what its UI lists for supported mode MICROPHONE (32) and BLUETOOTH (16), and
+# whose gains it sends with the slot. Only the gains go on the wire; GG's
+# frequencies are fixed by the firmware. GG's Smiley carries the same gains as
+# its Bass Boost; copied as is.
+
+TEN_BAND_GAIN_MIN_DB = -12.0
+TEN_BAND_GAIN_MAX_DB = 12.0
+
+
+@dataclass(frozen=True)
+class OnboardPreset:
+    slot: int
+    name: str
+    alias: str
+    gains_db: tuple[float, ...]
+
+
+_MIC_FLAT = (0.0,) * 10
+
+#: The slots ten_band_eq_mic maps names to (spec api ten_band_eq_mic). The
+#: Omni adds Walkie Talkie as slot 9; the Elite's spec stops at 8 (Custom).
+MIC_PRESETS = (
+    OnboardPreset(0, "Flat", "FLAT", _MIC_FLAT),
+    OnboardPreset(1, "Balanced", "BAL", (-12.0, 0.0, 0.0, -3.0, -2.0, 0.0, 2.0, 3.0, 1.0, 0.0)),
+    OnboardPreset(2, "Broadcast High Pitch", "BC HI", (-12.0, -12.0, -3.0, 6.0, 3.0, -2.5, 0.0, 3.0, 4.0, 4.0)),
+    OnboardPreset(3, "Broadcast Low Pitch", "BC LO", (-12.0, 2.0, 5.0, 2.0, -3.0, -2.0, 0.0, 3.0, 4.0, 4.0)),
+    OnboardPreset(4, "Clarity Low Pitch", "CT LO", (-12.0, -3.0, -2.5, 0.0, 0.0, 0.0, 3.0, 4.0, 4.0, 4.0)),
+    OnboardPreset(5, "Clarity High Pitch", "CT HI", (-12.0, -12.0, -4.0, -4.0, 0.0, 0.0, 3.0, 4.0, 4.0, 4.0)),
+    OnboardPreset(6, "Deep Voice", "DEEP", (-12.0, 4.0, 4.0, 3.0, 0.0, -3.0, -1.0, 0.0, 0.0, 0.0)),
+    OnboardPreset(7, "Less Nasal", "NASAL-", (-12.0, 0.0, 0.0, 0.0, -2.0, -4.0, -2.0, 2.0, 4.0, 0.0)),
+    OnboardPreset(9, "Walkie Talkie", "WKTK", (-12.0, -12.0, -12.0, -12.0, 5.0, 6.0, 6.0, 5.0, -12.0, -12.0)),
+)
+
+#: The slots ten_band_eq_bt maps names to (spec api ten_band_eq_bt).
+BLUETOOTH_PRESETS = (
+    OnboardPreset(0, "Flat", "FLAT", (0.0,) * 10),
+    OnboardPreset(1, "Bass Boost", "BASS", (3.0, 3.5, 1.5, -1.5, -4.0, -4.0, -2.5, 1.5, 3.0, 4.0)),
+    OnboardPreset(2, "Focus", "FOCUS", (-5.0, -3.5, -1.0, -3.5, -2.5, 4.0, 6.0, 3.5, -3.5, 0.0)),
+    OnboardPreset(3, "Smiley", "SMILEY", (3.0, 3.5, 1.5, -1.5, -4.0, -4.0, -2.5, 1.5, 3.0, 4.0)),
+)
+
+ONBOARD_PRESETS = {"microphone": MIC_PRESETS, "bluetooth": BLUETOOTH_PRESETS}
+
+
+def encode_ten_band_eq(command: int, preset: OnboardPreset,
+                       report_id: int = 0x01) -> list[int]:
+    """The frame ten_band_eq_mic / ten_band_eq_bt send for *preset*."""
+    frame = [report_id, command, preset.slot]
+    frame += _fixed_ascii(preset.alias, _ELITE_ALIAS_LENGTH)
+    frame += _fixed_ascii(preset.name, _ELITE_NAME_LENGTH)
+    for gain in preset.gains_db:
+        gain = min(max(gain, TEN_BAND_GAIN_MIN_DB), TEN_BAND_GAIN_MAX_DB)
+        frame.append(round(gain * 10) & 0xFF)
+    return frame
+
+
 #: Encoders a device profile can name in `hardware_eq.format`.
 ENCODERS = {
     "parametric": encode_parametric_eq,

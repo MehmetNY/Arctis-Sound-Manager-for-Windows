@@ -3440,18 +3440,17 @@ class CoreEngine:
             for b in seq
             if isinstance(b, str) and b.startswith('settings.')
         }
-        endpoint = self.get_command_endpoint_address()
         for section in self.device_config.settings.keys():
             for config in self.device_config.settings[section]:
                 if config.name in covered:
                     continue
-                if not config.update_sequence:
+                if not config.update_sequence and getattr(config, 'ten_band_eq', None) is None:
                     continue
                 if not self.device_settings.was_chosen_by_user(config.name):
                     continue
                 value = self.device_settings.get(config.name, 0)
                 try:
-                    self.send_command(self._resolve_update_sequence(config, value), endpoint)
+                    self._send_setting(config, value)
                 except Exception as e:  # noqa: BLE001 — one bad setting must not stop the others
                     self.logger.warning(
                         "Could not replay %s=%s after power-on: %r", config.name, value, e)
@@ -4205,10 +4204,33 @@ class CoreEngine:
             self.logger.warning(f'Unknown setting: {setting}')
             return
 
+        self._send_setting(config, value)
+
+    def _send_setting(self, config, value: int) -> bool:
+        """Write one setting the way its profile entry says: a plain command
+        built from update_sequence, or a ten-band EQ preset frame."""
+        if (ten_band := getattr(config, 'ten_band_eq', None)) is not None:
+            return self._send_ten_band_preset(config.name, ten_band, value)
         endpoint = self.get_command_endpoint_address()
         seq = self._resolve_update_sequence(config, value)
-        self.logger.info(f'send_command: {setting}={value} → {[hex(b) for b in seq]} on endpoint {endpoint}')
-        self.send_command(seq, endpoint)
+        self.logger.info(f'send_command: {config.name}={value} → {[hex(b) for b in seq]} on endpoint {endpoint}')
+        return self.send_command(seq, endpoint)
+
+    def _send_ten_band_preset(self, name: str, ten_band: dict, value: int) -> bool:
+        """Select an onboard microphone or Bluetooth EQ preset (Nova Elite /
+        Pro Omni). The firmware has no select command for these: GG writes
+        ten_band_eq_mic (0x1D) / ten_band_eq_bt (0x1F) with the preset's slot,
+        name and gains, and so does this."""
+        from arctis_sound_manager.hardware_eq import ONBOARD_PRESETS, encode_ten_band_eq
+
+        preset = next((p for p in ONBOARD_PRESETS[ten_band['presets']] if p.slot == value), None)
+        if preset is None:
+            self.logger.warning('%s: no onboard preset in slot %s', name, value)
+            return False
+        frame = encode_ten_band_eq(int(ten_band['command']), preset,
+                                   int(ten_band.get('report_id', 0x01)))
+        self.logger.info('send_feature_report: %s=%s (%s)', name, value, preset.name)
+        return self.send_feature_report(frame, int(ten_band.get('size', 1036)))
 
     def _resolve_update_sequence(self, config, value: int) -> list[int]:
         result = []

@@ -167,7 +167,7 @@ The SteelSeries GG and Sonar alternative for Linux: manage your **SteelSeries Ar
 - **Device status** — battery (and the base station's spare battery), mic mute, sidetone, and more
 - **Headset settings on the Headset page** — sidetone, mic volume, volume limiter, sleep timer, ANC and the rest of what your model supports, one card per group, next to the live status
 - **Several headsets** — choose which Arctis ASM drives from the Headset page
-- **Base station settings** _(Nova Elite, Nova Pro Omni)_ — line out (speaker or stream, with the stream mix volumes), on-ear mic sidetone, screensaver and its timeout, home screen view and options
+- **Base station settings** _(Nova Elite, Nova Pro Omni)_ — line out (speaker or stream, with the stream mix volumes), on-ear mic sidetone, screensaver and its timeout, home screen view and options, the microphone and Bluetooth EQ presets; ASM reads them from the base at start instead of resetting them
 - **DAC OLED display** _(Nova Pro Wireless / X, Nova Elite, Nova Pro Omni, Arctis Pro GameDAC, Arctis Pro Wireless base)_:
   - Toggle original vs custom display mode
   - Brightness, screen timeout, scroll speed

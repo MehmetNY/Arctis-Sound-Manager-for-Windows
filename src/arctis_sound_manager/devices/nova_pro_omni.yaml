@@ -306,6 +306,8 @@ device:
         line_out_stream_main_left_volume: 0x9b   # stream_main
         line_out_stream_aux_volume: 0x9d
         mic_noise_reduction: [0xa4, 0xa5]  # setting, boom level
+        equalizer_mic: 0x95            # microphone_selected_eq_preset
+        equalizer_bluetooth: 0x96      # bluetooth_selected_eq_preset
 
   # Read-only queries for `asm-cli tools probe` (generated from the
   # spec by gg_draft.py): their raw replies check a spec layout
@@ -377,6 +379,20 @@ device:
           on_label: limited
         default: 0x00 # unlimited — what GG deploys
         update_sequence: [0x01, 0x27, 'value']
+    equalizer:
+      equalizer_bluetooth:
+        # ten_band_eq_bt (0x1F), inherited unchanged from the Elite: the
+        # whole preset goes out, as GG sends it (hardware_eq.BLUETOOTH_PRESETS).
+        type: button_group
+        default: 0x00
+        ten_band_eq:
+          command: 0x1f
+          presets: bluetooth
+        values_mapping:
+          0x00: Flat
+          0x01: bass_boost
+          0x02: Focus
+          0x03: Smiley
     microphone:
       mic_volume:
         type: slider
@@ -387,6 +403,25 @@ device:
         max_label: perc_100
         default: 0x0a # 100%
         update_sequence: [0x01, 0x37, 'value']
+      equalizer_mic:
+        # ten_band_eq_mic (0x1D), redefined by the Omni's own spec to add
+        # Walkie Talkie in slot 9. No select command: GG writes the whole
+        # preset (slot, name, gains) — see hardware_eq.MIC_PRESETS.
+        type: button_group
+        default: 0x00
+        ten_band_eq:
+          command: 0x1d
+          presets: microphone
+        values_mapping:
+          0x00: flat
+          0x01: balanced
+          0x02: broadcast_high_pitch
+          0x03: broadcast_low_pitch
+          0x04: clarity_low_pitch
+          0x05: clarity_high_pitch
+          0x06: deep_voice
+          0x07: less_nasal
+          0x09: walkie_talkie
       mic_side_tone:
         # boom_mic_sidetone (0x38): byte 2 = state (0/1), byte 3 = level 1-10.
         # The slider spans 0-10: 0 writes state=0 (a true off, #161 — before
@@ -573,6 +608,27 @@ device:
           0x02: meters
 
   status_parse:
+    equalizer_bluetooth:
+      type: int_str_mapping
+      values:
+        0x00: flat
+        0x01: bass_boost
+        0x02: focus
+        0x03: smiley
+        0x04: custom
+    equalizer_mic:
+      type: int_str_mapping
+      values:
+        0x00: flat
+        0x01: balanced
+        0x02: broadcast_high_pitch
+        0x03: broadcast_low_pitch
+        0x04: clarity_low_pitch
+        0x05: clarity_high_pitch
+        0x06: deep_voice
+        0x07: less_nasal
+        0x08: custom
+        0x09: walkie_talkie
     station_volume:
       type: percentage
       perc_min: 56

@@ -33,8 +33,10 @@ something provides it.
 
 - **Headset settings** — sidetone, active noise cancelling and transparency,
   inactivity timeout, microphone volume, battery (and the spare battery in the
-  base, or the GameBuds charging case), spoken over the headset's own USB
-  protocol.
+  base, or the GameBuds charging case), the Nova Elite and Pro Omni's
+  microphone and Bluetooth EQ presets, spoken over the headset's own USB
+  protocol. On the Elite and Omni, ASM reads the base's settings at start
+  and leaves alone the ones you never changed in ASM.
 - **The base station's OLED screen** — the EQ of what is playing, the
   now-playing track, and screen-off while you are away.
 - **Game / Chat / Media / Aux / Output channels** as real PipeWire devices, with

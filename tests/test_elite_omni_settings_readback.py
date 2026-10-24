@@ -66,6 +66,7 @@ def test_every_reply_is_adopted(monkeypatch):
         "line_out_stream_main_left_volume": 100, "line_out_stream_aux_volume": 100,
         "mic_side_tone": 0,        # state off: the level byte (1) is not the value
         "mic_noise_reduction": 1,  # on, boom level 1
+        "equalizer_mic": 0, "equalizer_bluetooth": 0,
     }
 
 

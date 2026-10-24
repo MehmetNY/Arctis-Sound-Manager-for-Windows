@@ -446,15 +446,19 @@ device:
           0x03: Smiley
           0x04: Custom
       equalizer_bluetooth:
+        # ten_band_eq_bt (0x1F): the spec has no select command, GG writes the
+        # whole preset (slot, name, gains) — see hardware_eq.BLUETOOTH_PRESETS.
+        # The 0x2F this used to send is in no SteelSeries spec for this family.
         type: button_group
         default: 0x00
-        update_sequence: [0x01, 0x2f, 'value']
+        ten_band_eq:
+          command: 0x1f
+          presets: bluetooth
         values_mapping:
           0x00: Flat
           0x01: bass_boost
           0x02: Focus
           0x03: Smiley
-          0x04: Custom
     microphone:
       mic_volume:
         type: slider
@@ -466,9 +470,14 @@ device:
         default: 0x0a
         update_sequence: [0x01, 0x37, 'value']
       equalizer_mic:
+        # ten_band_eq_mic (0x1D), as equalizer_bluetooth above; the 0x2E this
+        # used to send is the Nova Pro's, not this family's. GG's presets, in
+        # the slots the spec maps their names to (hardware_eq.MIC_PRESETS).
         type: button_group
         default: 0x00
-        update_sequence: [0x01, 0x2e, 'value']
+        ten_band_eq:
+          command: 0x1d
+          presets: microphone
         values_mapping:
           0x00: flat
           0x01: balanced
@@ -478,7 +487,6 @@ device:
           0x05: clarity_high_pitch
           0x06: deep_voice
           0x07: less_nasal
-          0x08: custom
       mic_sidetone_boom:
         # Byte 2 is the on/off state and byte 3 the level 1-10, exactly as on
         # the Nova Pro Omni (#161). The state byte used to be hardcoded to 1
@@ -521,15 +529,6 @@ device:
         default: 0x0a
         update_sequence: [0x01, 0xbf, 'value']
     station:
-      station_volume:
-        type: slider
-        min: 0x00
-        max: 0x38
-        step: 1
-        min_label: perc_100
-        max_label: perc_0
-        default: 0x1c
-        update_sequence: [0x01, 0x25, 'value']
       line_out:
         type: button_group
         default: 0x01
@@ -637,15 +636,6 @@ device:
           0x01: preset
           0x02: meters
     connectivity:
-      wireless_mode:
-        type: toggle
-        values:
-          off: 0x00
-          on: 0x01
-          off_label: speed
-          on_label: range
-        default: 0x00
-        update_sequence: [0x01, 0xc3, 'value']
       bluetooth_default:
         type: toggle
         values:
