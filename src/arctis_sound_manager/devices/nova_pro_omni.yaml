@@ -269,6 +269,44 @@ device:
     frame_report_size: 1036
     min_brightness: 1
 
+  # What the base station already has, read before device_init pushes
+  # anything: only settings the user never chose here take these values
+  # (see core._absorb_settings_readback). Offsets from the spec
+  # (base_arctis_nova_elite_tx wireless_settings and ux_settings, the Omni's
+  # own audio_settings) and checked against an Omni probe (#331): the radio
+  # EQ slot read 4, the Custom slot read_radio_eq_settings returned too.
+  settings_readback:
+    - request: 0x01b0              # wireless_settings
+      starts_with: 0x01b0
+      mapping:
+        bluetooth_power_status: 0x02   # bt_power_default
+        bluetooth_auto_mute: 0x03      # bt_call_default
+        transparent_level: 0x08
+        noise_cancelling: 0x0a         # transparent_anc_mode
+        mic_led_brightness: 0x0b       # muted_mic_brightness
+        pm_shutdown: 0x0c              # inactivity_timer, 0-6 as written
+        anc_level: 0x10
+    - request: 0x0180              # ux_settings
+      starts_with: 0x0180
+      mapping:
+        station_screen_saver_timeout: 0x02
+        station_home_screen_view: 0x05
+        station_screensaver: 0x0a
+        station_home_screen_options: 0x0b
+    - request: [0x01, 0x20]        # audio_settings, a feature report
+      reply: feature
+      report_id: 0x01
+      size: 1036
+      starts_with: 0x20
+      mapping:
+        volume_limiter: 0x8f
+        mic_volume: 0x91
+        mic_side_tone: [0xa9, 0x92]    # boom_sidetone_state, boom_sidetone_level
+        line_out: 0x93
+        line_out_stream_main_left_volume: 0x9b   # stream_main
+        line_out_stream_aux_volume: 0x9d
+        mic_noise_reduction: [0xa4, 0xa5]  # setting, boom level
+
   # Read-only queries for `asm-cli tools probe` (generated from the
   # spec by gg_draft.py): their raw replies check a spec layout
   # on real hardware in one pass. Constants only — nothing is set.

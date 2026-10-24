@@ -60,22 +60,47 @@ class SettingsReadback:
     status response_mapping. Both read like a status `starts_with`: as many
     bytes as the hex value has, so a family whose frames carry the report id
     writes `0x0620` (report id 0x06, opcode 0x20) and indexes from it.
+
+    A setting ASM writes as a state byte and a level byte (a sidetone that
+    can be off, #161) maps to `[state_offset, level_offset]`: the level when
+    the state is on, 0 when it is off — the value its slider stores.
+
+    `reply: feature` is for families that answer with a feature report
+    (GG's HIDOUTPUTFEATUREIN, the Nova Elite and Omni): the request goes out
+    as usual, the answer is read with GET_REPORT `report_id`, `size` bytes,
+    and `starts_with` is matched against what that returns.
     """
 
     def __init__(self, request: int | list[int], starts_with: int,
-                 mapping: dict[str, int]):
+                 mapping: dict[str, int | list[int]], reply: str = 'frame',
+                 report_id: int | None = None, size: int | None = None):
         self.request = (_hex_bytes(int(request)) if isinstance(request, int)
                         else [int(b) for b in request])
         self.starts_with = int(starts_with)
         self.prefix = _hex_bytes(self.starts_with)
-        self.mapping = {str(k): int(v) for k, v in mapping.items()}
+        self.mapping = {str(k): ([int(o) for o in v] if isinstance(v, list) else int(v))
+                        for k, v in mapping.items()}
+        if reply not in ('frame', 'feature'):
+            raise ValueError(f"settings_readback reply must be 'frame' or 'feature', not {reply!r}")
+        if reply == 'feature' and (report_id is None or size is None):
+            raise ValueError("settings_readback with reply: feature needs report_id and size")
+        self.feature = reply == 'feature'
+        self.report_id = int(report_id) if report_id is not None else None
+        self.size = int(size) if size is not None else None
 
     def matches(self, response: list[int]) -> bool:
         return list(response[:len(self.prefix)]) == self.prefix
 
     def values_from(self, response: list[int]) -> dict[str, int]:
-        return {name: response[offset] for name, offset in self.mapping.items()
-                if offset < len(response)}
+        values = {}
+        for name, offset in self.mapping.items():
+            if isinstance(offset, list):
+                state, level = offset
+                if max(state, level) < len(response):
+                    values[name] = response[level] if response[state] else 0
+            elif offset < len(response):
+                values[name] = response[offset]
+        return values
 
 
 class HardwareEqReadback:

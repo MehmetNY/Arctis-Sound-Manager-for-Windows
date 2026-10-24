@@ -4601,13 +4601,26 @@ class CoreEngine:
         endpoint = self.get_command_endpoint_address()
         self._readback_pending = set(range(len(self.device_config.settings_readback)))
         self._readback_done.clear()
-        for readback in self.device_config.settings_readback:
+        for index, readback in enumerate(self.device_config.settings_readback):
             try:
                 self.send_command(list(readback.request), endpoint)
             except usb.core.USBError as e:
                 # Not worth a retry: the settings simply stay at their defaults.
                 self.logger.warning("Settings readback %s failed: %r",
                                     bytes(readback.request).hex(' '), e)
+                continue
+            if readback.feature:
+                # The answer is not a frame on the listen loop: fetch it. The
+                # same pause as the hardware EQ's feature readback, for the
+                # firmware to fill the report in.
+                time.sleep(0.2)
+                reply = self.get_feature_report(readback.report_id, readback.size)
+                if reply is not None:
+                    self._absorb_settings_readback(reply)
+                # Answered or not, nothing more will come for this one.
+                self._readback_pending.discard(index)
+        if not self._readback_pending:
+            self._readback_done.set()
         return self._readback_done
 
     def _absorb_settings_readback(self, response: list[int]) -> None:

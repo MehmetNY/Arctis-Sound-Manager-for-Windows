@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Nova Elite and Nova Pro Omni: ASM reads the base station's settings before changing any** (#331). Every start used to push ASM's defaults over what the base already had: sidetone, microphone volume, noise cancelling, auto-off, line out and stream mix, screen saver and home screen, Bluetooth preferences. A setting you never changed in ASM now keeps the value the base holds, set in GG on a dual-boot or on the base itself. Thanks @FrDrebin and @PointyKite, whose probes gave the layout.
+
 ### Fixed
 - **Arctis 9 Wireless: battery, ChatMix and on/off are read again, and "Shutdown after" means minutes** (#331). The headset's status reply does not start with the command that asked for it, so ASM never recognised it. And the shutdown delay went out as seconds: "90 minutes" switched the headset off after 90 seconds. Thanks @globeFrEak for the probe that showed both.
 - **The sidebar fits short windows instead of overlapping.** Its seven buttons and the logo need about 990px; in a shorter window the fixed-height buttons ran into each other and the ASM logo was cut off. The buttons and their icons now shrink with the window until the column fits, and stay full size when there is room.
