@@ -1,0 +1,65 @@
+name: Upstream watcher
+
+# upstream-watch.yaml
+#
+# Check the projects ASM depends on or competes with (kernel HID and USB
+# audio drivers, PipeWire, WirePlumber, libusb, the Python dependencies,
+# distrobox, HeadsetControl and the other Arctis tools) and open one issue
+# per run listing what changed. The list of sources and why each one
+# matters is in scripts/upstream-watch.py.
+#
+# State (last version or commit seen per source) is committed to main,
+# like gg-watch's; the back-merge workflow carries it to develop.
+#
+# Trigger model:
+#   - schedule: daily at 07:41 UTC. A run with nothing new takes seconds.
+#   - workflow_dispatch: manual run, optionally as a dry run
+
+on:
+  schedule:
+    - cron: '41 7 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print the issue, do not open it or write the state'
+        type: boolean
+        default: false
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Off main, a run is always a dry run: the state belongs on main.
+      - name: Run the watcher
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/upstream-watch.py \
+            ${{ (inputs.dry_run == true || github.ref_name != 'main') && '--dry-run' || '' }}
+
+      - name: Commit the state
+        if: github.ref_name == 'main' && inputs.dry_run != true
+        run: |
+          git add .github/upstream-watch-state.json
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: upstream-watch state [skip ci]"
+          git push
