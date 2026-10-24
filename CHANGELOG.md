@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The sidebar fits short windows instead of overlapping.** Its seven buttons and the logo need about 990px; in a shorter window the fixed-height buttons ran into each other and the ASM logo was cut off. The buttons and their icons now shrink with the window until the column fits, and stay full size when there is room.
+
 ## [1.6.4] - 23 October 2026
 
 ### Fixed

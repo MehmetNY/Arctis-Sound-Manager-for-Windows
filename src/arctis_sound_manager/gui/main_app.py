@@ -7,7 +7,7 @@ Main application window — ArctisSonar GUI visual style.
 """
 import logging
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Slot
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Slot
 from pathlib import Path
 
 from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPixmap
@@ -84,6 +84,49 @@ PAGE_THEME_EDITOR = 7
 #: top_pages_def in _build_window.
 _SIDEBAR_ICON_SIZE = 44
 _SIDEBAR_HELP_ICON_SIZE = 30
+
+#: How far the sidebar buttons may shrink when the window is short. Below
+#: this the label no longer fits under the icon, so the column overlaps.
+_SIDEBAR_MIN_SCALE = 0.55
+
+
+class _Sidebar(QWidget):
+    """The sidebar column, fitting its buttons to the window's height.
+
+    Seven full-size buttons and the bottom block need about 990px. A shorter
+    window used to make the fixed-height buttons overlap and clip the ASM
+    logo; now they shrink, icon included, until the column fits.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.buttons: list[SidebarButton] = []
+        self.bottom: QWidget | None = None
+
+    def minimumSizeHint(self) -> QSize:
+        # The fixed-height buttons would otherwise make the full column the
+        # minimum, and the window could never hand the sidebar less room for
+        # it to shrink into.
+        return QSize(super().minimumSizeHint().width(), 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_buttons()
+
+    def fit_buttons(self) -> None:
+        layout = self.layout()
+        if not self.buttons or self.bottom is None or layout is None:
+            return
+        top, bottom = layout.contentsMargins().top(), layout.contentsMargins().bottom()
+        # A hidden button (DAC without a DAC) takes no room and no gap.
+        shown = [b for b in self.buttons if not b.isHidden()]
+        # Gaps between the buttons, the stretch and the bottom block.
+        gaps = layout.spacing() * (len(shown) + 1)
+        room = self.height() - top - bottom - gaps - self.bottom.sizeHint().height()
+        full = sum(b.full_height() for b in shown) or 1
+        factor = max(_SIDEBAR_MIN_SCALE, min(1.0, room / full))
+        for b in self.buttons:
+            b.set_scale(factor)
 
 
 class QMainApp(QBaseDesktopApp):
@@ -249,7 +292,7 @@ class QMainApp(QBaseDesktopApp):
         root_layout.setSpacing(0)
 
         # ── Sidebar ───────────────────────────────────────────────────────────
-        sidebar = QWidget()
+        sidebar = _Sidebar()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(150)
         sidebar_layout = QVBoxLayout(sidebar)
@@ -354,6 +397,9 @@ class QMainApp(QBaseDesktopApp):
         _bottom_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         sidebar_layout.addWidget(_bottom)
+        sidebar.buttons = self._sidebar_buttons
+        self._sidebar = sidebar
+        sidebar.bottom = _bottom
 
         root_layout.addWidget(sidebar)
 
@@ -589,6 +635,7 @@ class QMainApp(QBaseDesktopApp):
         self.settings = settings
         has_dac = settings.get('has_dac', False)
         self._sidebar_buttons[PAGE_DAC].setVisible(has_dac)
+        self._sidebar.fit_buttons()
         if not has_dac and self._stack.currentIndex() == PAGE_DAC:
             self._switch_page(PAGE_HOME)
 

@@ -154,6 +154,7 @@ class SidebarButton(QPushButton):
         layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
+        self._full_icon_size = icon_size
         self._icon_size = icon_size
         self._icon_widget = SvgIconWidget(svg_path, icon_color_inactive, size=self._icon_size)
         layout.addWidget(self._icon_widget, alignment=Qt.AlignmentFlag.AlignHCenter)
@@ -180,6 +181,27 @@ class SidebarButton(QPushButton):
             f"QPushButton#sidebarBtn {{ background: {self._bg_active}; color: {self._text_primary}; "
             f"border: none; border-radius: 16px; font-size: 10pt; text-align: center; padding: 0; }}"
         )
+
+    def full_height(self) -> int:
+        """The button's height at its full icon size."""
+        return _DEFAULT_BUTTON_HEIGHT - (_DEFAULT_ICON_SIZE - self._full_icon_size)
+
+    def set_scale(self, factor: float) -> None:
+        """Shrink the button and its icon to *factor* of their full size.
+
+        The label keeps its font: it is what the user reads, the icon is what
+        can give up room when the window is not tall enough for the column.
+        """
+        icon = max(1, round(self._full_icon_size * factor))
+        height = round(self.full_height() * factor)
+        if icon == self._icon_size and height == self.height():
+            return
+        margin = round(10 * factor)
+        self.layout().setContentsMargins(8, margin, 8, margin)
+        self.setFixedSize(120, height)
+        self._icon_size = icon
+        self._icon_widget.setFixedSize(icon, icon)
+        self.set_active(self._active)
 
     def update_colors(self, theme: dict) -> None:
         self._color_inactive = theme["TEXT_SECONDARY"]
