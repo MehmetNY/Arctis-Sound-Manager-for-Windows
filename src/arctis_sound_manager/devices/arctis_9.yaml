@@ -45,7 +45,8 @@ device:
   # mic_mute, mic_gain, sidetone_enabled, sidetone_gain, chat_gain,
   # game_gain, mode. A probe (#331) read `aa 03 01 9c … e8`, sidetone
   # included, so the offsets hold; `starts_with: 0x20` never matched it.
-  # The battery reads the voltage's low byte: 0x164-0x19a is 3.56-4.10 V.
+  # The battery reads the voltage's low byte over 0x64-0x9a, the range the
+  # mainline driver and HeadsetControl use.
   status:
     request: 0x0020
     response_mapping:
@@ -118,14 +119,16 @@ device:
         update_sequence: [0x04, 0x00, 'value.minutes_as_seconds_hi', 'value.minutes_as_seconds_lo']
 
   status_parse:
-    # rf_status: the probe read 0x03 with the headset on; GG treats 0x01
-    # as connected. Anything else (0x00 expected) is offline.
+    # rf_status: 0x01 is connected. The mainline driver (hid-steelseries-
+    # arctis, from HeadsetControl's hardware work) reads 0x03 as a stale
+    # status left by a headset that is off, and the probe's 0x03 frame
+    # carried an out-of-range battery (0x9c > 0x9a) to match.
     headset_power_status:
       type: int_str_mapping
       values:
         0x00: 'off'
         0x01: 'on'
-        0x03: 'on'
+        0x03: 'off'
     headset_battery_charge:
       type: percentage
       perc_min: 100

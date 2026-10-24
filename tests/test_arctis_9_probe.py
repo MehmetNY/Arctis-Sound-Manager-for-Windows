@@ -19,8 +19,11 @@ from tests.test_status_untagged_replies import DEVICES_DIR, _make_engine, _read,
 
 _yaml = YAML(typ="safe")
 
-# The info_table reply from the probe, headset on.
-_INFO_TABLE = [0xaa, 0x03, 0x01, 0x9c, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x00, 0x00, 0x00]
+# The info_table reply from the probe: rf_status 0x03, a stale status.
+_PROBE = [0xaa, 0x03, 0x01, 0x9c, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x00, 0x00, 0x00]
+# The same with the headset connected (rf_status 0x01), as the mainline
+# driver reads it.
+_INFO_TABLE = [0xaa, 0x01] + _PROBE[2:]
 
 
 def _arctis_9() -> DeviceConfiguration:
@@ -35,14 +38,14 @@ def test_the_info_table_reply_is_read():
 
     parsed = parsed_status(engine.device_status, engine.device_config)
     assert parsed["headset_power_status"] == "on"
-    assert parsed["headset_battery_charge"] == 100  # 4.12 V
+    assert parsed["headset_battery_charge"] == 100  # 0x9c, past 0x9a
 
 
-def test_headset_off_is_offline():
+def test_a_stale_status_is_offline():
     engine = _make_engine(_arctis_9())
 
     _send(engine, 0x20)
-    _read(engine, [0xaa, 0x00] + _INFO_TABLE[2:])
+    _read(engine, _PROBE)
 
     parsed = parsed_status(engine.device_status, engine.device_config)
     assert parsed["headset_power_status"] == "off"
