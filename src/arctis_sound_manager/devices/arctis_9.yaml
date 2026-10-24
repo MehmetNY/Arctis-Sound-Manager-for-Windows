@@ -37,17 +37,21 @@ device:
   device_init:
     - ['status.request']
     - [0x06, 0x00, 'settings.mic_side_tone']
-    - [0x04, 0x00, 0x00, 'settings.pm_shutdown']
+    - [0x04, 0x00, 'settings.pm_shutdown.minutes_as_seconds_hi', 'settings.pm_shutdown.minutes_as_seconds_lo']
     - [0x90, 0x00]  # save
 
-  # NOTE: starts_with matching for responses starting with 0x00 is unreliable
-  # (the matcher strips leading zeros). Battery/status display needs hardware verification.
+  # info_table (spec arctis-9-tx): the reply does not echo 0x20, it starts
+  # with `ready` — ready, rf_status, battery voltage hi/lo, bat_status,
+  # mic_mute, mic_gain, sidetone_enabled, sidetone_gain, chat_gain,
+  # game_gain, mode. A probe (#331) read `aa 03 01 9c … e8`, sidetone
+  # included, so the offsets hold; `starts_with: 0x20` never matched it.
+  # The battery reads the voltage's low byte: 0x164-0x19a is 3.56-4.10 V.
   status:
     request: 0x0020
     response_mapping:
-      - starts_with: 0x0020
+      - reply_to: 0x0020
         headset_battery_charge: 0x03
-        headset_power_status: 0x04
+        headset_power_status: 0x01
         chat_mix: 0x09
         media_mix: 0x0a
 
@@ -98,10 +102,9 @@ device:
         default: 0xc0
         update_sequence: [0x06, 0x00, 'value']
     power_management:
-      # Value sent to device in seconds (hi byte, lo byte).
-      # These update_sequence entries send 0x04, 0x00, hi=0, lo=minutes-as-seconds.
-      # WARNING: minutes*60 split into 2 bytes not handled here — needs code support.
-      # For now, expose raw minute values (0–90); the device clips at 255 seconds.
+      # Chosen in minutes; the firmware takes seconds, big-endian on two
+      # bytes (spec inactivity_timer). Sending the minutes as is turned
+      # "90 minutes" into 90 seconds (#331).
       pm_shutdown:
         type: button_group
         values_mapping:
@@ -112,13 +115,17 @@ device:
           0x3c: 60_minutes
           0x5a: 90_minutes
         default: 0x1e
-        update_sequence: [0x04, 0x00, 0x00, 'value']
+        update_sequence: [0x04, 0x00, 'value.minutes_as_seconds_hi', 'value.minutes_as_seconds_lo']
 
   status_parse:
+    # rf_status: the probe read 0x03 with the headset on; GG treats 0x01
+    # as connected. Anything else (0x00 expected) is offline.
     headset_power_status:
-      type: on_off
-      off: 0x00
-      on: 0x01
+      type: int_str_mapping
+      values:
+        0x00: 'off'
+        0x01: 'on'
+        0x03: 'on'
     headset_battery_charge:
       type: percentage
       perc_min: 100

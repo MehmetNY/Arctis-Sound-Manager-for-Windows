@@ -128,6 +128,10 @@ _USB_PERMISSION_WATCH_INTERVAL = 30.0
 _DERIVED_TOKENS = {
     'value.enabled': lambda value: 0 if value == 0 else 1,
     'value.at_least_1': lambda value: max(1, value),
+    # A delay chosen in minutes that the firmware takes as big-endian
+    # seconds on two bytes (Arctis 9 inactivity_timer, #331).
+    'value.minutes_as_seconds_hi': lambda value: (value * 60) >> 8 & 0xff,
+    'value.minutes_as_seconds_lo': lambda value: (value * 60) & 0xff,
 }
 
 
