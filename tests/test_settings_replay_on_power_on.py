@@ -48,6 +48,7 @@ def _make_engine(cfg: DeviceConfiguration, ds: DeviceSettings) -> MagicMock:
     engine.translate_init_bytes = lambda b: CoreEngine.translate_init_bytes(engine, b)
     engine._setting_default = lambda name: CoreEngine._setting_default(engine, name)
     engine._resolve_update_sequence = lambda c, v: CoreEngine._resolve_update_sequence(engine, c, v)
+    engine._send_setting = lambda c, v: CoreEngine._send_setting(engine, c, v)
     engine._send_device_init_sequence = lambda context="init_device": \
         CoreEngine._send_device_init_sequence(engine, context)
     engine._replay_settings_missing_from_init = lambda: \
