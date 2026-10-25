@@ -41,6 +41,8 @@ LOG_NAME = "asm-audio-engine.log"
 def setup_logging(config_dir: Path, verbose: bool = False, console: bool = True) -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
+    for noisy in ("numba", "llvmlite", "PIL", "asyncio"):             # -v is for our own code; numba's compiler logs thousands of lines
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S")
     try:
         config_dir.mkdir(parents=True, exist_ok=True)
