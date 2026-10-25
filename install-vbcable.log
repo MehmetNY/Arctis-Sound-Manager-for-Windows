@@ -1,0 +1,131 @@
+
+===== os
+
+Caption     : Microsoft Windows Server 2022 Datacenter
+BuildNumber : 20348
+Version     : 10.0.20348
+
+===== secure boot
+False
+
+===== bcdedit current
+
+Windows Boot Loader
+-------------------
+identifier              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows Server
+locale                  en-US
+inherit                 {bootloadersettings}
+recoveryenabled         No
+testsigning             Yes
+isolatedcontext         Yes
+allowedinmemorysettings 0x15000075
+osdevice                partition=C:
+systemroot              \Windows
+resumeobject            {683347ca-c6ca-11f1-b839-00224846f572}
+nx                      OptOut
+bootstatuspolicy        IgnoreAllFailures
+hypervisorlaunchtype    Auto
+hypervisorschedulertype Root
+ems                     Yes
+
+===== audio services
+
+Name                  Status StartType
+----                  ------ ---------
+AudioEndpointBuilder Stopped    Manual
+Audiosrv             Stopped    Manual
+
+===== start audio service
+
+Name      Status
+----      ------
+Audiosrv Running
+
+===== pip sounddevice
+
+
+===== sound devices (before)
+
+
+===== download
+downloaded VBCABLE_Driver_Pack45.zip
+1318877  \pack.zip
+7358  \x\pin_in.ico
+7358  \x\pin_out.ico
+3846  \x\readme.txt
+8868  \x\vbaudio_cable_2003.cat
+34024  \x\vbaudio_cable_2003.sys
+8872  \x\vbaudio_cable_vista.cat
+34024  \x\vbaudio_cable_vista.sys
+8868  \x\vbaudio_cable_win7.cat
+34024  \x\vbaudio_cable_win7.sys
+8860  \x\vbaudio_cable_xp.cat
+34024  \x\vbaudio_cable_xp.sys
+8876  \x\vbaudio_cable64_2003.cat
+41192  \x\vbaudio_cable64_2003.sys
+8880  \x\vbaudio_cable64_vista.cat
+41192  \x\vbaudio_cable64_vista.sys
+12862  \x\vbaudio_cable64_win10.cat
+140760  \x\vbaudio_cable64_win10.sys
+8876  \x\vbaudio_cable64_win7.cat
+41192  \x\vbaudio_cable64_win7.sys
+149976  \x\vbaudio_cable64arm_win10.sys
+930048  \x\VBCABLE_ControlPanel.exe
+937728  \x\VBCABLE_Setup_x64.exe
+914176  \x\VBCABLE_Setup.exe
+4586  \x\vbMmeCable_2003.inf
+4142  \x\vbMmeCable_vista.inf
+4138  \x\vbMmeCable_win7.inf
+4576  \x\vbMmeCable_xp.inf
+4596  \x\vbMmeCable64_2003.inf
+4150  \x\vbMmeCable64_vista.inf
+11361  \x\vbMmeCable64_win10.inf
+4146  \x\vbMmeCable64_win7.inf
+
+===== A) silent install WITHOUT pre-trusting the publisher
+see timed step
+[vbcable-plain] exit code 0
+
+===== sound devices (after)
+
+Name        : VB-Audio Virtual Cable
+Status      : OK
+PNPDeviceID : ROOT\MEDIA\0000
+
+
+
+FriendlyName                            Status InstanceId
+------------                            ------ ----------
+CABLE Output (VB-Audio Virtual Cable)   OK     SWD\MMDEVAPI\{0.0.1.00000000}.{C7B4582E-DE4D-498F-B1E3-3FABF311FD4B}
+Speakers (VB-Audio Virtual Cable)       OK     SWD\MMDEVAPI\{0.0.0.00000000}.{48E763DC-83D1-4B97-A06E-5ECC3C0A1C15}
+CABLE In 16 Ch (VB-Audio Virtual Cable) OK     SWD\MMDEVAPI\{0.0.0.00000000}.{E8D9B4EB-0E6D-4155-9782-0DD9DFC7C9C7}
+
+
+
+FriendlyName : VB-Audio Virtual Cable
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : ROOT\MEDIA\0000
+
+===== portaudio devices
+   0 Microsoft Sound Mapper - Input, MME (2 in, 0 out)
+>  1 CABLE Output (VB-Audio Virtual , MME (16 in, 0 out)
+   2 Microsoft Sound Mapper - Output, MME (0 in, 2 out)
+<  3 CABLE Input (VB-Audio Virtual C, MME (0 in, 16 out)
+   4 CABLE In 16ch (VB-Audio Virtual, MME (0 in, 16 out)
+   5 Primary Sound Capture Driver, Windows DirectSound (2 in, 0 out)
+   6 CABLE Output (VB-Audio Virtual Cable), Windows DirectSound (16 in, 0 out)
+   7 Primary Sound Driver, Windows DirectSound (0 in, 2 out)
+   8 CABLE Input (VB-Audio Virtual Cable), Windows DirectSound (0 in, 16 out)
+   9 CABLE In 16ch (VB-Audio Virtual Cable), Windows DirectSound (0 in, 16 out)
+  10 CABLE Input (VB-Audio Virtual Cable), Windows WASAPI (0 in, 2 out)
+  11 CABLE In 16ch (VB-Audio Virtual Cable), Windows WASAPI (0 in, 2 out)
+  12 CABLE Output (VB-Audio Virtual Cable), Windows WASAPI (2 in, 0 out)
+  13 CABLE Output (VB-Audio Point), Windows WDM-KS (16 in, 0 out)
+  14 Output (VB-Audio Point), Windows WDM-KS (0 in, 16 out)
+  15 Input (VB-Audio Point), Windows WDM-KS (16 in, 0 out)
+
+INSTALL DONE
