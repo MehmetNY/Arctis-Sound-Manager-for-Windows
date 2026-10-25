@@ -23,6 +23,20 @@ Start-Process -FilePath '$($setup.FullName)' -ArgumentList '-i','-h' -WorkingDir
 [void](Invoke-Timed (Join-Path $work "vb1.ps1") @() 120 "vbcable")
 Start-Sleep 6
 
+# ---- microphone privacy: capturing from "CABLE Output" is refused (0x80070005) while desktop apps may not use microphones
+Run "allow microphone access" {
+    foreach ($root in "HKLM:", "HKCU:") {
+        foreach ($sub in "", "\NonPackaged") {
+            $k = "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone$sub"
+            New-Item -Path $k -Force | Out-Null
+            Set-ItemProperty -Path $k -Name Value -Value Allow
+        }
+    }
+    Restart-Service Audiosrv -Force
+    Start-Sleep 4
+    "microphone consent set to Allow"
+}
+
 # ---- build the probe
 $exe = Join-Path $work "audioprobe.exe"
 Run "build audioprobe" {
@@ -127,5 +141,65 @@ Step "E3.3 does it matter which pid the process tree root is? capture include(pa
 }
 Kill $ta; Kill $tb
 
-Run "summary (RESULT lines)" { Select-String -Path $script:LogFile -Pattern "^RESULT|^-----" | ForEach-Object { $_.Line } }
+
+# ---------------------------------------------------------------- E5: the ramp when a session volume changes under a running capture
+$t = Tone "CABLE Input" 0.5 440 40 "e5"
+Step "E5 session volume 1 -> 1e-6 while capturing (trace = RMS of every 10 ms; a ramp or a click shows up here)" {
+    AP @("capture", "--pid", "$($t.Id)", "--secs", "3", "--trace", "--svpid", "$($t.Id)", "--svvol", "0.000001", "--svat", "1500")
+}
+Step "E5b and back to 1 (the user's volume restored)" {
+    AP @("capture", "--pid", "$($t.Id)", "--secs", "3", "--trace", "--svpid", "$($t.Id)", "--svvol", "1", "--svat", "1500")
+}
+foreach ($v in "0.000001", "0.0000001", "0.00000001") {
+    Step "E6 session volume $v (expected rms $([double]$v * 0.35355))" {
+        AP @("setvol", "--pid", "$($t.Id)", "--vol", $v); Start-Sleep -Milliseconds 400
+        AP @("capture", "--pid", "$($t.Id)", "--secs", "2")
+        AP @("record", "--device", "CABLE Output", "--secs", "2")
+        AP @("record", "--device", "CABLE Input", "--loopback", "--secs", "2")
+    }
+}
+AP @("setvol", "--pid", "$($t.Id)", "--vol", "1")
+Step "E1a' (microphone access allowed now) tone -> CABLE Input; record CABLE Output; loopback of CABLE Input" {
+    AP @("record", "--device", "CABLE Output", "--secs", "3")
+    AP @("record", "--device", "CABLE Input", "--loopback", "--secs", "3")
+}
+Kill $t
+
+# ---------------------------------------------------------------- E7: a new session, with and without a watcher that lowers its volume at once
+Step "E7a baseline: loopback of CABLE Input, then a new tone starts (no watcher)" {
+    $rec = Start-Process -FilePath $exe -ArgumentList @("record", "--device", "CABLE Input", "--loopback", "--secs", "5", "--trace") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e7a.out")
+    Start-Sleep -Milliseconds 1500
+    $n = Start-Process -FilePath $exe -ArgumentList @("tone", "--device", "CABLE Input", "--amp", "0.5", "--secs", "3") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e7a-tone.out")
+    [void]$rec.WaitForExit(30000); Kill $n
+    Log (Get-Content (Join-Path $work "e7a.out") -Raw)
+}
+Step "E7b a watcher sets every new session to 1e-6 the moment it appears" {
+    $w = Start-Process -FilePath $exe -ArgumentList @("watch", "--secs", "9", "--sv", "0.000001") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e7b-watch.out")
+    Start-Sleep -Milliseconds 1500
+    $rec = Start-Process -FilePath $exe -ArgumentList @("record", "--device", "CABLE Input", "--loopback", "--secs", "5", "--trace") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e7b.out")
+    Start-Sleep -Milliseconds 1500
+    $n = Start-Process -FilePath $exe -ArgumentList @("tone", "--device", "CABLE Input", "--amp", "0.5", "--secs", "3") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e7b-tone.out")
+    [void]$rec.WaitForExit(30000); [void]$w.WaitForExit(30000); Kill $n
+    Log (Get-Content (Join-Path $work "e7b-watch.out") -Raw)
+    Log (Get-Content (Join-Path $work "e7b.out") -Raw)
+}
+
+# ---------------------------------------------------------------- E8: does Windows remember a session volume for the next run of the same program?
+Step "E8 persistence: set 0.123 on a tone session, stop it, start the same program again and look at the volume of the new session" {
+    $w = Start-Process -FilePath $exe -ArgumentList @("watch", "--secs", "12") -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $work "e8-watch.out")
+    Start-Sleep -Milliseconds 1200
+    $a = Tone "CABLE Input" 0.3 440 30 "e8a"
+    AP @("setvol", "--pid", "$($a.Id)", "--vol", "0.123")
+    Start-Sleep -Milliseconds 800
+    Kill $a
+    Start-Sleep -Milliseconds 1500
+    $b = Tone "CABLE Input" 0.3 440 30 "e8b"
+    Start-Sleep -Milliseconds 800
+    AP @("sessions")
+    Kill $b
+    [void]$w.WaitForExit(30000)
+    Log (Get-Content (Join-Path $work "e8-watch.out") -Raw)
+}
+
+Run "summary (RESULT lines)" { Select-String -Path $script:LogFile -Pattern "^RESULT|^-----|^NEWSESSION|^WATCH" | ForEach-Object { $_.Line } }
 Log "`nPROBE DONE"

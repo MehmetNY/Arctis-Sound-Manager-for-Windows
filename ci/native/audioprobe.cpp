@@ -2,8 +2,11 @@
 //
 //   audioprobe list
 //   audioprobe tone     --device <substr> [--secs 10] [--amp 0.5] [--freq 440]
-//   audioprobe record   --device <substr> [--secs 3] [--loopback]          (per-channel RMS of an endpoint)
+//   audioprobe record   --device <substr> [--secs 3] [--loopback] [--trace]  (per-channel RMS of an endpoint)
 //   audioprobe capture  --pid <pid> [--exclude] [--secs 3] [--dump f.f32]   (WASAPI process loopback, float32 stereo 48 kHz)
+//                       [--svpid P --svvol V --svat MS]   change a session volume MS ms into the capture
+//                       [--trace]                         print the RMS of every 10 ms
+//   audioprobe watch    [--secs 10] [--sv V]                (new audio sessions: print them, optionally set their volume at once)
 //   audioprobe sessions
 //   audioprobe setvol   --pid <pid> --vol <0..1>
 //   audioprobe mute     --pid <pid> --on|--off
@@ -227,6 +230,8 @@ static int cmdRecord(int argc, char** argv) {
     if (FAILED(h)) { printf("ERROR capture service %s\n", hr(h).c_str()); return 6; }
     int nch = f.ch > 16 ? 16 : f.ch;
     std::vector<double> ss(nch, 0.0); std::vector<float> pk(nch, 0.f); ULONGLONG frames = 0;
+    bool trace = flag(argc, argv, "--trace");
+    std::vector<double> bucket; double bss = 0; int bn = 0; int bucketFrames = f.rate / 100;
     c->Start();
     ULONGLONG t0 = GetTickCount64(), end = t0 + (ULONGLONG)(secs * 1000), warm = t0 + 400;
     while (GetTickCount64() < end) {
@@ -235,6 +240,13 @@ static int cmdRecord(int argc, char** argv) {
         while (SUCCEEDED(cap->GetNextPacketSize(&pkt)) && pkt > 0) {
             BYTE* data = nullptr; UINT32 n = 0; DWORD fl = 0;
             if (FAILED(cap->GetBuffer(&data, &n, &fl, nullptr, nullptr))) break;
+            if (trace) {
+                for (UINT32 i = 0; i < n; i++) {
+                    float v = (fl & AUDCLNT_BUFFERFLAGS_SILENT) ? 0.f : sampleAt(data + (size_t)i * f.align, f);
+                    bss += (double)v * v;
+                    if (++bn == bucketFrames) { bucket.push_back(sqrt(bss / bn)); bss = 0; bn = 0; }
+                }
+            }
             if (GetTickCount64() > warm) {
                 for (UINT32 i = 0; i < n; i++)
                     for (int k = 0; k < nch; k++) {
@@ -250,6 +262,11 @@ static int cmdRecord(int argc, char** argv) {
     printf("RESULT record device='%s' loopback=%d mix=[%s] frames=%llu", U(name).c_str(), loop ? 1 : 0, fmtStr(w).c_str(), (unsigned long long)frames);
     for (int k = 0; k < nch; k++) printf(" ch%d_rms=%.7f", k + 1, frames ? sqrt(ss[k] / (double)frames) : 0.0);
     printf("\n");
+    if (trace) {
+        printf("TRACE record 10ms-rms:");
+        for (size_t i = 0; i < bucket.size() && i < 400; i++) printf(" %.2e", bucket[i]);
+        printf("\n");
+    }
     CoTaskMemFree(w);
     return 0;
 }
@@ -270,6 +287,15 @@ public:
     ULONG STDMETHODCALLTYPE Release() override { LONG n = InterlockedDecrement(&ref_); if (!n) delete this; return n; }
     HRESULT STDMETHODCALLTYPE ActivateCompleted(IActivateAudioInterfaceAsyncOperation*) override { SetEvent(done); return S_OK; }
 };
+
+template <class Fn> static int forEachSession(Fn fn);
+static int setSessionVolume(DWORD want, float vol) {
+    return forEachSession([&](const std::wstring&, DWORD pid, AudioSessionState, ISimpleAudioVolume* v) {
+        if (pid != want) return 0;
+        v->SetMasterVolume(vol, nullptr);
+        return 1;
+    });
+}
 
 static int cmdCapture(int argc, char** argv) {
     const char* pidS = arg(argc, argv, "--pid");
@@ -302,15 +328,31 @@ static int cmdCapture(int argc, char** argv) {
     if (FAILED(h)) { printf("ERROR capture service %s\n", hr(h).c_str()); return 8; }
     FILE* df = dump ? fopen(dump, "wb") : nullptr;
     double ss = 0; float pk = 0; ULONGLONG frames = 0, packets = 0, silentPk = 0;
+    const char* svp = arg(argc, argv, "--svpid");
+    float svv = (float)atof(arg(argc, argv, "--svvol", "1"));
+    long svat = atol(arg(argc, argv, "--svat", "0"));
+    bool svdone = false; ULONGLONG svFrame = 0;
+    bool trace = flag(argc, argv, "--trace");
+    std::vector<double> bucket; double bss = 0; int bn = 0; ULONGLONG total = 0;
     c->Start();
     ULONGLONG t0 = GetTickCount64(), end = t0 + (ULONGLONG)(secs * 1000), warm = t0 + 500;
     while (GetTickCount64() < end) {
+        if (svp && !svdone && (long)(GetTickCount64() - t0) >= svat) { setSessionVolume((DWORD)strtoul(svp, nullptr, 10), svv); svdone = true; svFrame = total; }
         WaitForSingleObject(evt, 10);
         UINT32 pkt = 0;
         while (SUCCEEDED(cap->GetNextPacketSize(&pkt)) && pkt > 0) {
             BYTE* data = nullptr; UINT32 n = 0; DWORD fl = 0;
             if (FAILED(cap->GetBuffer(&data, &n, &fl, nullptr, nullptr))) break;
             bool silent = (fl & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+            if (trace) {
+                const float* tp = (const float*)data;
+                for (UINT32 i = 0; i < n; i++) {
+                    float v = silent ? 0.f : tp[i * 2];
+                    bss += (double)v * v;
+                    if (++bn == 480) { bucket.push_back(sqrt(bss / bn)); bss = 0; bn = 0; }
+                }
+            }
+            total += n;
             if (GetTickCount64() > warm) {
                 packets++; if (silent) silentPk++;
                 const float* p = (const float*)data;
@@ -324,6 +366,11 @@ static int cmdCapture(int argc, char** argv) {
     c->Stop();
     if (df) fclose(df);
     CloseHandle(evt);
+    if (trace) {
+        printf("TRACE capture volume-change-at-bucket=%llu 10ms-rms:", (unsigned long long)(svFrame / 480));
+        for (size_t i = 0; i < bucket.size() && i < 500; i++) printf(" %.2e", bucket[i]);
+        printf("\n");
+    }
     printf("RESULT capture pid=%s mode=%s frames=%llu packets=%llu silent_packets=%llu rms=%.9f peak=%.9f\n", pidS, excl ? "exclude" : "include",
            (unsigned long long)frames, (unsigned long long)packets, (unsigned long long)silentPk, frames ? sqrt(ss / (double)(frames * 2)) : 0.0, pk);
     return 0;
@@ -394,6 +441,57 @@ static int cmdSetVol(int argc, char** argv, bool mute) {
     return hits ? 0 : 1;
 }
 
+// ---------------------------------------------------------------- watch new sessions
+class SessionWatcher : public IAudioSessionNotification {
+    LONG ref_ = 1;
+public:
+    float setTo = -1.f; ULONGLONG t0 = GetTickCount64();
+    virtual ~SessionWatcher() {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** o) override {
+        if (IsEqualIID(r, IID_IUnknown) || IsEqualIID(r, __uuidof(IAudioSessionNotification))) { *o = static_cast<IAudioSessionNotification*>(this); AddRef(); return S_OK; }
+        *o = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
+    ULONG STDMETHODCALLTYPE Release() override { LONG n = InterlockedDecrement(&ref_); if (!n) delete this; return n; }
+    HRESULT STDMETHODCALLTYPE OnSessionCreated(IAudioSessionControl* s) override {
+        ULONGLONG t = GetTickCount64() - t0;
+        Ptr<IAudioSessionControl2> c2; DWORD pid = 0; float before = -1.f;
+        if (SUCCEEDED(s->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&c2))) c2->GetProcessId(&pid);
+        Ptr<ISimpleAudioVolume> v;
+        if (SUCCEEDED(s->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&v))) {
+            v->GetMasterVolume(&before);
+            if (setTo >= 0 && pid != GetCurrentProcessId()) v->SetMasterVolume(setTo, nullptr);
+        }
+        printf("NEWSESSION t=%llums pid=%lu exe=%s volume_before=%g set_to=%g\n", (unsigned long long)t, (unsigned long)pid, exeOf(pid).c_str(), before, setTo);
+        return S_OK;
+    }
+};
+
+static int cmdWatch(int argc, char** argv) {
+    double secs = atof(arg(argc, argv, "--secs", "10"));
+    SessionWatcher* w = new SessionWatcher();
+    const char* sv = arg(argc, argv, "--sv");
+    if (sv) w->setTo = (float)atof(sv);
+    if (!initEnum()) return 1;
+    Ptr<IMMDeviceCollection> col;
+    if (FAILED(g_enum->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &col))) return 2;
+    UINT n = 0; col->GetCount(&n);
+    std::vector<IAudioSessionManager2*> mgrs;
+    for (UINT i = 0; i < n; i++) {
+        Ptr<IMMDevice> d;
+        if (FAILED(col->Item(i, &d))) continue;
+        IAudioSessionManager2* m = nullptr;
+        if (FAILED(d->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&m))) continue;
+        m->RegisterSessionNotification(w);
+        mgrs.push_back(m);
+        printf("WATCH %s\n", U(friendly(d.p)).c_str());
+    }
+    Sleep((DWORD)(secs * 1000));
+    for (auto m : mgrs) { m->UnregisterSessionNotification(w); m->Release(); }
+    w->Release();
+    return 0;
+}
+
 // ---------------------------------------------------------------- endpoint volume / mute
 static int cmdEndpoint(int argc, char** argv, bool mute) {
     const char* dev = arg(argc, argv, "--device");
@@ -412,7 +510,7 @@ static int cmdEndpoint(int argc, char** argv, bool mute) {
 
 int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    if (argc < 2) { printf("usage: audioprobe <list|tone|record|capture|sessions|setvol|mute|epvol|epmute> ...\n"); return 2; }
+    if (argc < 2) { printf("usage: audioprobe <list|tone|record|capture|sessions|watch|setvol|mute|epvol|epmute> ...\n"); return 2; }
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     std::string c = argv[1];
     int rc = 2;
@@ -423,6 +521,7 @@ int main(int argc, char** argv) {
     else if (c == "sessions") rc = cmdSessions();
     else if (c == "setvol") rc = cmdSetVol(argc, argv, false);
     else if (c == "mute") rc = cmdSetVol(argc, argv, true);
+    else if (c == "watch") rc = cmdWatch(argc, argv);
     else if (c == "epvol") rc = cmdEndpoint(argc, argv, false);
     else if (c == "epmute") rc = cmdEndpoint(argc, argv, true);
     else printf("unknown command %s\n", c.c_str());
