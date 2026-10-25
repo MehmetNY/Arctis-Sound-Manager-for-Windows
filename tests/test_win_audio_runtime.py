@@ -651,3 +651,17 @@ def test_the_preset_wins_over_the_files_at_start(tmp_path):
     s = engine.graph.strips
     assert s["game"].controls.volume_pct == 15.0 and s["aux"].controls.muted and s["media"].controls.chatmix_pct == 50.0
     engine.stop()
+
+
+def test_a_microphone_alone_runs_without_any_playback(tmp_path):
+    write(tmp_path, "sonar_micro_state.json", {"bands": [], "basses_db": 0, "voix_db": 6.0, "aigus_db": 0, "boost_db": 0})
+    cfg = config(inputs={"game": "", "chat": "", "media": "", "aux": ""}, outputs={})
+    assert cfg.problems() == []
+    rig = Rig(tmp_path, cfg)
+    rig.sources["mic"] = tone(2000, 0.05)
+    rig.start()
+    rig.tick(150)
+    status = rig.engine.status()
+    assert set(status["endpoints"]) == {"mic:in", "mic:out"} and all(e["state"] == "running" for e in status["endpoints"].values())
+    y = rig.heard(0.5, "mic")
+    assert 20 * np.log10(level(y[:, 0]) / (0.05 / np.sqrt(2))) == pytest.approx(6.0, abs=0.3)

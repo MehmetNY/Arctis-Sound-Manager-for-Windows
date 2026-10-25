@@ -88,12 +88,13 @@ class EngineClient:
         return self.request("mute", channel=channel, muted=muted)
 
 
-def write_config(mic_input: str = "", mic_output: str = "") -> None:
+def write_config(mic_input: str = "", mic_output: str = "", playback: bool = True) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    taps = {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"}
     (CONFIG_DIR / "win_audio_engine.json").write_text(json.dumps({
         "latency": "balanced",
-        "inputs": {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"},
-        "outputs": {"headset": HEADSET},
+        "inputs": taps if playback else {ch: "" for ch in taps},
+        "outputs": {"headset": HEADSET} if playback else {},
         "mic": {"input": mic_input, "output": mic_output},
         "master_limiter": True}, indent=2), encoding="utf-8")
 
@@ -189,23 +190,22 @@ def tail_logs() -> None:
 
 
 def microphone_phase(client: "EngineClient") -> None:
-    """Headset microphone -> the engine's microphone chain -> the virtual microphone, with and without noise cancelling.
+    """Microphone -> the engine's microphone chain -> the virtual microphone, with and without noise cancelling.
 
-    The runner has no real microphone, so a cable plays that part: what a program plays into "CABLE Input" is what
-    "CABLE Output" records. The processed microphone goes out through the cable's second render endpoint and is
-    measured there (a loopback recording shows exactly what the engine played to it). The noise source is called
-    obs64.exe: recorders are never turned down by the helper, so it reaches the cable as it is."""
+    The runner has no microphone and only one virtual cable, so the cable plays every part: what a program plays into
+    "CABLE Input" is what "CABLE Output" records. The engine reads "CABLE Output" as its microphone and plays the
+    result into "CABLE Input" again (microphone only, no headset: a valid set-up). White noise stands in for the room.
+    * noise cancelling off: the engine adds what it hears to the wire (and hears that again...): the wire gets louder
+      than the noise alone;
+    * noise cancelling on: RNNoise removes noise completely, the engine adds nothing: the wire carries the noise alone.
+    The noise source is called obs64.exe: recorders are never turned down by the helper."""
     log("== the microphone chain: microphone -> noise cancelling -> virtual microphone")
-    mic_in, mic_out = "CABLE Output", "CABLE In 16ch"
+    wire = "CABLE Input"
     state = CONFIG_DIR / "sonar_micro_state.json"
 
     def micro_state(noise_cancelling: bool) -> None:
         state.write_text(json.dumps({"bands": [], "noise_canceling": {"enabled": noise_cancelling, "value": 0.9, "engine": "rnnoise"}}),
                          encoding="utf-8")
-
-    micro_state(False)
-    write_config(mic_in, mic_out)
-    subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def status() -> dict:
         try:
@@ -214,31 +214,36 @@ def microphone_phase(client: "EngineClient") -> None:
         except EngineUnavailable:
             return {}
 
-    check("C10.1 the engine is running with a microphone configured", wait_for(lambda: bool(status().get("running")), 240, 1.0))
-    st = status()
-    log("   endpoints:", json.dumps(st.get("endpoints", {}))[:1200])
-    bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
-    check("C10.2 every device is open, the microphone's too", not bad and any(k.startswith("mic") for k in (st.get("endpoints") or {})),
-          json.dumps(bad)[:300])
     source = None
     try:
-        time.sleep(2.0)
-        quiet = level(mic_out, 1.5)
-        check("C10.3 the virtual microphone is silent while nobody speaks", 0 <= quiet < 0.003, f"{quiet:.5f}")
         source = Fake("obs64", 0.3, 0.0, noise=True)
         time.sleep(2.5)
-        plain = level(mic_out, 2.5)
-        check("C10.4 the microphone's sound reaches the virtual microphone", plain > 0.02, f"{plain:.4f}")
+        alone = level(wire, 2.5)
+        check("C10.1 the noise source is heard on the cable", alone > 0.05, f"{alone:.4f}")
+
+        micro_state(False)
+        write_config("CABLE Output", "CABLE Input", playback=False)
+        subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        check("C10.2 the engine runs with only a microphone configured", wait_for(lambda: bool(status().get("running")), 240, 1.0))
+        st = status()
+        log("   endpoints:", json.dumps(st.get("endpoints", {}))[:900])
+        bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
+        check("C10.3 the microphone's devices are open", not bad and set(st.get("endpoints") or {}) == {"mic:in", "mic:out"},
+              f"{sorted((st.get('endpoints') or {}))} {json.dumps(bad)[:300]} {st.get('problems')}")
+        time.sleep(3.0)
+        plain = level(wire, 2.5)
+        check("C10.4 without noise cancelling the microphone's sound is passed on (the cable is louder than the noise alone)",
+              plain > 1.3 * alone, f"{plain:.4f} vs {alone:.4f} alone")
+
         micro_state(True)
         log("   reload:", json.dumps(client.request("reload"))[:200])
-        time.sleep(4.0)
-        cancelled = level(mic_out, 2.5)
-        st = status()
-        engine_in_use = (st.get("microphone") or {}).get("noise_engine")
+        time.sleep(5.0)
+        cancelled = level(wire, 2.5)
+        engine_in_use = (status().get("microphone") or {}).get("noise_engine")
         check("C10.5 noise cancelling is running (RNNoise)", engine_in_use == "rnnoise", str(engine_in_use))
-        check("C10.6 and takes the noise away (white noise in, far less out)", 0 <= cancelled < 0.35 * max(plain, 1e-9),
-              f"{cancelled:.4f} vs {plain:.4f} without")
-        log(f"   noise level: without {plain:.4f}   with noise cancelling {cancelled:.4f}   ({20 * math.log10(max(cancelled, 1e-9) / max(plain, 1e-9)):.1f} dB)")
+        check("C10.6 and takes the noise out: the engine adds nothing to the cable any more",
+              0.85 * alone < cancelled < 1.15 * alone, f"{cancelled:.4f} vs {alone:.4f} alone")
+        log(f"   cable level: noise alone {alone:.4f}   engine without noise cancelling {plain:.4f}   with it {cancelled:.4f}")
     finally:
         if source is not None:
             source.kill()

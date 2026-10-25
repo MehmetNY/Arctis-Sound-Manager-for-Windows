@@ -223,3 +223,12 @@ def test_no_devices_no_guess():
 def test_non_wasapi_listings_are_used_only_when_there_is_nothing_else():
     mme = [dev(i, d.name, d.max_inputs, d.max_outputs, host="MME") for i, d in enumerate(cable_pair(1, "CABLE", "VB-Audio Virtual Cable"))]
     assert suggest_config(mme).inputs["game"].startswith("CABLE Output")
+
+
+def test_a_microphone_alone_is_a_valid_setup():
+    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_input="Microphone (Arctis", mic_output="CABLE Input")
+    assert cfg.mic_enabled and not cfg.playback_enabled and cfg.problems() == []
+    cfg.outputs = {"headset": "Arctis"}                                         # a headset without any channel is still unfinished
+    assert cfg.problems() == ["no virtual cable is assigned to any channel"]
+    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_input="", mic_output="")
+    assert len(cfg.problems()) == 2                                             # nothing at all: still reported

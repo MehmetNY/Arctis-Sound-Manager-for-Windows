@@ -162,10 +162,14 @@ class EngineConfig:
     def problems(self) -> list[str]:
         """Things that would stop the engine from doing anything useful (shown to the user)."""
         issues = []
-        if not self.outputs.get("headset"):
-            issues.append("no headset output device is chosen")
-        if not any(self.inputs.get(ch) for ch in CHANNELS):
-            issues.append("no virtual cable is assigned to any channel")
+        # Only the microphone wanted (noise cancelling for the voice, the sound of the programs left alone): a
+        # microphone and nothing else is a valid set-up, not a half-finished one.
+        mic_only = self.mic_enabled and not self.outputs.get("headset") and not any(self.inputs.get(ch) for ch in CHANNELS)
+        if not mic_only:
+            if not self.outputs.get("headset"):
+                issues.append("no headset output device is chosen")
+            if not any(self.inputs.get(ch) for ch in CHANNELS):
+                issues.append("no virtual cable is assigned to any channel")
         for ch, bus in self.routing.items():
             if bus != "headset" and not self.outputs.get(bus):
                 issues.append(f"{ch} is routed to '{bus}' but that output has no device")
