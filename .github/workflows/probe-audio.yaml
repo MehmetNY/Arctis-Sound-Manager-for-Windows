@@ -1,0 +1,35 @@
+name: probe-audio
+on:
+  push:
+    branches: [ci-probe]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./ci/probe_audio.ps1 -Out probe.log
+        continue-on-error: true
+      - name: Publish log to a branch
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/out && cp probe.log /tmp/out/ 2>/dev/null || echo "no log" > /tmp/out/probe.log
+          cp -r probe_work/latest.json /tmp/out/ 2>/dev/null || true
+          git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan logs-tmp
+          git rm -rf --quiet . || true
+          cp -r /tmp/out/* .
+          git add -A
+          git commit -q -m "probe log (${{ matrix.os }}) run ${{ github.run_id }}"
+          git push -f origin HEAD:refs/heads/ci-logs-${{ matrix.os }}
