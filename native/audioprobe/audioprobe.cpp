@@ -187,6 +187,8 @@ static int cmdTone(int argc, char** argv) {
     double secs = atof(arg(argc, argv, "--secs", "10"));
     double amp = atof(arg(argc, argv, "--amp", "0.5"));
     double freq = atof(arg(argc, argv, "--freq", "440"));
+    bool noise = flag(argc, argv, "--noise");          // white noise instead of a tone (for the microphone test)
+    unsigned rng = 2463534242u;
     if (!dev) { printf("ERROR --device\n"); return 2; }
     Ptr<IMMDevice> d; std::wstring name;
     if (!findDevice(eRender, W(dev), d, &name)) { printf("ERROR no render device matching '%s'\n", dev); return 3; }
@@ -218,6 +220,7 @@ static int cmdTone(int argc, char** argv) {
             if (SUCCEEDED(r->GetBuffer(n, &buf))) {
                 for (UINT32 i = 0; i < n; i++) {
                     float v = (float)(amp * sin(phase)); phase += step;
+                    if (noise) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; v = (float)(amp * ((double)rng / 2147483648.0 - 1.0)); }
                     // with --channels, channel k plays at (k+1)/N of the amplitude so a capture can tell them apart
                     for (int k = 0; k < f.ch; k++) putSample(buf + (size_t)i * f.align + (size_t)k * (f.bits / 8), f, wantCh > 0 ? v * (float)(k + 1) / (float)f.ch : v);
                 }

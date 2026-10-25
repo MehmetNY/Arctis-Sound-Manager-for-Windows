@@ -13,6 +13,7 @@ What is proved, with the installed ArctisSoundManager.exe started the way "Start
   * the uninstaller removes the program, the Start-with-Windows entry and leaves nothing running.
 """
 import json
+import math
 import os
 import re
 import shutil
@@ -87,13 +88,13 @@ class EngineClient:
         return self.request("mute", channel=channel, muted=muted)
 
 
-def write_config() -> None:
+def write_config(mic_input: str = "", mic_output: str = "") -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     (CONFIG_DIR / "win_audio_engine.json").write_text(json.dumps({
         "latency": "balanced",
         "inputs": {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"},
         "outputs": {"headset": HEADSET},
-        "mic": {"input": "", "output": ""},
+        "mic": {"input": mic_input, "output": mic_output},
         "master_limiter": True}, indent=2), encoding="utf-8")
 
 
@@ -153,12 +154,13 @@ def processes(image: str) -> list[str]:
 
 
 class Fake:
-    def __init__(self, name: str, amp: float, freq: float, secs: float = 600):
+    def __init__(self, name: str, amp: float, freq: float, secs: float = 600, noise: bool = False):
         self.exe = WORK / f"{name}.exe"
         shutil.copy(BUILD / "audioprobe.exe", self.exe)
         self.name = f"{name}.exe"
         self.proc = subprocess.Popen([str(self.exe), "tone", "--device", PROGRAMS_ENDPOINT, "--amp", str(amp), "--freq", str(freq),
-                                      "--secs", str(secs)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                      "--secs", str(secs), *(["--noise"] if noise else [])],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.first = self.proc.stdout.readline().strip()
 
     def kill(self) -> None:
@@ -184,6 +186,65 @@ def tail_logs() -> None:
                     shown = lines[-25:]
                 for line in shown:
                     log("    " + line[:300])
+
+
+def microphone_phase(client: "EngineClient") -> None:
+    """Headset microphone -> the engine's microphone chain -> the virtual microphone, with and without noise cancelling.
+
+    The runner has no real microphone, so a cable plays that part: what a program plays into "CABLE Input" is what
+    "CABLE Output" records. The processed microphone goes out through the cable's second render endpoint and is
+    measured there (a loopback recording shows exactly what the engine played to it). The noise source is called
+    obs64.exe: recorders are never turned down by the helper, so it reaches the cable as it is."""
+    log("== the microphone chain: microphone -> noise cancelling -> virtual microphone")
+    mic_in, mic_out = "CABLE Output", "CABLE In 16ch"
+    state = CONFIG_DIR / "sonar_micro_state.json"
+
+    def micro_state(noise_cancelling: bool) -> None:
+        state.write_text(json.dumps({"bands": [], "noise_canceling": {"enabled": noise_cancelling, "value": 0.9, "engine": "rnnoise"}}),
+                         encoding="utf-8")
+
+    micro_state(False)
+    write_config(mic_in, mic_out)
+    subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def status() -> dict:
+        try:
+            reply = client.status()
+            return reply.get("status", reply)
+        except EngineUnavailable:
+            return {}
+
+    check("C10.1 the engine is running with a microphone configured", wait_for(lambda: bool(status().get("running")), 240, 1.0))
+    st = status()
+    log("   endpoints:", json.dumps(st.get("endpoints", {}))[:1200])
+    bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
+    check("C10.2 every device is open, the microphone's too", not bad and any(k.startswith("mic") for k in (st.get("endpoints") or {})),
+          json.dumps(bad)[:300])
+    source = None
+    try:
+        time.sleep(2.0)
+        quiet = level(mic_out, 1.5)
+        check("C10.3 the virtual microphone is silent while nobody speaks", 0 <= quiet < 0.003, f"{quiet:.5f}")
+        source = Fake("obs64", 0.3, 0.0, noise=True)
+        time.sleep(2.5)
+        plain = level(mic_out, 2.5)
+        check("C10.4 the microphone's sound reaches the virtual microphone", plain > 0.02, f"{plain:.4f}")
+        micro_state(True)
+        log("   reload:", json.dumps(client.request("reload"))[:200])
+        time.sleep(4.0)
+        cancelled = level(mic_out, 2.5)
+        st = status()
+        engine_in_use = (st.get("microphone") or {}).get("noise_engine")
+        check("C10.5 noise cancelling is running (RNNoise)", engine_in_use == "rnnoise", str(engine_in_use))
+        check("C10.6 and takes the noise away (white noise in, far less out)", 0 <= cancelled < 0.35 * max(plain, 1e-9),
+              f"{cancelled:.4f} vs {plain:.4f} without")
+        log(f"   noise level: without {plain:.4f}   with noise cancelling {cancelled:.4f}   ({20 * math.log10(max(cancelled, 1e-9) / max(plain, 1e-9)):.1f} dB)")
+    finally:
+        if source is not None:
+            source.kill()
+        subprocess.run([str(EXE), "--quit-all"], capture_output=True, timeout=120)
+        time.sleep(2.0)
+        check("C10.7 nothing of ASM is left running after the microphone test", not processes("ArctisSoundManager.exe") and not processes("asm-audiotap.exe"))
 
 
 def run_key() -> str | None:
@@ -331,6 +392,8 @@ def main() -> int:
         for line in (probe.stdout + probe.stderr).splitlines()[-40:]:
             log("    " + line[:300])
     log(f"   (informational; the second, worker-thread attempt starts a second stream right after the first closed)")
+
+    microphone_phase(client)
 
 
     log("== uninstall")
