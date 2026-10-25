@@ -26,7 +26,8 @@ from typing import Callable
 from arctis_sound_manager.win.audio import fast
 from arctis_sound_manager.win.audio.backend import (BackendError, DeviceInfo, SoundDeviceBackend, device_from_dict,
                                                     device_to_dict)
-from arctis_sound_manager.win.audio.engine_config import (EngineConfig, load_config, resolve, suggest_config)
+from arctis_sound_manager.win.audio.engine_config import (EngineConfig, config_path, load_config, resolve, save_config,
+                                                          suggest_config)
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.runtime import Engine
@@ -35,6 +36,7 @@ from arctis_sound_manager.win.audio.tap import TapBackend, load_rules, restore_v
 _log = logging.getLogger(__name__)
 
 VERSION = "win-engine 1"
+AUTOSETUP_RETRY = 6.0                                               # seconds between looks for devices while there is no engine
 
 
 def default_backend(config: EngineConfig):
@@ -47,8 +49,12 @@ def default_backend(config: EngineConfig):
 def subprocess_probe(timeout: float = 15.0) -> list[DeviceInfo]:
     """A fresh listing of the devices, taken in a new process (this one's PortAudio only knows the devices
     that existed when it started)."""
-    result = subprocess.run([sys.executable, "-m", "arctis_sound_manager.win.audio.engine_main", "--list-devices",
-                             "--json"], capture_output=True, text=True, timeout=timeout)
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--engine", "--list-devices", "--json"]
+    else:
+        cmd = [sys.executable, "-m", "arctis_sound_manager.win.audio.engine_main", "--list-devices", "--json"]
+    kwargs = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if sys.platform == "win32" else {}
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **kwargs)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"exit code {result.returncode}")
     return [device_from_dict(d) for d in json.loads(result.stdout)]
@@ -81,7 +87,43 @@ class EngineHost:
     def start(self) -> None:
         if shared_helper().available():
             restore_volumes()                                        # a crashed run may have left programs turned down
+        self.autoconfigure()
         self.reconfigure()
+
+    def autoconfigure(self) -> bool:
+        """Pick the devices by ourselves: on a first run (no configuration file) and, for a configuration we made
+        ourselves (``auto``), whenever it no longer works - the headset was switched on later, a cable was
+        installed. A configuration the user saved is never touched. Returns whether a file was (re)written."""
+        with self._lock:
+            path = config_path(self.config_dir)
+            current = load_config(self.config_dir)
+            if path.exists() and not current.auto:
+                return False
+            if path.exists() and not current.problems() and not self._missing(current):
+                return False                                          # still fine as it is
+            try:
+                backend = self._backend_factory(current)
+                devices = backend.devices()
+            except BackendError as exc:
+                _log.info("auto-setup: no device list yet (%s)", exc)
+                return False
+            guess = suggest_config(devices)
+            if guess.problems():
+                _log.info("auto-setup: not enough devices yet (%s)", "; ".join(guess.problems()))
+                return False
+            guess.auto = True
+            if path.exists() and guess.to_dict() == current.to_dict():
+                return False
+            save_config(guess, self.config_dir)
+            _log.info("auto-setup: configuration written (headset %r, microphone %r -> %r)", guess.outputs.get("headset"),
+                      guess.mic_input, guess.mic_output)
+            return True
+
+    def _missing(self, cfg: EngineConfig) -> list[str]:
+        try:
+            return resolve(cfg, self._backend_factory(cfg).devices()).missing
+        except BackendError:
+            return []
 
     def stop(self) -> None:
         with self._lock:
@@ -208,7 +250,12 @@ class EngineHost:
         """Block until a ``shutdown`` command (or Ctrl+C in the caller); also starts the engine once a
         configuration file appears while idle."""
         last = self._config_stamp()
+        retry_at = time.monotonic() + AUTOSETUP_RETRY
         while not self.shutdown_requested.wait(poll):
+            if time.monotonic() >= retry_at:                          # a headset switched on later, a cable installed meanwhile
+                retry_at = time.monotonic() + AUTOSETUP_RETRY
+                if self.engine is None and load_config(self.config_dir).auto or not config_path(self.config_dir).exists():
+                    self.autoconfigure()
             stamp = self._config_stamp()
             if self.engine is None and stamp != last:
                 _log.info("configuration changed; trying to start")

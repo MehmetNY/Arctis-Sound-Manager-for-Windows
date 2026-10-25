@@ -1,0 +1,25 @@
+Arctis Sound Manager for Windows - third-party components shipped with the installer
+=====================================================================================
+
+Arctis Sound Manager (ASM) is free software, GPL-3.0-or-later. Its Windows port bundles the following.
+
+VB-CABLE Virtual Audio Device
+  Origin of VB-CABLE: www.vb-cable.com  (VB-Audio Software, Vincent Burel, https://vb-audio.com/Cable/)
+  VB-CABLE is a donationware, all participations are welcome.
+  ASM installs the unmodified VB-CABLE driver pack silently (VB-Audio's own "VB-CABLE silent installation" for
+  bundling in an installation package), once, so that the microphone ASM has cleaned up (noise cancelling,
+  EQ, ...) can be offered to other programs as a recording device: "CABLE Output (VB-Audio Virtual Cable)".
+  It stays visible and identifiable as a VB-Audio product in Windows' sound settings and in ASM's settings.
+  If you find it useful, please donate / support VB-Audio: https://shop.vb-audio.com/en/win-apps/11-vb-cable.html
+  Removing ASM leaves VB-CABLE installed unless you ask the uninstaller to remove it too.
+
+RNNoise
+  Copyright (c) 2017, Mozilla; (c) 2007-2017, Jean-Marc Valin; Xiph.Org Foundation. BSD-3-Clause.
+  The recurrent-neural-network noise suppressor behind "Noise cancelling".
+
+HeSuVi head-related impulse responses (spatial audio)
+  Copyright 2021 Matt Gore, MIT License. See hrir_assets\LICENSE-HeSuVi.txt.
+
+Python, PySide6 (Qt for Python, LGPL-3.0), NumPy, SciPy, numba / llvmlite, sounddevice / PortAudio, hidapi, Pillow,
+Babel, ruamel.yaml, pywinrt - each under its own open-source license; their license texts are inside the
+installation folder (_internal) next to the libraries.

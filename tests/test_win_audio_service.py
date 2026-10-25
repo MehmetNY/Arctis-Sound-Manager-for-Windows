@@ -47,12 +47,13 @@ def test_a_ready_configuration_starts_the_engine_without_holding_up_the_daemon(t
     assert service._started_by_us
 
 
-def test_without_a_configuration_nothing_is_started(tmp_path, monkeypatch, launched, caplog):
+def test_without_a_configuration_the_engine_is_still_started_and_sets_itself_up(tmp_path, monkeypatch, launched, caplog):
     monkeypatch.setattr(service, "EngineClient", lambda cfg, timeout: FakeClient(False))
     with caplog.at_level(logging.INFO):
-        assert not service.start_engine_for_daemon(LOG, tmp_path)
-    assert launched == [] and not service._started_by_us
-    assert "not set up yet" in caplog.text
+        service.start_engine_for_daemon(LOG, tmp_path)
+    (kind, _cfg, _kw), = launched
+    assert kind == "start" and service._started_by_us
+    assert "sets itself up" in caplog.text
 
 
 def test_when_switched_off_nothing_is_started(tmp_path, monkeypatch, launched):
@@ -116,10 +117,10 @@ def test_switching_the_engine_on_starts_it_when_it_is_ready(tmp_path, monkeypatc
     assert [c[0] for c in launched] == ["start"] and service._started_by_us
 
 
-def test_switching_it_on_without_a_configuration_starts_nothing(tmp_path, monkeypatch, launched):
+def test_switching_it_on_without_a_configuration_still_starts_it_and_it_sets_itself_up(tmp_path, monkeypatch, launched):
     monkeypatch.setattr(service, "EngineClient", lambda cfg, timeout: FakeClient(False))
-    assert not service.apply_engine_setting(LOG, True, tmp_path)
-    assert launched == []
+    service.apply_engine_setting(LOG, True, tmp_path)
+    assert [c[0] for c in launched] == ["start"]
 
 
 def test_switching_the_engine_off_stops_even_one_the_daemon_did_not_start(tmp_path, launched, caplog):

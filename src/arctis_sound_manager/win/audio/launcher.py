@@ -28,6 +28,8 @@ MODULE = "arctis_sound_manager.win.audio.engine_main"
 def engine_command(executable: str | None = None) -> list[str]:
     """The command line that runs the engine; ``pythonw`` when there is one (no console window)."""
     exe = executable or sys.executable
+    if getattr(sys, "frozen", False):                            # the installed program: one exe, the first argument says which process
+        return [exe, "--engine"]
     path = Path(exe)
     if path.name.lower() == "python.exe":
         windowless = path.with_name("pythonw.exe")

@@ -30,7 +30,7 @@ from arctis_sound_manager.win.audio.control import ControlServer, EngineClient
 from arctis_sound_manager.win.audio.engine_config import (EngineConfig, config_path, load_config, resolve,
                                                           save_config, suggest_config)
 from arctis_sound_manager.win.audio.graph import CHANNELS, EngineGraph, read_state
-from arctis_sound_manager.win.audio.host import EngineHost
+from arctis_sound_manager.win.audio.host import EngineHost, default_backend
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.realtime import TimerResolution
 
@@ -170,7 +170,7 @@ def selftest(config_dir: Path, backend=None, out=print, seconds: float = 1.5, pu
         out(f"   latency profile '{cfg.latency}': block {cfg.playback_block}, about {cfg.profile.approx_latency_ms():.0f} ms")
     out("== 2. Devices")
     try:
-        backend = backend or SoundDeviceBackend(latency=cfg.device_latency)
+        backend = backend or default_backend(cfg)
         devices = backend.devices()
     except BackendError as exc:
         out(f"   FAILED: {exc}")
@@ -279,13 +279,13 @@ def main(argv: list[str] | None = None) -> int:
         logging.basicConfig(level=logging.WARNING)
     if args.list_devices:
         try:
-            return list_devices(SoundDeviceBackend(), args.json)
+            return list_devices(default_backend(load_config(config_dir)), args.json)
         except BackendError as exc:
             print(exc, file=sys.stderr)
             return 2
     if args.suggest:
         try:
-            devices = SoundDeviceBackend().devices()
+            devices = default_backend(load_config(config_dir)).devices()
         except BackendError as exc:
             print(exc, file=sys.stderr)
             return 2

@@ -325,7 +325,7 @@ def test_main_reports_a_missing_sounddevice_package(tmp_path, capsys, monkeypatc
 
 
 def test_main_suggest_prints_and_optionally_saves_a_guess(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(engine_main, "SoundDeviceBackend", lambda *a, **k: FakeBackend(DEVICES))
+    monkeypatch.setattr(engine_main, "default_backend", lambda cfg: FakeBackend(DEVICES))
     assert engine_main.main(["--config-dir", str(tmp_path), "--suggest", "--write"]) == 0
     captured = capsys.readouterr()
     guess = json.loads(captured.out)
@@ -421,3 +421,53 @@ def test_the_master_level_is_clamped(host, tmp_path):
     save_config(good_config(), tmp_path)
     host.reconfigure()
     assert host.engine.graph.master.volume_pct == 100.0
+
+
+# ── first-run auto-setup ─────────────────────────────────────────────────────
+
+def test_a_first_run_writes_a_configuration_by_itself(host, tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import config_path, load_config
+    assert not config_path(tmp_path).exists()
+    assert host.autoconfigure()
+    cfg = load_config(tmp_path)
+    assert cfg.auto and not cfg.problems()
+    assert "Arctis" in cfg.outputs["headset"]
+    assert cfg.mic_input and "Arctis" in cfg.mic_input and cfg.mic_output
+
+
+def test_start_sets_up_and_runs_the_engine_without_anybody_configuring(host):
+    host.start()
+    assert host.engine is not None and host.config.auto
+
+
+def test_a_configuration_the_user_saved_is_never_touched(host, tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import config_path
+    save_config(EngineConfig(outputs={"headset": "Speakers (Realtek"}), tmp_path)          # incomplete, but the user's
+    before = config_path(tmp_path).read_text()
+    assert not host.autoconfigure()
+    assert config_path(tmp_path).read_text() == before
+
+
+def test_an_automatic_configuration_is_redone_when_its_devices_are_gone(host, tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import load_config
+    stale = EngineConfig(inputs={"game": "CABLE-Z Output", "chat": "", "media": "", "aux": ""},
+                         outputs={"headset": "Some Old Headset"}, auto=True)
+    save_config(stale, tmp_path)
+    assert host.autoconfigure()
+    cfg = load_config(tmp_path)
+    assert "Arctis" in cfg.outputs["headset"] and cfg.auto
+
+
+def test_an_automatic_configuration_that_still_works_is_left_alone(host, tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import config_path
+    assert host.autoconfigure()
+    stamp = config_path(tmp_path).stat().st_mtime_ns
+    assert not host.autoconfigure()
+    assert config_path(tmp_path).stat().st_mtime_ns == stamp
+
+
+def test_with_too_few_devices_nothing_is_written(tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import config_path
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend([dev(9, "Speakers (Realtek(R) Audio)", outs=2)]), probe=None)
+    assert not h.autoconfigure()
+    assert not config_path(tmp_path).exists()

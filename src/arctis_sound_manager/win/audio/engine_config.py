@@ -18,6 +18,10 @@ name, because Windows device indices change from one boot to the next::
 An empty name disables that input. Channels the user's programs are sent to (one virtual cable each)
 are read from the *Output* side of a cable; the processed mix goes to the real headset; the processed
 microphone goes to the *Input* side of one more cable, which other programs then record from.
+
+A file that carries ``"auto": true`` was written by ASM itself the first time it ran (see
+:meth:`~arctis_sound_manager.win.audio.host.EngineHost.autoconfigure`); it is redone whenever the devices it names
+are missing, until the user changes something by hand (saving a configuration through the GUI drops the flag).
 """
 from __future__ import annotations
 
@@ -75,6 +79,7 @@ class EngineConfig:
     mic_input: str = ""
     mic_output: str = ""
     master_limiter: bool = True
+    auto: bool = False                        # made by ASM itself (first run): it may be redone when devices appear or go
 
     # ── derived ─────────────────────────────────────────────────────────────
 
@@ -105,6 +110,8 @@ class EngineConfig:
                "inputs": dict(self.inputs), "outputs": dict(self.outputs), "routing": dict(self.routing),
                "mic": {"input": self.mic_input, "output": self.mic_output},
                "master_limiter": self.master_limiter}
+        if self.auto:
+            out["auto"] = True
         if self.block:
             out["block"] = self.block
         if self.mic_block:
@@ -148,6 +155,8 @@ class EngineConfig:
             cfg.mic_output = str(mic.get("output") or "").strip()
         if isinstance(raw.get("master_limiter"), bool):
             cfg.master_limiter = raw["master_limiter"]
+        if raw.get("auto") is True:
+            cfg.auto = True
         return cfg
 
     def problems(self) -> list[str]:
@@ -286,7 +295,7 @@ def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:
     microphone instead, through its *Input* end. A sixth cable, if there is one, takes Streamer mode's
     mix (what OBS records). A headset is a non-virtual device with 'Arctis' or
     'SteelSeries' in its name, else the system default output. This is a starting point for the setup
-    assistant, never applied silently.
+    assistant, and what the engine applies by itself on a first run (``"auto": true``).
     """
     cfg = EngineConfig()
     wasapi = [d for d in devices if d.wasapi] or devices

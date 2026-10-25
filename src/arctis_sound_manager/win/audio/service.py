@@ -4,9 +4,9 @@
 """The daemon's side of the audio engine: start it with ASM, stop it with ASM.
 
 The engine runs as its own detached process (see :mod:`.launcher`), so a daemon crash does not cut the
-sound off. The daemon starts one only when the engine is switched on in the settings *and* the cables are
-configured (an engine with nothing to do would just sit in memory), and stops only an engine it started
-itself — one the user launched by hand (``run-audio-engine.cmd``) is left alone.
+sound off. The daemon starts one whenever the engine is switched on in the settings; the engine picks its
+devices by itself the first time (:meth:`~.host.EngineHost.autoconfigure`) and idles until they exist. It stops
+only an engine it started itself — one the user launched by hand (``run-audio-engine.cmd``) is left alone.
 """
 from __future__ import annotations
 
@@ -40,9 +40,7 @@ def start_engine_for_daemon(logger: logging.Logger, config_dir: Path | None = No
         return True
     problems = load_config(config_dir).problems()
     if problems:
-        logger.info("Windows: the audio engine is not set up yet (%s) - open ASM > Settings > Audio engine.",
-                    "; ".join(problems))
-        return False
+        logger.info("Windows: the audio engine sets itself up when the devices are there (%s).", "; ".join(problems))
     up = start_engine(config_dir, wait=0.0, client=client, **kw)       # do not hold the daemon's start-up
     _started_by_us = True
     logger.info("Windows: audio engine launched%s.", "" if up else " (it is still starting)")
