@@ -86,4 +86,59 @@ try:
                         extra_settings=sd.WasapiSettings(exclusive=False, auto_convert=True) if "WASAPI" in sd.query_hostapis()[d["hostapi"]]["name"] else None)
 except Exception:                                                   # noqa: BLE001
     log(traceback.format_exc())
+
+log("== two streams at once, shared mode, as the engine opens them: which cable endpoints can be open together?")
+try:
+    sd._terminate()
+    sd._initialize()
+except Exception:                                                   # noqa: BLE001
+    log(traceback.format_exc())
+
+
+def wasapi_index(piece, kind):
+    key = "max_output_channels" if kind == "output" else "max_input_channels"
+    for i, d in enumerate(sd.query_devices()):
+        if "WASAPI" in sd.query_hostapis()[d["hostapi"]]["name"] and piece.lower() in d["name"].lower() and d[key] > 0:
+            return i
+    return None
+
+
+def hold(kind, piece):
+    idx = wasapi_index(piece, kind)
+    if idx is None:
+        raise RuntimeError(f"no {kind} device {piece!r}")
+    cls = sd.OutputStream if kind == "output" else sd.InputStream
+    cb = (lambda outdata, frames, t, s: outdata.fill(0)) if kind == "output" else (lambda indata, frames, t, s: None)
+    stream = cls(device=idx, callback=cb, dtype="float32", samplerate=48000, channels=2, latency="low",
+                 extra_settings=sd.WasapiSettings(exclusive=False, auto_convert=True))
+    stream.start()
+    return stream
+
+
+def release(streams):
+    for st in streams:
+        try:
+            st.stop()
+            st.close()
+        except Exception:                                           # noqa: BLE001
+            pass
+
+
+ENDS = {"out Input": ("output", "CABLE Input"), "out 16ch": ("output", "CABLE In 16ch"), "in Output": ("input", "CABLE Output")}
+for plan in (("out Input", "out 16ch"), ("out 16ch", "out Input"), ("in Output", "out Input"), ("in Output", "out 16ch"),
+             ("out Input", "in Output"), ("out 16ch", "in Output"),
+             ("out Input", "in Output", "out 16ch"), ("out 16ch", "in Output", "out Input")):
+    held = []
+    steps = []
+    for name in plan:
+        try:
+            held.append(hold(*ENDS[name]))
+            time.sleep(0.4)
+            steps.append(f"{name}: OK")
+        except Exception as exc:                                    # noqa: BLE001
+            steps.append(f"{name}: FAIL {type(exc).__name__} {str(exc).replace(chr(10), ' ')[:120]}")
+            break
+    log("  " + " -> ".join(plan) + "   =>   " + " | ".join(steps))
+    release(held)
+    time.sleep(0.5)
 log("DONE")
