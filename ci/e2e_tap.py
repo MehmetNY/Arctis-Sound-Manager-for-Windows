@@ -248,7 +248,8 @@ def main() -> int:
         log(f"   first launch: leak starts at bucket {first}, 10 ms levels: {['%.3f' % v for v in leak[:30]]}")
         leak_ms = sum(1 for v in leak if v > 0.01) * 10
         log(f"   MEASURE first-launch audible leak = {leak_ms} ms (peak {max(leak or [0]):.3f})")
-        check("S5.1 a first launch leaks for no longer than 60 ms", leak_ms <= 60, f"{leak_ms} ms")
+        check("S5.0 the recorder itself hears the program (the measurement is meaningful)", first is not None)
+        check("S5.1 a first launch of an unknown program leaks for no longer than 150 ms", leak_ms <= 150, f"{leak_ms} ms")
         check("S5.2 and the program then reaches its channel", wait_for(lambda: any(a.get("exe") == "fakemedia.exe" and a.get("managed") for a in helper.apps()), 5))
         media.kill(); time.sleep(1.0)
         rec = Recorder(3.0); time.sleep(0.6)
@@ -258,6 +259,26 @@ def main() -> int:
         log(f"   MEASURE second launch (volume remembered by Windows): peak at headset {peak:.5f}")
         check("S5.3 a second launch of the same program does not leak at all", peak < 1e-3, f"{peak:.5f}")
         media.kill()
+        known = Path(str(state) + ".known")
+        log("   known programs file:", (known.read_text() if known.exists() else "(none)").strip())
+        check("S5.4 the program that was heard is remembered as a player", known.exists() and "fakemedia.exe" in known.read_text().lower())
+
+        # ------------------------------------------------------------------------------------------- S10
+        log("\n== S10 programs that only record the speakers must keep their volume (turning it down would silence the recording)")
+        shutil.copy(BUILD / "audioprobe.exe", WORK / "fakerec.exe")
+        shutil.copy(BUILD / "audioprobe.exe", WORK / "obs64.exe")
+        recs = [subprocess.Popen([str(WORK / n), "record", "--device", HEADSET, "--loopback", "--secs", "8"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                for n in ("fakerec.exe", "obs64.exe")]
+        time.sleep(3.0)
+        found = {a.get("exe"): a for a in helper.apps()}
+        log("   apps:", json.dumps(helper.apps()))
+        check("S10.1 an unknown recorder keeps its volume", abs((volume_of("fakerec.exe") or 0) - 1.0) < 1e-3, str(volume_of("fakerec.exe")))
+        check("S10.2 and is only listened to, not managed", "fakerec.exe" in found and not found["fakerec.exe"].get("managed"), json.dumps(found.get("fakerec.exe")))
+        check("S10.3 a well-known recorder (obs64.exe) is left alone altogether", abs((volume_of("obs64.exe") or 0) - 1.0) < 1e-3 and
+              found.get("obs64.exe", {}).get("channel") == "bypass", json.dumps(found.get("obs64.exe")))
+        check("S10.4 the players are still managed meanwhile", (volume_of("fakegame.exe") or 1) < 1e-6)
+        for r in recs:
+            r.kill(); r.wait()
 
         # ------------------------------------------------------------------------------------------- S6
         log("\n== S6 a program that ends while turned down: what volume does it have the next time?")
@@ -290,7 +311,7 @@ def main() -> int:
         v = volume_of("fakegame.exe")
         log(f"   after the crash the game's volume is {v}; state file: {(state.read_text() if state.exists() else '(none)').strip()}")
         check("S7.1 (expected) a crashed helper leaves the program turned down", v is not None and v < 1e-6, str(v))
-        check("S7.2 the restore command finds it and puts the volume back", restore_volumes(str(BUILD / "asm-audiotap.exe")))
+        check("S7.2 the restore command finds it and puts the volume back", restore_volumes(str(BUILD / "asm-audiotap.exe"), state=state))
         time.sleep(0.5)
         v = volume_of("fakegame.exe")
         check("S7.3 the volume it had before is back", v is not None and abs(v - 0.4) < 1e-3, str(v))

@@ -220,7 +220,7 @@ def _no_window() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
-def restore_volumes(exe: str | None = None, run=subprocess.run, timeout: float = 10.0) -> bool:
+def restore_volumes(exe: str | None = None, run=subprocess.run, timeout: float = 10.0, state: str | os.PathLike | None = None) -> bool:
     """Put back the volume of every program a previous (crashed) helper had turned down. Harmless when there is
     nothing to put back. ``True`` when the helper ran."""
     exe = exe or find_helper()
@@ -230,7 +230,7 @@ def restore_volumes(exe: str | None = None, run=subprocess.run, timeout: float =
     if os.name == "nt":
         kwargs["creationflags"] = _no_window()
     try:
-        run([exe, "--restore", "--state", str(state_file())], **kwargs)
+        run([exe, "--restore", "--state", str(state or state_file())], **kwargs)
     except (OSError, subprocess.SubprocessError) as exc:
         _log.warning("restoring program volumes failed: %s", exc)
         return False

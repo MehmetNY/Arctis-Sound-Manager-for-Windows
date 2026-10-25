@@ -68,6 +68,24 @@ static const int kChannels = 4;                      // game, chat, media, aux (
 static const char* kChannelNames[kChannels] = {"game", "chat", "media", "aux"};
 static const int kOutChannels = kChannels * 2;
 static float g_eps = 2e-8f;
+// A program is turned down only once it has been HEARD playing through its own process loopback (peak above this): a
+// program that merely holds a session open while it records (OBS, recorders, game-bar) never plays anything, and
+// turning its session down would silence the recording.
+static const float kHeardLevel = 1e-4f;
+
+// Programs that certainly play sound: turned down the moment their session appears (no first-sound leak at all).
+static const wchar_t* kKnownPlayers[] = {
+    L"chrome.exe", L"msedge.exe", L"firefox.exe", L"brave.exe", L"opera.exe", L"vivaldi.exe", L"spotify.exe", L"discord.exe",
+    L"discordptb.exe", L"discordcanary.exe", L"vlc.exe", L"mpv.exe", L"mpc-hc.exe", L"mpc-hc64.exe", L"mpc-be.exe", L"mpc-be64.exe",
+    L"potplayermini.exe", L"potplayermini64.exe", L"wmplayer.exe", L"microsoft.media.player.exe", L"foobar2000.exe", L"aimp.exe",
+    L"itunes.exe", L"teams.exe", L"ms-teams.exe", L"zoom.exe", L"skype.exe", L"telegram.exe", L"steam.exe", L"steamwebhelper.exe",
+    L"battle.net.exe", L"epicgameslauncher.exe",
+};
+// Programs that record the speakers and are never touched unless the user gives them a channel explicitly.
+static const wchar_t* kRecorders[] = {
+    L"obs64.exe", L"obs32.exe", L"obs.exe", L"streamlabs desktop.exe", L"streamlabs obs.exe", L"xsplit.core.exe", L"ffmpeg.exe",
+    L"sharex.exe", L"bdcam.exe", L"medal.exe", L"nvidia share.exe", L"gamebar.exe", L"gamebarftserver.exe", L"gamebarpresencewriter.exe",
+};
 
 DEFINE_GUID(ASM_IID_IAgileObject, 0x94ea2b94, 0xe9cc, 0x49e0, 0xc0, 0xff, 0xee, 0x64, 0xca, 0x8f, 0x5b, 0x90);
 DEFINE_GUID(ASM_IID_ActivateHandler, 0x41d949ab, 0x9862, 0x444a, 0x80, 0xf6, 0xc2, 0x61, 0x33, 0x4d, 0xa5, 0xeb);
@@ -234,6 +252,9 @@ struct Capture {
     uint64_t leaks = 0, packets = 0;
     std::atomic<bool> dead{false};
     std::atomic<bool> leaked{false};                  // told to the manager: re-apply eps
+    std::atomic<bool> observe{false};                 // the program is not turned down yet: only listen, hand nothing on
+    std::atomic<bool> heard{false};                   // ... and it played something
+    std::function<void()> onHeard;                    // wakes the manager at once
     double level = 0.0;                               // smoothed output level (RMS) for the status line
     uint64_t startedAt = 0;
 
@@ -286,6 +307,16 @@ struct Capture {
             HRESULT h = cap->GetBuffer(&data, &frames, &fl, nullptr, nullptr);
             if (FAILED(h)) { if (h != AUDCLNT_S_BUFFER_EMPTY) dead = true; return; }
             packets++;
+            if (observe.load()) {
+                if (!(fl & AUDCLNT_BUFFERFLAGS_SILENT)) {
+                    const float* in = (const float*)data;
+                    float peak = 0.f;
+                    for (UINT32 i = 0; i < frames * 2; i++) peak = std::max(peak, std::fabs(in[i]));
+                    if (peak > kHeardLevel && !heard.exchange(true) && onHeard) onHeard();
+                }
+                cap->ReleaseBuffer(frames);                   // the program is still audible on its own: take nothing
+                continue;
+            }
             size_t at = fifo.size();
             fifo.resize(at + (size_t)frames * 2);
             if (fl & AUDCLNT_BUFFERFLAGS_SILENT) {
@@ -426,6 +457,7 @@ private:
     Notifier* notifier = nullptr;
     std::map<std::wstring, std::unique_ptr<Session>> sessions;
     std::map<std::wstring, float> remembered;         // exe path -> the volume it had before we turned it down (kept in the state file)
+    std::set<std::wstring> known;                     // exe paths heard playing (lower case); kept in <state>.known
     std::mutex capMutex;
     std::vector<std::shared_ptr<Capture>> captures;
     std::map<DWORD, uint64_t> captureRetry;
@@ -439,6 +471,10 @@ private:
     void releaseEndpoint();
     void refresh();
     int channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& excl, const std::map<std::wstring, int>& rl, int def);
+    bool isKnown(const Session& s) const;
+    void loadKnown();
+    void saveKnown();
+    void prove(const std::map<DWORD, DWORD>& rootOf, DWORD root);
     void attenuate(Session& s);
     void release(Session& s, bool vanished = false);
     void restoreAll();
@@ -496,7 +532,55 @@ int Tap::channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& e
     std::wstring e = lc(exe);
     if (e.empty()) return -1;                          // a process we may not open (protected): leave it alone
     auto it = rl.find(e);
-    return it != rl.end() ? it->second : def;
+    if (it != rl.end()) return it->second;                 // the user's word comes first
+    for (const wchar_t* r : kRecorders) if (e == r) return -1;
+    return def;
+}
+
+bool Tap::isKnown(const Session& s) const {
+    if (known.count(lc(s.path))) return true;
+    std::wstring e = lc(s.exe);
+    for (const wchar_t* k : kKnownPlayers) if (e == k) return true;
+    return false;
+}
+
+void Tap::loadKnown() {
+    if (state.path.empty()) return;
+    FILE* f = _wfopen((state.path + L".known").c_str(), L"rb");
+    if (!f) return;
+    char line[4096];
+    while (fgets(line, sizeof line, f)) {
+        std::string t(line);
+        while (!t.empty() && (t.back() == '\n' || t.back() == '\r')) t.pop_back();
+        if (!t.empty()) known.insert(lc(W(t)));
+    }
+    fclose(f);
+}
+
+void Tap::saveKnown() {
+    if (state.path.empty()) return;
+    std::wstring path = state.path + L".known", tmp = path + L".tmp";
+    FILE* f = _wfopen(tmp.c_str(), L"wb");
+    if (!f) return;
+    for (auto& k : known) fprintf(f, "%s\n", U(k).c_str());
+    fclose(f);
+    MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+}
+
+// A capture has heard programs play: every program of its tree that was only being watched is turned down now.
+void Tap::prove(const std::map<DWORD, DWORD>& rootOf, DWORD root) {
+    bool any = false;
+    for (auto& kv : sessions) {
+        Session& s = *kv.second;
+        if (s.channel == -1 || s.lowered) continue;
+        auto r = rootOf.find(s.pid);
+        if (r == rootOf.end() || r->second != root) continue;
+        known.insert(lc(s.path));
+        attenuate(s);
+        any = true;
+        logMsg("heard " + U(s.exe) + " (pid " + std::to_string(s.pid) + "): turned down from now on");
+    }
+    if (any) saveKnown();
 }
 
 void Tap::attenuate(Session& s) {
@@ -577,7 +661,7 @@ void Tap::refresh() {
             s.channel = ch;
         }
         if (s.channel != -1) {
-            if (!s.lowered) attenuate(s);
+            if (!s.lowered) { if (isKnown(s)) attenuate(s); }       // an unknown program is only listened to until it plays (reconcileCaptures)
             else {
                 // somebody (the user at the volume mixer, the program itself) changed the volume: that is the new
                 // "volume the program wants"; remember it and go back to eps at once
@@ -599,25 +683,43 @@ void Tap::refresh() {
 }
 
 void Tap::reconcileCaptures() {
-    // wanted: one capture per "root" session pid (no managed ancestor), carrying that session's channel
+    // One capture per "root" session pid (no ancestor of the same channel), watching the program's whole tree.
+    // A capture of a program that is not turned down yet only listens ("observe"); when it hears sound the program
+    // is proven to be a player and is turned down (prove), after which the capture carries its sound.
     std::map<DWORD, Session*> managed;
-    for (auto& kv : sessions) if (kv.second->channel != -1 && kv.second->lowered) managed[kv.second->pid] = kv.second.get();
-    std::set<DWORD> pids; for (auto& kv : managed) pids.insert(kv.first);
+    for (auto& kv : sessions) if (kv.second->channel != -1) managed[kv.second->pid] = kv.second.get();
     std::map<DWORD, DWORD> parents = managed.size() > 1 ? parentMap() : std::map<DWORD, DWORD>();
     std::map<DWORD, Session*> roots;
+    std::map<DWORD, DWORD> rootOf;
     for (auto& kv : managed) {
-        bool covered = false;
+        DWORD root = kv.first, cur = kv.first;
         if (managed.size() > 1) {
-            DWORD cur = kv.first;
-            for (int i = 0; i < 32 && !covered; i++) {
+            for (int i = 0; i < 32; i++) {
                 auto it = parents.find(cur);
                 if (it == parents.end() || it->second == 0 || it->second == cur) break;
                 cur = it->second;
                 auto anc = managed.find(cur);
-                if (anc != managed.end() && anc->second->channel == kv.second->channel) covered = true;
+                if (anc != managed.end() && anc->second->channel == kv.second->channel) root = cur;
             }
         }
-        if (!covered) roots[kv.first] = kv.second;
+        rootOf[kv.first] = root;
+        if (root == kv.first) roots[kv.first] = kv.second;
+    }
+    for (auto& c : captures) {
+        if (c->observe.load() && c->heard.exchange(false)) {
+            prove(rootOf, c->pid);
+        } else if (!c->observe.load() && c->leaked.exchange(false)) {
+            // a packet louder than eps allows: a session of this tree is not at eps. Either it was turned down and
+            // moved, or it is a program of the tree that nobody turned down yet (it plays): turn it down now.
+            for (auto& kv : sessions) {
+                Session& s = *kv.second;
+                if (s.channel == -1) continue;
+                auto r = rootOf.find(s.pid);
+                if (r == rootOf.end() || r->second != c->pid) continue;
+                if (s.lowered) s.vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT);
+            }
+            prove(rootOf, c->pid);
+        }
     }
     std::lock_guard<std::mutex> l(capMutex);
     for (auto it = captures.begin(); it != captures.end();) {
@@ -625,12 +727,10 @@ void Tap::reconcileCaptures() {
         if ((*it)->dead || r == roots.end()) { it = captures.erase(it); continue; }
         (*it)->channel = r->second->channel;
         // gain = volume the program wanted / eps; several sessions of one pid: the loudest wanted volume
-        float v0 = 0.0f;
-        for (auto& kv : sessions) if (kv.second->pid == r->first && kv.second->lowered) v0 = std::max(v0, kv.second->v0);
+        float v0 = 0.0f; bool low = false;
+        for (auto& kv : sessions) if (kv.second->pid == r->first && kv.second->lowered) { v0 = std::max(v0, kv.second->v0); low = true; }
         (*it)->gain = v0 / g_eps;
-        if ((*it)->leaked.exchange(false)) {          // a packet louder than eps allows: some session of this tree is not at eps
-            for (auto& kv : sessions) if (kv.second->lowered) { kv.second->vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT); }
-        }
+        (*it)->observe = !low;
         ++it;
     }
     for (auto& kv : roots) {
@@ -643,13 +743,15 @@ void Tap::reconcileCaptures() {
         std::string err;
         c->exe = kv.second->exe;
         c->channel = kv.second->channel;
-        float v0 = 0.0f;
-        for (auto& s : sessions) if (s.second->pid == kv.first && s.second->lowered) v0 = std::max(v0, s.second->v0);
+        float v0 = 0.0f; bool low = false;
+        for (auto& s : sessions) if (s.second->pid == kv.first && s.second->lowered) { v0 = std::max(v0, s.second->v0); low = true; }
         c->gain = v0 / g_eps;
+        c->observe = !low;
+        c->onHeard = [this] { requestWake(); };
         if (c->start(kv.first, err)) {
             captures.push_back(c);
             captureRetry.erase(kv.first);
-            logMsg("tapping " + U(kv.second->exe) + " (pid " + std::to_string(kv.first) + ") -> " + kChannelNames[kv.second->channel]);
+            logMsg(std::string(low ? "tapping " : "listening to ") + U(kv.second->exe) + " (pid " + std::to_string(kv.first) + ") -> " + kChannelNames[kv.second->channel]);
         } else {
             captureRetry[kv.first] = nowMs() + 1500;
             logMsg("cannot tap " + U(kv.second->exe) + ": " + err);
@@ -672,7 +774,7 @@ void Tap::status() {
             if (!first) apps += ",";
             first = false;
             apps += "{\"exe\":\"" + jesc(U(s.exe)) + "\",\"pid\":" + std::to_string(s.pid) + ",\"channel\":\"" +
-                    (s.channel >= 0 ? kChannelNames[s.channel] : "bypass") + "\",\"managed\":" + (s.lowered ? "true" : "false") +
+                    (s.channel >= 0 ? kChannelNames[s.channel] : "bypass") + "\",\"managed\":" + (s.lowered ? "true" : "false") + ",\"watching\":" + (s.channel >= 0 && !s.lowered ? "true" : "false") +
                     ",\"active\":" + (st == AudioSessionStateActive ? "true" : "false");
             snprintf(b, sizeof b, ",\"level\":%.5f,\"leaks\":%llu}", level, (unsigned long long)leaks);
             apps += b;
@@ -757,6 +859,7 @@ int Tap::run() {
         return 2;
     }
     remembered = state.read();                            // programs whose volume an earlier run (or crash) left turned down
+    loadKnown();
     audioRun = true;
     std::thread audio([this] { audioThread(); });
     std::thread writer([this] { writerThread(); });
