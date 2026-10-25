@@ -5,31 +5,44 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: probe-audio-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  probe:
+  static:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static look at the drivers' signatures
+        shell: pwsh
+        timeout-minutes: 8
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: ./ci/probe_static.ps1
+        continue-on-error: true
+      - name: Publish
+        if: always()
+        shell: bash
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-static static.log
+  install:
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025, windows-2022]
+        which: [vad, vbcable]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Probe
+      - name: Install ${{ matrix.which }}
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./ci/probe_audio.ps1 -Out probe.log
+        timeout-minutes: 12
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: ./ci/probe_install.ps1 -Which ${{ matrix.which }}
         continue-on-error: true
-      - name: Publish log to a branch
+      - name: Publish
         if: always()
         shell: bash
-        run: |
-          mkdir -p /tmp/out && cp probe.log /tmp/out/ 2>/dev/null || echo "no log" > /tmp/out/probe.log
-          cp -r probe_work/latest.json /tmp/out/ 2>/dev/null || true
-          git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
-          git checkout --orphan logs-tmp
-          git rm -rf --quiet . || true
-          cp -r /tmp/out/* .
-          git add -A
-          git commit -q -m "probe log (${{ matrix.os }}) run ${{ github.run_id }}"
-          git push -f origin HEAD:refs/heads/ci-logs-${{ matrix.os }}
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-${{ matrix.which }}-${{ matrix.os }} install-${{ matrix.which }}.log hang-*.png
