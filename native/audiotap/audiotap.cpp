@@ -165,16 +165,6 @@ static std::map<DWORD, DWORD> parentMap() {
     CloseHandle(snap);
     return m;
 }
-static bool hasAncestor(const std::map<DWORD, DWORD>& parents, DWORD pid, const std::set<DWORD>& candidates) {
-    DWORD cur = pid;
-    for (int i = 0; i < 32; i++) {
-        auto it = parents.find(cur);
-        if (it == parents.end() || it->second == 0 || it->second == cur) return false;
-        cur = it->second;
-        if (candidates.count(cur)) return true;
-    }
-    return false;
-}
 
 // ----------------------------------------------------------------------------------------------- state file
 // One line per program whose volume was lowered:  <full exe path>\t<volume it had>
@@ -556,9 +546,6 @@ void Tap::refresh() {
     if (FAILED(manager->GetSessionEnumerator(&en))) return;
     int count = 0; en->GetCount(&count);
     for (auto& kv : sessions) kv.second->seen = false;
-    // children of an excluded process (the engine) are excluded too
-    std::map<DWORD, DWORD> parents;
-    bool parentsRead = false;
     for (int i = 0; i < count; i++) {
         Ptr<IAudioSessionControl> ctl;
         if (FAILED(en->GetSession(i, &ctl))) continue;
@@ -585,8 +572,6 @@ void Tap::refresh() {
         Session& s = *it->second;
         s.seen = true;
         int ch = channelFor(s.exe, s.pid, excl, rl, def);
-        if (ch != -1 && !excl.empty() && !parentsRead) { parents = parentMap(); parentsRead = true; }
-        if (ch != -1 && !excl.empty() && hasAncestor(parents, s.pid, excl)) ch = -1;
         if (ch != s.channel) {
             if (s.lowered && ch == -1) release(s);
             s.channel = ch;

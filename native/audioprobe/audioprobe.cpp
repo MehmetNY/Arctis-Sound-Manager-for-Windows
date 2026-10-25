@@ -7,7 +7,7 @@
 //                       [--svpid P --svvol V --svat MS]   change a session volume MS ms into the capture
 //                       [--trace]                         print the RMS of every 10 ms
 //   audioprobe watch    [--secs 10] [--sv V]                (new audio sessions: print them, optionally set their volume at once)
-//   audioprobe sessions
+//   audioprobe sessions [--verbose]            (every render session of every endpoint; --verbose = all session properties)
 //   audioprobe setvol   --pid <pid> --vol <0..1>
 //   audioprobe mute     --pid <pid> --on|--off
 //   audioprobe epvol    --device <substr> --vol <0..1>
@@ -419,7 +419,7 @@ static std::string exeOf(DWORD pid) {
 }
 
 template <class Fn>
-static int forEachSession(Fn fn) {
+static int forEachSessionX(Fn fn) {
     if (!initEnum()) return 0;
     Ptr<IMMDeviceCollection> col;
     if (FAILED(g_enum->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &col))) return 0;
@@ -442,16 +442,51 @@ static int forEachSession(Fn fn) {
             if (FAILED(sc->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol))) continue;
             DWORD pid = 0; sc2->GetProcessId(&pid);
             AudioSessionState st = AudioSessionStateInactive; sc->GetState(&st);
-            hits += fn(friendly(d.p), pid, st, vol.p);
+            hits += fn(friendly(d.p), pid, st, vol.p, sc.p, sc2.p);
         }
     }
     return hits;
 }
+template <class Fn>
+static int forEachSession(Fn fn) {
+    return forEachSessionX([&](const std::wstring& dev, DWORD pid, AudioSessionState st, ISimpleAudioVolume* v, IAudioSessionControl*, IAudioSessionControl2*) { return fn(dev, pid, st, v); });
+}
 
-static int cmdSessions() {
-    forEachSession([](const std::wstring& dev, DWORD pid, AudioSessionState st, ISimpleAudioVolume* v) {
+static std::string guidStr(const GUID& g) {
+    char b[64]; snprintf(b, sizeof b, "%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", g.Data1, g.Data2, g.Data3, g.Data4[0], g.Data4[1], g.Data4[2], g.Data4[3], g.Data4[4], g.Data4[5], g.Data4[6], g.Data4[7]);
+    return b;
+}
+static std::string coStr(LPWSTR w) { std::string r = w ? U(w) : "(null)"; if (w) CoTaskMemFree(w); return r; }
+
+// "sessions --verbose": every property a session exposes. Used to find out whether a program that PLAYS sound and a program that
+// only CAPTURES an endpoint's loopback (OBS, a recorder, our own helper) can be told apart by looking at their sessions.
+static int cmdSessions(int argc, char** argv) {
+    bool verbose = flag(argc, argv, "--verbose");
+    forEachSessionX([&](const std::wstring& dev, DWORD pid, AudioSessionState st, ISimpleAudioVolume* v, IAudioSessionControl* sc, IAudioSessionControl2* sc2) {
         float vol = 0; BOOL mute = FALSE; v->GetMasterVolume(&vol); v->GetMute(&mute);
         printf("SESSION device='%s' pid=%lu exe=%s state=%d volume=%g mute=%d\n", U(dev).c_str(), (unsigned long)pid, exeOf(pid).c_str(), (int)st, vol, (int)mute);
+        if (!verbose) return 0;
+        LPWSTR w = nullptr;
+        HRESULT hr;
+        hr = sc->GetDisplayName(&w);                  printf("  display-name      hr=%08lx '%s'\n", (unsigned long)hr, coStr(SUCCEEDED(hr) ? w : nullptr).c_str());
+        w = nullptr; hr = sc->GetIconPath(&w);        printf("  icon-path         hr=%08lx '%s'\n", (unsigned long)hr, coStr(SUCCEEDED(hr) ? w : nullptr).c_str());
+        GUID g = {}; hr = sc->GetGroupingParam(&g);   printf("  grouping-param    hr=%08lx %s\n", (unsigned long)hr, guidStr(g).c_str());
+        w = nullptr; hr = sc2->GetSessionIdentifier(&w);         printf("  session-id        hr=%08lx '%s'\n", (unsigned long)hr, coStr(SUCCEEDED(hr) ? w : nullptr).c_str());
+        w = nullptr; hr = sc2->GetSessionInstanceIdentifier(&w); printf("  session-instance  hr=%08lx '%s'\n", (unsigned long)hr, coStr(SUCCEEDED(hr) ? w : nullptr).c_str());
+        printf("  is-system-sounds  %ld   is-single-process %ld\n", (long)sc2->IsSystemSoundsSession(), (long)sc2->GetProcessId(&pid));
+#ifndef __MINGW32__       // (mingw-w64's headers lack IAudioMeterInformation; the CI builds with MSVC)
+        Ptr<IAudioMeterInformation> meter;
+        if (SUCCEEDED(sc->QueryInterface(__uuidof(IAudioMeterInformation), (void**)&meter))) {
+            float pk = -1; UINT ch = 0; meter->GetPeakValue(&pk); meter->GetMeteringChannelCount(&ch);
+            printf("  meter             peak=%g channels=%u\n", pk, ch);
+        } else printf("  meter             (none)\n");
+#endif
+        Ptr<IChannelAudioVolume> cv;
+        if (SUCCEEDED(sc->QueryInterface(__uuidof(IChannelAudioVolume), (void**)&cv))) {
+            UINT n = 0; cv->GetChannelCount(&n); printf("  channel-volumes   count=%u", n);
+            for (UINT i = 0; i < n && i < 8; i++) { float f = 0; cv->GetChannelVolume(i, &f); printf(" %g", f); }
+            printf("\n");
+        } else printf("  channel-volumes   (none)\n");
         return 0;
     });
     return 0;
@@ -550,7 +585,7 @@ int main(int argc, char** argv) {
     else if (c == "tone") rc = cmdTone(argc, argv);
     else if (c == "record") rc = cmdRecord(argc, argv);
     else if (c == "capture") rc = cmdCapture(argc, argv);
-    else if (c == "sessions") rc = cmdSessions();
+    else if (c == "sessions") rc = cmdSessions(argc, argv);
     else if (c == "setvol") rc = cmdSetVol(argc, argv, false);
     else if (c == "mute") rc = cmdSetVol(argc, argv, true);
     else if (c == "watch") rc = cmdWatch(argc, argv);

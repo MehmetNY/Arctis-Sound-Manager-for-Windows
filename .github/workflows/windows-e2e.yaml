@@ -24,6 +24,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 8
         run: ./ci/setup_audio.ps1
+      - name: Probe - render sessions vs. capture sessions
+        shell: pwsh
+        timeout-minutes: 3
+        run: ./ci/probe_sessions.ps1
+        continue-on-error: true
       - name: asm-audiotap end to end
         shell: pwsh
         timeout-minutes: 12
@@ -32,12 +37,12 @@ jobs:
       - name: Annotate
         if: always()
         shell: pwsh
-        run: ./ci/annotate.ps1 -Files e2e.log
+        run: ./ci/annotate.ps1 -Files e2e.log,probe.log
       - name: Publish
         if: always()
         shell: bash
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: ./ci/publish.sh ci-logs-e2e e2e.log setup.log
+        run: ./ci/publish.sh ci-logs-e2e e2e.log setup.log probe.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
