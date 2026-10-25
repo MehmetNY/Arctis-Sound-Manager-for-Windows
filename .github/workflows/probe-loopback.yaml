@@ -21,7 +21,7 @@ jobs:
       - name: Process-loopback / VB-CABLE experiments
         shell: pwsh
         timeout-minutes: 15
-        run: ./ci/probe_loopback.ps1
+        run: ./ci/probe_loopback3.ps1
         continue-on-error: true
       - name: Annotate
         if: always()

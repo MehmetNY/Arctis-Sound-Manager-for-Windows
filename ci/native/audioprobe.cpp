@@ -135,6 +135,22 @@ static std::string fmtStr(const WAVEFORMATEX* w) {
     return b;
 }
 
+static WAVEFORMATEXTENSIBLE floatFormat(int channels, int rate) {
+    WAVEFORMATEXTENSIBLE w = {};
+    w.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    w.Format.nChannels = (WORD)channels;
+    w.Format.nSamplesPerSec = (DWORD)rate;
+    w.Format.wBitsPerSample = 32;
+    w.Format.nBlockAlign = (WORD)(channels * 4);
+    w.Format.nAvgBytesPerSec = (DWORD)(rate * channels * 4);
+    w.Format.cbSize = 22;
+    w.Samples.wValidBitsPerSample = 32;
+    static const DWORD masks[] = {0, 0x4, 0x3, 0x7, 0x33, 0x37, 0x3F, 0x13F, 0x63F};
+    w.dwChannelMask = channels <= 8 ? masks[channels] : 0;
+    w.SubFormat = ASM_SUBTYPE_FLOAT;
+    return w;
+}
+
 // ---------------------------------------------------------------- list
 static int cmdList() {
     if (!initEnum()) return 1;
@@ -178,8 +194,12 @@ static int cmdTone(int argc, char** argv) {
     HRESULT h = d->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&c);
     if (FAILED(h)) { printf("ERROR activate %s\n", hr(h).c_str()); return 4; }
     WAVEFORMATEX* w = nullptr; c->GetMixFormat(&w);
+    int wantCh = atoi(arg(argc, argv, "--channels", "0"));
+    WAVEFORMATEXTENSIBLE custom = floatFormat(wantCh > 0 ? wantCh : 2, 48000);
+    DWORD tflags = 0;
+    if (wantCh > 0) { CoTaskMemFree(w); w = (WAVEFORMATEX*)&custom; tflags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY; }
     Fmt f = fmtOf(w);
-    h = c->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 2000000, 0, w, nullptr);
+    h = c->Initialize(AUDCLNT_SHAREMODE_SHARED, tflags, 2000000, 0, w, nullptr);
     if (FAILED(h)) { printf("ERROR initialize %s\n", hr(h).c_str()); return 5; }
     UINT32 bufFrames = 0; c->GetBufferSize(&bufFrames);
     Ptr<IAudioRenderClient> r;
@@ -198,7 +218,8 @@ static int cmdTone(int argc, char** argv) {
             if (SUCCEEDED(r->GetBuffer(n, &buf))) {
                 for (UINT32 i = 0; i < n; i++) {
                     float v = (float)(amp * sin(phase)); phase += step;
-                    for (int k = 0; k < f.ch; k++) putSample(buf + (size_t)i * f.align + (size_t)k * (f.bits / 8), f, v);
+                    // with --channels, channel k plays at (k+1)/N of the amplitude so a capture can tell them apart
+                    for (int k = 0; k < f.ch; k++) putSample(buf + (size_t)i * f.align + (size_t)k * (f.bits / 8), f, wantCh > 0 ? v * (float)(k + 1) / (float)f.ch : v);
                 }
                 r->ReleaseBuffer(n, 0);
             }
@@ -206,7 +227,7 @@ static int cmdTone(int argc, char** argv) {
         Sleep(5);
     }
     c->Stop();
-    CoTaskMemFree(w);
+    if (wantCh <= 0) CoTaskMemFree(w);
     return 0;
 }
 
@@ -317,11 +338,15 @@ static int cmdCapture(int argc, char** argv) {
     Ptr<IAudioClient> c;
     h = unk->QueryInterface(__uuidof(IAudioClient), (void**)&c); unk->Release();
     if (FAILED(h)) { printf("ERROR queryinterface %s\n", hr(h).c_str()); return 6; }
-    WAVEFORMATEX w = {}; w.wFormatTag = WAVE_FORMAT_IEEE_FLOAT; w.nChannels = 2; w.nSamplesPerSec = 48000; w.wBitsPerSample = 32;
-    w.nBlockAlign = 8; w.nAvgBytesPerSec = 48000 * 8;
+    int capCh = atoi(arg(argc, argv, "--channels", "2"));
+    WAVEFORMATEXTENSIBLE wx = floatFormat(capCh, 48000);
+    WAVEFORMATEX w2 = {}; w2.wFormatTag = WAVE_FORMAT_IEEE_FLOAT; w2.nChannels = 2; w2.nSamplesPerSec = 48000; w2.wBitsPerSample = 32;
+    w2.nBlockAlign = 8; w2.nAvgBytesPerSec = 48000 * 8;
+    WAVEFORMATEX* w = capCh == 2 ? &w2 : (WAVEFORMATEX*)&wx;
+    std::vector<double> chss(capCh, 0.0);
     HANDLE evt = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    h = c->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 0, 0, &w, nullptr);
-    if (FAILED(h)) { printf("ERROR initialize %s\n", hr(h).c_str()); return 7; }
+    h = c->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 0, 0, w, nullptr);
+    if (FAILED(h)) { printf("ERROR initialize (%d ch) %s\n", capCh, hr(h).c_str()); return 7; }
     c->SetEventHandle(evt);
     Ptr<IAudioCaptureClient> cap;
     h = c->GetService(__uuidof(IAudioCaptureClient), (void**)&cap);
@@ -347,7 +372,7 @@ static int cmdCapture(int argc, char** argv) {
             if (trace) {
                 const float* tp = (const float*)data;
                 for (UINT32 i = 0; i < n; i++) {
-                    float v = silent ? 0.f : tp[i * 2];
+                    float v = silent ? 0.f : tp[i * capCh];
                     bss += (double)v * v;
                     if (++bn == 480) { bucket.push_back(sqrt(bss / bn)); bss = 0; bn = 0; }
                 }
@@ -356,9 +381,9 @@ static int cmdCapture(int argc, char** argv) {
             if (GetTickCount64() > warm) {
                 packets++; if (silent) silentPk++;
                 const float* p = (const float*)data;
-                for (UINT32 i = 0; i < n * 2; i++) { float v = silent ? 0.f : p[i]; ss += (double)v * v; if (fabsf(v) > pk) pk = fabsf(v); }
+                for (UINT32 i = 0; i < n * (UINT32)capCh; i++) { float v = silent ? 0.f : p[i]; ss += (double)v * v; chss[i % capCh] += (double)v * v; if (fabsf(v) > pk) pk = fabsf(v); }
                 frames += n;
-                if (df) { if (silent) { std::vector<float> z(n * 2, 0.f); fwrite(z.data(), 4, n * 2, df); } else fwrite(p, 4, n * 2, df); }
+                if (df) { if (silent) { std::vector<float> z(n * capCh, 0.f); fwrite(z.data(), 4, n * capCh, df); } else fwrite(p, 4, n * capCh, df); }
             }
             cap->ReleaseBuffer(n);
         }
@@ -372,7 +397,12 @@ static int cmdCapture(int argc, char** argv) {
         printf("\n");
     }
     printf("RESULT capture pid=%s mode=%s frames=%llu packets=%llu silent_packets=%llu rms=%.9f peak=%.9f\n", pidS, excl ? "exclude" : "include",
-           (unsigned long long)frames, (unsigned long long)packets, (unsigned long long)silentPk, frames ? sqrt(ss / (double)(frames * 2)) : 0.0, pk);
+           (unsigned long long)frames, (unsigned long long)packets, (unsigned long long)silentPk, frames ? sqrt(ss / (double)(frames * capCh)) : 0.0, pk);
+    if (capCh != 2) {
+        printf("RESULT capture-channels %d:", capCh);
+        for (int k = 0; k < capCh; k++) printf(" ch%d=%.5f", k + 1, frames ? sqrt(chss[k] / (double)frames) : 0.0);
+        printf("\n");
+    }
     return 0;
 }
 
@@ -483,6 +513,8 @@ static int cmdWatch(int argc, char** argv) {
         IAudioSessionManager2* m = nullptr;
         if (FAILED(d->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&m))) continue;
         m->RegisterSessionNotification(w);
+        // Notifications are only delivered once the session list has been read at least once.
+        { Ptr<IAudioSessionEnumerator> first; m->GetSessionEnumerator(&first); }
         mgrs.push_back(m);
         printf("WATCH %s\n", U(friendly(d.p)).c_str());
     }
