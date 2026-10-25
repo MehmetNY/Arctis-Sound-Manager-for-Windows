@@ -9,11 +9,15 @@
 
 [![Latest release](https://img.shields.io/github/v/release/loteran/Arctis-Sound-Manager)](https://github.com/loteran/Arctis-Sound-Manager/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/loteran/Arctis-Sound-Manager)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)](https://github.com/loteran/Arctis-Sound-Manager)
 [![Crowdin](https://badges.crowdin.net/arctis-sound-manager/localized.svg)](https://crowdin.com/project/arctis-sound-manager)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/tbG4D5AnVz)
 [![ASM Presets](https://img.shields.io/badge/EQ%20Presets-Community%20site-FB4A00)](https://loteran.github.io/asm-presets/)
 [![ASM Themes](https://img.shields.io/badge/Themes-Community%20site-8B5CF6)](https://loteran.github.io/asm-presets/#themes)
+
+> [!NOTE]
+> ## 🪟 Windows
+> This branch also runs on Windows 10/11: one installer, no driver of its own, nothing to set up by hand. Download `ASM-Setup-<version>.exe` from the [`windows-latest` pre-release](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases/tag/windows-latest) and read [docs/windows.md](docs/windows.md) for how the sound is handled and what is different from Linux.
 
 > [!NOTE]
 > ## 🔬 Help map your headset
