@@ -51,3 +51,38 @@ jobs:
           gh release create windows-latest build/ASM-Setup-*.exe --prerelease --target "$GITHUB_SHA" \
             --title "Windows installer (latest build of the windows branch)" \
             --notes "Unsigned installer built by CI from commit $GITHUB_SHA. Windows SmartScreen will warn about an unknown publisher: choose More info > Run anyway."
+
+  chain:
+    # The installer exactly as a user gets it, on a clean machine: silent installation (VB-CABLE included), the program
+    # started the way "Start with Windows" starts it, real programs playing, the engine mixing, the uninstaller.
+    needs: installer
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install numpy psutil
+      - uses: actions/download-artifact@v4
+        with: { name: ASM-Setup, path: installer-exe }
+      - name: Build the native test tools
+        shell: pwsh
+        run: ./ci/build_native.ps1
+      - name: Install silently
+        shell: pwsh
+        timeout-minutes: 10
+        run: ./ci/chain_install.ps1 -Installer (Get-ChildItem installer-exe -Filter "ASM-Setup-*.exe" | Select-Object -First 1).FullName
+      - name: Whole chain
+        shell: pwsh
+        timeout-minutes: 20
+        run: python ci/e2e_chain.py
+        continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files chain.log,chain-install.log
+      - name: Publish
+        if: always()
+        shell: bash
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-chain chain.log chain-install.log chain-setup.log
