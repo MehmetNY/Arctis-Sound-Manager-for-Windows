@@ -225,30 +225,35 @@ def main() -> int:
             log("   (it does start by hand)")
         else:
             log("   engine output:", (fg.stdout.read(3000) if fg.poll() is not None else "(still running, not answering)"))
-    status = {}
-    try:
-        reply = client.status()
-        status = reply.get("status", reply)
-    except EngineUnavailable as exc:
-        log("   status unavailable:", exc)
+    def engine_status() -> dict:
+        try:
+            reply = client.status()
+            return reply.get("status", reply)
+        except EngineUnavailable as exc:
+            log("   status unavailable:", exc)
+            return {}
+
+    # the control channel answers at once; the audio graph itself is built a moment later (kernels, devices)
+    wait_for(lambda: bool(engine_status().get("running")), 120, 1.0)
+    status = engine_status()
     log("   engine config:", json.dumps(status.get("config", {}))[:400])
     log("   engine endpoints:", json.dumps(status.get("endpoints", {}))[:1500])
     check("C4.2 it is running and has no problems", bool(status.get("running")) and not status.get("problems") and not status.get("error"),
           f"{status.get('problems')} {status.get('error')}")
     bad = {k: v for k, v in (status.get("endpoints") or {}).items() if v.get("state") != "running"}
     check("C4.2b every device of the engine is open", not bad, json.dumps(bad)[:300])
-    check("C4.3 the helper process is there", bool(processes("asm-audiotap.exe")))
+    check("C4.3 the helper process is there", wait_for(lambda: bool(processes("asm-audiotap.exe")), 20, 1.0))
     check("C4.4 the tray/daemon process is there (not a console window)", len(processes("ArctisSoundManager.exe")) >= 2,
           str(len(processes("ArctisSoundManager.exe"))))
 
     log("== two programs play")
     game = Fake("fakegame", 0.30, 440.0)
-    chat = Fake("fakechat", 0.20, 880.0)
+    chat = Fake("discord", 0.20, 880.0)
     log("   ", game.first, "|", chat.first)
     try:
         check("C5.1 the programs are turned down to the helper's level", wait_for(
-            lambda: (volume_of("fakegame.exe") or 1) < 1e-6 and (volume_of("fakechat.exe") or 1) < 1e-6, 15),
-            f"{volume_of('fakegame.exe')} {volume_of('fakechat.exe')}")
+            lambda: (volume_of("fakegame.exe") or 1) < 1e-6 and (volume_of("discord.exe") or 1) < 1e-6, 15),
+            f"{volume_of('fakegame.exe')} {volume_of('discord.exe')}")
         time.sleep(2.0)
         both = level(HEADSET, 3.0)
         leak = level(HEADSET, 1.0)
@@ -312,7 +317,7 @@ def main() -> int:
         check("C8.1 no ASM process is left", not processes("ArctisSoundManager.exe") and not processes("asm-audiotap.exe"),
               f"{processes('ArctisSoundManager.exe')} {processes('asm-audiotap.exe')}")
         check("C8.2 the programs have their volume back", abs((volume_of("fakegame.exe") or 0) - 1.0) < 1e-3 and
-              abs((volume_of("fakechat.exe") or 0) - 1.0) < 1e-3, f"{volume_of('fakegame.exe')} {volume_of('fakechat.exe')}")
+              abs((volume_of("discord.exe") or 0) - 1.0) < 1e-3, f"{volume_of('fakegame.exe')} {volume_of('discord.exe')}")
         direct = level(PROGRAMS_ENDPOINT, 2.0)
         check("C8.3 and are heard directly again", direct > 0.05, f"{direct:.4f}")
     finally:
