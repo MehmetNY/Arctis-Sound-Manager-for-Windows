@@ -6,6 +6,7 @@ import json
 import pytest
 
 from arctis_sound_manager.win.audio.backend import DeviceInfo
+from arctis_sound_manager.win.audio.tap import tap_devices
 from arctis_sound_manager.win.audio.engine_config import (PROFILES, EngineConfig, load_config, resolve, save_config,
                                                           suggest_config)
 
@@ -232,3 +233,14 @@ def test_a_microphone_alone_is_a_valid_setup():
     assert cfg.problems() == ["no virtual cable is assigned to any channel"]
     cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_input="", mic_output="")
     assert len(cfg.problems()) == 2                                             # nothing at all: still reported
+
+
+def test_the_16ch_end_of_vb_cable_is_the_same_cable_and_never_the_preferred_end():
+    cfg = EngineConfig(outputs={"headset": "CABLE Input"}, mic_input="Microphone", mic_output="CABLE In 16ch (VB-Audio Virtual Cable)")
+    assert any("same device" in p for p in cfg.problems())                       # they are one cable: only one can be open
+    for order in (("CABLE Input", "CABLE In 16ch"), ("CABLE In 16ch", "CABLE Input")):
+        devices = [dev(1, "CABLE Output (VB-Audio Virtual Cable)", ins=2)] + [
+            dev(2 + i, f"{name} (VB-Audio Virtual Cable)", outs=2) for i, name in enumerate(order)] + [
+            dev(9, "Speakers (Arctis Nova Pro Wireless)", outs=2), dev(10, "Microphone (Arctis Nova Pro Wireless)", ins=1)] + tap_devices()
+        guess = suggest_config(devices)
+        assert guess.mic_output == "CABLE Input (VB-Audio Virtual Cable)"

@@ -287,7 +287,9 @@ def _cable_key(name: str) -> tuple:
 def _cable_base(name: str) -> str:
     """'CABLE-A Output (VB-Audio Cable A)' and 'CABLE-A Input (VB-Audio Cable A)' -> 'cable-a'."""
     bare = re.sub(r"\(.*?\)", "", name)
-    return re.sub(r"\b(output|input)\b", "", bare, flags=re.IGNORECASE).strip().lower()
+    # VB-CABLE also lists "CABLE In 16ch": a second render end of the same cable. Windows lets only one of the
+    # two be open at a time (measured: the second one is refused as an invalid device), so it counts as the same end.
+    return re.sub(r"\b(output|input|in 16ch)\b", "", bare, flags=re.IGNORECASE).strip().lower()
 
 
 def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:
@@ -307,7 +309,9 @@ def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:
     renders = [d for d in wasapi if d.max_outputs > 0 and _CABLE.search(d.name)]
     cables = []                                               # (capture end, render end) of every complete cable
     for cap in captures:
-        end = next((r for r in renders if _cable_base(r.name) == _cable_base(cap.name)), None)
+        ends = sorted((r for r in renders if _cable_base(r.name) == _cable_base(cap.name)),
+                      key=lambda r: ("16ch" in r.name.lower(), r.name))      # the plain Input end first
+        end = ends[0] if ends else None
         if end is not None:
             cables.append((cap, end))
 
