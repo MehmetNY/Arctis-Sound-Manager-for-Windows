@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - Windows port
+
+### Added
+- **Windows installer** (`ASM-Setup-<version>.exe`, Inno Setup around a PyInstaller build). One program, `ArctisSoundManager.exe`, plays every role (tray, window, headset daemon, audio engine). The setup installs the virtual microphone driver (VB-CABLE, donationware, silently) and, if ticked, **Start with Windows**: ASM then starts quietly in the background at sign-in, like any other tray program. The uninstaller puts every program's volume back and removes the entry. See `docs/windows.md`.
+- **Per-application audio on Windows without a driver.** `asm-audiotap.exe` listens to each program's audio directly (WASAPI process loopback) and turns the program's own volume down to nothing, so the Game / Chat / Media / Aux channels, ChatMix, the equaliser, spatial audio and the other processing work on any program with no virtual cable per channel. Recorders (OBS, ...) are never turned down; the mixer slider of a program still works; volumes are restored on exit, after a crash and by the uninstaller.
+- **The audio engine sets itself up.** On first run ASM picks the headset, its microphone and the virtual microphone by itself and follows them when devices come and go. The old "audio engine not set up" strip and the cable-assignment wizard are gone; Settings → Audio engine → **Devices...** only corrects a wrong guess.
+- **CI on real Windows machines** (`windows-e2e`, `windows-installer`): the helper against a real audio stack, the installer run silently on a clean machine, the program started the way Start with Windows starts it, programs playing through the engine, and the uninstaller.
+
+### Changed
+- **Headset page (Windows):** spatial audio, surround, volume boost, Smart Volume and the microphone's AI noise cancelling, noise reduction, gate and compressor sit on the Headset page next to the headset's own settings. The equaliser - curve, presets, macro sliders - stays on the Equalizer page.
+
 ## [1.6.4] - 23 October 2026
 
 ### Fixed

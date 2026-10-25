@@ -177,14 +177,12 @@ def tail_logs() -> None:
                 except OSError:
                     continue
                 lines = text.splitlines()
-                log(f"--- {path}  ({len(text)} chars)")
-                if "engine" in path.name and len(lines) > 60:
-                    log("    (first 35 lines)")
-                    for line in lines[:35]:
-                        log("    " + line[:300])
-                    log("    (last 25 lines)")
-                    lines = lines[-25:]
-                for line in lines[-25:]:
+                log(f"--- {path}  ({len(text)} chars, {len(lines)} lines)")
+                if "engine" in path.name:
+                    shown = lines if len(lines) <= 140 else lines[:70] + ["    ..."] + lines[-50:]
+                else:
+                    shown = lines[-25:]
+                for line in shown:
                     log("    " + line[:300])
 
 
@@ -218,9 +216,34 @@ def main() -> int:
         log("    " + line[:300])
     check("C3.2 opening the headset device works in the installed program", probe.returncode == 0, f"exit {probe.returncode}")
 
-    log("== the engine starts by itself, the way Start with Windows starts the program")
+    log("== the engine in the foreground with verbose logging (diagnostic: what exactly does it try to open?)")
     write_config()
     client = EngineClient(CONFIG_DIR, timeout=3.0)
+    verbose_log = WORK / "engine-verbose.log"
+    with open(verbose_log, "w", encoding="utf-8") as sink:
+        fg = subprocess.Popen([str(EXE), "--engine", "-v"], stdout=sink, stderr=subprocess.STDOUT, text=True)
+        up = wait_for(client.available, 240, 1.0)
+        time.sleep(20 if up else 1)
+        try:
+            log("   status after 20 s:", json.dumps(client.status())[:900])
+        except EngineUnavailable as exc:
+            log("   status unavailable:", exc)
+        try:
+            client.request("shutdown")
+        except EngineUnavailable:
+            pass
+        try:
+            fg.wait(30)
+        except subprocess.TimeoutExpired:
+            fg.kill()
+    lines = verbose_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    log(f"   engine output ({len(lines)} lines; first 60, last 20):")
+    for line in lines[:60] + (["    ..."] if len(lines) > 80 else []) + lines[-20:] if len(lines) > 80 else lines:
+        log("    " + line[:330])
+    time.sleep(2)
+
+    log("== the engine starts by itself, the way Start with Windows starts the program")
+    write_config()
     background = subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     started = wait_for(client.available, 240, 1.0)
     check("C4.1 the engine is up without anybody starting it (first start compiles the audio kernels)", started)
