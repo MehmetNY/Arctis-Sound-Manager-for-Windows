@@ -13,6 +13,13 @@ function Frozen([string[]]$a, [int]$timeout = 120) {
 }
 System-Info
 Run "folder" { Get-ChildItem $AppDir | Select-Object Name, Length | Format-Table | Out-String; "size MB: " + [math]::Round(((Get-ChildItem $AppDir -Recurse | Measure-Object Length -Sum).Sum / 1MB), 1) }
+Run "what takes the space (top folders of _internal, biggest files)" {
+    $internal = Join-Path $AppDir "_internal"
+    Get-ChildItem $internal -Directory | ForEach-Object { [pscustomobject]@{ MB = [math]::Round(((Get-ChildItem $_.FullName -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1); Folder = $_.Name } } |
+        Sort-Object MB -Descending | Select-Object -First 18 | Format-Table | Out-String
+    Get-ChildItem $AppDir -Recurse -File | Sort-Object Length -Descending | Select-Object -First 22 |
+        ForEach-Object { "{0,8:N1} MB  {1}" -f ($_.Length / 1MB), $_.FullName.Substring($AppDir.Length) } | Out-String
+}
 Run "version" { Frozen @("--version") 60 }
 Run "audio devices as the engine sees them (needs sounddevice / PortAudio inside the bundle)" { Frozen @("--engine", "--list-devices") 60 }
 Run "engine benchmark (compiled kernels = numba works inside the bundle)" { Frozen @("--engine", "--bench") 300 }

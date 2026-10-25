@@ -35,8 +35,10 @@ except Exception:
 module_collection_mode = {"arctis_sound_manager": "py+pyz"}
 try:
     import numba  # noqa: F401
-    hidden += collect_submodules("numba") + collect_submodules("llvmlite")
-    datas += collect_data_files("numba")
+    def _no_tests(name):                                         # their own test suites are most of what they would add
+        return ".tests" not in name and not name.endswith(".tests")
+    hidden += collect_submodules("numba", filter=_no_tests) + collect_submodules("llvmlite", filter=_no_tests)
+    datas += collect_data_files("numba", excludes=["**/tests/**"])
     binaries += collect_dynamic_libs("llvmlite")
 except Exception:
     pass
@@ -51,7 +53,8 @@ a = Analysis(
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "pytest", "pyudev", "IPython", "notebook", "PyQt5", "PyQt6", "PySide2",
               "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick", "PySide6.Qt3DCore",
-              "PySide6.QtQuick3D", "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtPdf"],
+              "PySide6.QtQuick3D", "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtPdf",
+              "numba.tests", "numba.cuda.tests", "llvmlite.tests", "scipy.tests", "numpy.tests", "numpy.testing.tests"],
     module_collection_mode=module_collection_mode,
     noarchive=False,
 )

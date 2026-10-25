@@ -176,9 +176,16 @@ def tail_logs() -> None:
                     text = path.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     continue
-                log(f"--- {path}  ({len(text)} chars, last 25 lines)")
-                for line in text.splitlines()[-25:]:
-                    log("    " + line[:240])
+                lines = text.splitlines()
+                log(f"--- {path}  ({len(text)} chars)")
+                if "engine" in path.name and len(lines) > 60:
+                    log("    (first 35 lines)")
+                    for line in lines[:35]:
+                        log("    " + line[:300])
+                    log("    (last 25 lines)")
+                    lines = lines[-25:]
+                for line in lines[-25:]:
+                    log("    " + line[:300])
 
 
 def run_key() -> str | None:
