@@ -25,9 +25,6 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-from arctis_sound_manager.win.audio.control import EngineClient, EngineUnavailable      # noqa: E402
-from arctis_sound_manager.win.audio.engine_config import EngineConfig, save_config      # noqa: E402
 
 BUILD = ROOT / "build"
 WORK = ROOT / "chain-work"
@@ -39,6 +36,65 @@ CONFIG_DIR = Path.home() / ".config" / "arctis_manager"
 PROGRAMS_ENDPOINT = "CABLE Input"
 HEADSET = "CABLE In 16ch"
 FAILS: list[str] = []
+
+
+class EngineUnavailable(RuntimeError):
+    pass
+
+
+class EngineClient:
+    """The engine's control protocol (one JSON line over a local socket, token from the port file), on its own:
+    this test must not import the program, whose audio modules need packages the test machine does not have."""
+
+    def __init__(self, config_dir: Path, timeout: float = 3.0):
+        self.config_dir, self.timeout = config_dir, timeout
+
+    def request(self, cmd: str, **fields) -> dict:
+        import socket
+        try:
+            info = json.loads((self.config_dir / "win_audio_engine.port").read_text(encoding="utf-8"))
+            port, token = int(info["port"]), str(info["token"])
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise EngineUnavailable("no port file") from exc
+        payload = (json.dumps({"token": token, "cmd": cmd, **fields}) + "\n").encode("utf-8")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=self.timeout) as sock:
+                sock.settimeout(self.timeout)
+                sock.sendall(payload)
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+            return json.loads(data.decode("utf-8"))
+        except (OSError, ValueError) as exc:
+            raise EngineUnavailable(str(exc)) from exc
+
+    def available(self) -> bool:
+        try:
+            return bool(self.request("ping").get("ok"))
+        except EngineUnavailable:
+            return False
+
+    def status(self) -> dict:
+        return self.request("status")
+
+    def set_volume(self, channel: str, pct: float) -> dict:
+        return self.request("volume", channel=channel, pct=pct)
+
+    def set_mute(self, channel: str, muted: bool) -> dict:
+        return self.request("mute", channel=channel, muted=muted)
+
+
+def write_config() -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    (CONFIG_DIR / "win_audio_engine.json").write_text(json.dumps({
+        "latency": "balanced",
+        "inputs": {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"},
+        "outputs": {"headset": HEADSET},
+        "mic": {"input": "", "output": ""},
+        "master_limiter": True}, indent=2), encoding="utf-8")
 
 
 def log(*parts) -> None:
@@ -150,8 +206,7 @@ def main() -> int:
           (version.stdout + version.stderr).strip()[:80])
 
     log("== the engine starts by itself, the way Start with Windows starts the program")
-    save_config(EngineConfig(inputs={"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"},
-                             outputs={"headset": HEADSET}), CONFIG_DIR)
+    write_config()
     client = EngineClient(CONFIG_DIR, timeout=3.0)
     background = subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     started = wait_for(client.available, 240, 1.0)
@@ -274,4 +329,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        rc = main()
+    except BaseException:                                            # noqa: BLE001 — the log must say what happened
+        import traceback
+        log("CRASH:\n" + traceback.format_exc())
+        raise
+    raise SystemExit(rc)
