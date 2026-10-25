@@ -1760,6 +1760,9 @@ class SonarChannelWidget(QWidget):
             scl = QVBoxLayout(settings_card)
             scl.setContentsMargins(0, 0, 0, 0)
             scl.setSpacing(0)
+            # Spatial audio, volume boost and Smart Volume. The Windows build shows this card on the Headset
+            # page instead of under the equaliser (SonarPage.detach_processing_cards).
+            self._processing_card = settings_card
 
             if channel == "game":
                 from arctis_sound_manager import device_state as _ds
@@ -1854,7 +1857,11 @@ class SonarChannelWidget(QWidget):
 
         # Restyle settings card variants (settingsCard, microSettingsCard)
         for obj_name in ("settingsCard", "microSettingsCard"):
-            for w in self.findChildren(QWidget, obj_name):
+            cards = self.findChildren(QWidget, obj_name)
+            moved = getattr(self, "_processing_card", None)       # may have been taken out (Windows)
+            if moved is not None and moved.objectName() == obj_name and moved not in cards:
+                cards.append(moved)
+            for w in cards:
                 w.setStyleSheet(f"""
                     QWidget#{obj_name} {{
                         background-color: {_theme.c('BG_CARD')};
@@ -3260,6 +3267,8 @@ class SonarMicroWidget(SonarChannelWidget):
         self._comp_card.state_changed.connect(self._on_micro_changed)
         msl.addWidget(self._comp_card)
 
+        # Noise cancelling / reduction / gate / compressor (see SonarPage.detach_processing_cards)
+        self._processing_card = micro_settings
         root.addWidget(micro_settings)
         root.addStretch(1)
         self._preset_bar.processing_loaded.connect(self._on_preset_processing)
@@ -3936,6 +3945,32 @@ class SonarPage(QWidget):
         """The daemon's settings push, for the Micro tab's input picker."""
         self._micro_source.update_settings(settings)
 
+    #: Channel tabs that carry a spatial audio / boost / Smart Volume card, in tab order, then the microphone.
+    PROCESSING_CHANNELS = ("game", "media", "aux", "chat", "micro")
+
+    def detach_processing_cards(self) -> dict[str, QWidget]:
+        """Take the sound-processing cards out of the channel tabs and hand them over.
+
+        Spatial audio, volume boost and Smart Volume (per channel) and the microphone's noise cancelling,
+        noise reduction, gate and compressor are settings of the headset's sound, not of the equaliser;
+        the Windows build shows them on the Headset page. Only the cards move: the widgets inside keep
+        their state, their signals stay connected to this page, and the equaliser stays where it was.
+        Returns ``{channel: card}`` (``"micro"`` for the microphone); a second call returns nothing.
+        """
+        owners = {"game": self._game_widget, "media": self._media_widget, "aux": self._aux_widget,
+                  "chat": self._chat_widget, "micro": self._micro_widget}
+        cards: dict[str, QWidget] = {}
+        for channel in self.PROCESSING_CHANNELS:
+            owner = owners[channel]
+            card = getattr(owner, "_processing_card", None)
+            layout = owner.layout()
+            if card is None or layout is None or layout.indexOf(card) < 0:
+                continue
+            layout.removeWidget(card)
+            card.setParent(None)
+            cards[channel] = card
+        return cards
+
     def apply_theme(self, t=None) -> None:
         """Restyle the Sonar page and all its channel widgets for the active theme."""
         self.setStyleSheet(f"background-color: {_theme.c('BG_MAIN')};")
@@ -3951,7 +3986,7 @@ class SonarPage(QWidget):
             self._micro_source.apply_theme()
 
         # Propagate to each channel widget (they own cards, macro sliders, etc.)
-        for widget in (self._game_widget, self._media_widget, self._chat_widget,
+        for widget in (self._game_widget, self._media_widget, self._aux_widget, self._chat_widget,
                        self._micro_widget, self._output_widget):
             widget.apply_theme(t)
 

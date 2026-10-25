@@ -14,9 +14,9 @@ with the same volume law, so two small adapters let that code run unchanged:
   running the sink list is empty — the Home page then shows its usual "not connected" state.
 * :class:`WindowsAudioManager` — the daemon-side ``PulseAudioManager`` (ChatMix and per-sink volume).
 
-Applications cannot be listed or moved between channels the way PulseAudio streams can: on Windows a
-program chooses its output device itself (Settings → System → Sound → Volume mixer), so the
-application lists stay empty.
+Programs the per-application tap (:mod:`.tap`) is carrying are listed as sink inputs — the Home page then
+shows them on their channel's card and lets the user drag them to another — and ``sink_input_move`` turns
+that drag into a routing rule for the program's executable. Without the tap the lists stay empty.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from arctis_sound_manager.constants import (PULSE_AUX_NODE_NAME, PULSE_CHAT_NODE
                                             PULSE_MEDIA_NODE_NAME)
 from arctis_sound_manager.pactl import NullPulseAudioManager
 from arctis_sound_manager.win.audio.bridge import EngineBridge, shared_bridge
+from arctis_sound_manager.win.audio.tap import BYPASS, TAP_CHANNELS, friendly_app_name
 
 _log = logging.getLogger(__name__)
 
@@ -70,6 +71,27 @@ class WinSink:
         self.owner_module = None
 
 
+MASTER_INDEX = 1000                                              # the sink index of the headset's own (master) level
+CHANNEL_INDEX = {channel: 1001 + i for i, channel in enumerate(CHANNEL_NODE)}
+AUDIBLE_LEVEL = 5e-4                                             # a program quieter than this (rms) is not "playing"
+
+
+class WinSinkInput:
+    """What ``pulsectl.PulseSinkInputInfo`` carries that the Home page reads."""
+
+    def __init__(self, exe: str, pid: int, sink: int, active: bool):
+        stem = exe.rsplit(".", 1)[0] if exe.lower().endswith(".exe") else exe
+        self.index = int(pid)
+        self.sink = sink
+        self.exe = exe
+        self.corked = 0 if active else 1
+        self.mute = 0
+        self.volume = _Volume(1.0)
+        self.proplist = {"application.name": friendly_app_name(exe), "application.process.binary": stem,
+                         "application.process.id": str(pid), "application.icon_name": stem.lower(),
+                         "media.name": "", "node.name": f"asm_tap_{stem.lower()}"}
+
+
 class WinPulse:
     """The part of ``pulsectl.Pulse`` the GUI calls, backed by the engine."""
 
@@ -105,7 +127,24 @@ class WinPulse:
         return []
 
     def sink_input_list(self) -> list:
-        return []
+        """Programs playing to the headset, each on the sink of the channel it is sent to (or the master sink when
+        it goes straight to the headset)."""
+        status = self._status()
+        tap = (status or {}).get("tap") or {}
+        out: list[WinSinkInput] = []
+        for app in tap.get("apps", []) or []:
+            exe, pid = str(app.get("exe") or ""), int(app.get("pid") or 0)
+            if not exe or not pid:
+                continue
+            playing = bool(app.get("active")) or float(app.get("level") or 0.0) > AUDIBLE_LEVEL
+            if not playing:
+                continue
+            channel = str(app.get("channel") or BYPASS)
+            sink = CHANNEL_INDEX.get(channel, MASTER_INDEX) if channel in TAP_CHANNELS else MASTER_INDEX
+            if sink != MASTER_INDEX and f"in:{channel}" not in status.get("endpoints", {}):
+                sink = MASTER_INDEX
+            out.append(WinSinkInput(exe, pid, sink, True))
+        return out
 
     def source_output_list(self) -> list:
         return []
@@ -129,9 +168,21 @@ class WinPulse:
         if channel is not None:
             self._bridge.mute(channel, bool(mute))
 
-    # Streams cannot be moved between channels on Windows (see the module docstring); these exist so callers
-    # that offer the choice find something to call.
-    def sink_input_move(self, *_args) -> None: return None
+    def sink_input_move(self, index, sink_index) -> None:
+        """Dragging a program onto a channel's card: remember "this executable goes to that channel"."""
+        app = next((a for a in ((self._status() or {}).get("tap") or {}).get("apps", []) or []
+                    if int(a.get("pid") or 0) == int(index)), None)
+        if app is None:
+            return None
+        if int(sink_index) == MASTER_INDEX:
+            channel = BYPASS
+        else:
+            channel = next((ch for ch, i in CHANNEL_INDEX.items() if i == int(sink_index)), None)
+        if channel is not None:
+            self._bridge.route(str(app.get("exe") or ""), channel)
+        return None
+
+    # These exist so callers that offer the choice find something to call.
     def source_output_move(self, *_args) -> None: return None
     def source_default_set(self, *_args) -> None: return None
     def default_set(self, *_args) -> None: return None

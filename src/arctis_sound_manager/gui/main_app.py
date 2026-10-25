@@ -407,6 +407,11 @@ class QMainApp(QBaseDesktopApp):
 
         self._theme_editor_page = ThemeEditorPage()
 
+        if IS_WINDOWS:
+            # Everything that shapes what the headset plays or picks up lives on the Headset page; the
+            # Equalizer page keeps the equaliser (Sonar) only.
+            self._headset_page.adopt_processing(self._equalizer_page._sonar_page.detach_processing_cards())
+
         self._stack.addWidget(self._home_page)        # index 0 → Home
         self._stack.addWidget(self._equalizer_page)   # index 1 → Equalizer
         self._stack.addWidget(self._headset_page)     # index 2 → Headset

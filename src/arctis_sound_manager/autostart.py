@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from arctis_sound_manager import service_control as sc
@@ -229,6 +230,30 @@ class SystemdBackend:
         return gui_path
 
 
+class WindowsBackend:
+    """Start with Windows: one value under HKCU\\...\\Run that runs ``scripts/winstart`` (quietly, in the
+    background — see :mod:`arctis_sound_manager.win.startup`)."""
+    name = "windows"
+
+    def is_available(self) -> bool:
+        return sys.platform == "win32"
+
+    def is_enabled(self) -> bool:
+        from arctis_sound_manager.win import startup
+        return startup.is_enabled()
+
+    def enable(self) -> None:
+        from arctis_sound_manager.win import startup
+        startup.enable()
+
+    def disable(self) -> None:
+        from arctis_sound_manager.win import startup
+        startup.disable()
+
+    def display_name(self) -> str:
+        return "Windows startup (Run key)"
+
+
 class DinitBackend:
     name = "dinit"
 
@@ -403,11 +428,15 @@ class SwayBackend(_LineMarkerBackend):
 
 
 def _all_backends():
+    if sys.platform == "win32":     # none of the Linux mechanisms exists here
+        return [WindowsBackend()]
     return [SystemdBackend(), DinitBackend(), XdgAutostartBackend(),
             HyprlandBackend(), SwayBackend()]
 
 
 def pick_backend():
+    if sys.platform == "win32":
+        return WindowsBackend()
     from arctis_sound_manager.init_system import detect_init
     env = detect_environment()
     init = detect_init()

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -80,6 +81,10 @@ class HeadsetPage(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(28, 20, 28, 24)
         layout.setSpacing(0)
+        self._page_layout = layout
+        # Windows: the sound-processing sections taken from the Equalizer page (see adopt_processing)
+        self._processing_titles: list[QLabel] = []
+        self._processing_tabs: QTabWidget | None = None
 
         # Devices section: the title, and on its right the headset picker
         # when more than one is plugged in (see _device_selector below).
@@ -241,6 +246,57 @@ class HeadsetPage(QWidget):
         self._anc_section.apply_theme()
         for card in self._setting_cards:
             card.apply_theme()
+        for title in self._processing_titles:
+            title.setStyleSheet(self._processing_title_qss())
+        if self._processing_tabs is not None:
+            from arctis_sound_manager.gui.sonar_page import _channel_tabs_qss
+            self._processing_tabs.setStyleSheet(_channel_tabs_qss())
+
+    # ── Sound processing (Windows) ────────────────────────────────────────────
+
+    @staticmethod
+    def _processing_title_qss() -> str:
+        return (f"color: {_theme.c('TEXT_SECONDARY')}; font-size: 9pt; font-weight: bold;"
+                " background: transparent; border: none;")
+
+    def adopt_processing(self, cards: dict[str, QWidget]) -> None:
+        """Show the sound-processing cards here, under the headset's own settings.
+
+        ``cards`` is what ``SonarPage.detach_processing_cards`` returns: for each of the Game / Media / Aux /
+        Chat channels the card with spatial audio, volume boost and Smart Volume, and for ``"micro"`` the
+        microphone's noise cancelling, noise reduction, gate and compressor. Everything that shapes what the
+        headset plays or picks up is then on this page; the Equalizer page keeps only the equaliser.
+        """
+        if not cards or self._processing_tabs is not None or self._processing_titles:
+            return
+        from arctis_sound_manager.gui.sonar_page import _channel_tabs_qss
+        layout = self._page_layout
+        at = max(layout.count() - 1, 0)           # before the stretch that closes the page
+
+        def section(title_key: str, body: QWidget) -> QWidget:
+            box = QWidget()
+            box.setStyleSheet("background: transparent;")
+            box_layout = QVBoxLayout(box)
+            box_layout.setContentsMargins(0, 8, 0, 0)
+            box_layout.setSpacing(6)
+            title = QLabel(I18n.translate("ui", title_key))
+            title.setStyleSheet(self._processing_title_qss())
+            self._processing_titles.append(title)
+            box_layout.addWidget(title)
+            box_layout.addWidget(body)
+            return box
+
+        sound = [(channel, cards[channel]) for channel in ("game", "media", "aux", "chat") if channel in cards]
+        if sound:
+            tabs = QTabWidget()
+            tabs.setStyleSheet(_channel_tabs_qss())
+            for channel, card in sound:
+                tabs.addTab(card, I18n.translate("ui", channel))
+            self._processing_tabs = tabs
+            layout.insertWidget(at, section("sound_processing", tabs))
+            at += 1
+        if "micro" in cards:
+            layout.insertWidget(at, section("microphone_processing", cards["micro"]))
 
     # ── preferred device (#199) ───────────────────────────────────────────────
 

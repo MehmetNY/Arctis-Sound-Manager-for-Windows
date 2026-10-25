@@ -71,6 +71,13 @@ class EngineBridge:
     def reload(self) -> None:
         self.send("reload", "reload")
 
+    def route(self, exe: str, channel: str | None) -> None:
+        """Send a program to a channel (``"bypass"``: straight to the headset); ``None`` forgets the choice."""
+        if channel is None:
+            self.send(f"route:{exe}", "unroute", exe=exe)
+        else:
+            self.send(f"route:{exe}", "route", exe=exe, channel=channel)
+
     def flush(self, timeout: float = 5.0) -> bool:
         """Wait until everything queued has been handed to the engine (or dropped). For tests and shutdown."""
         deadline = self._clock() + timeout

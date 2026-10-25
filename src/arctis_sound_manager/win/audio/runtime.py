@@ -19,6 +19,7 @@ engine can be driven step by step against :class:`~.backend.FakeBackend` in test
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS, MASTER, Eng
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.ports import InputPort, OutputPort
 from arctis_sound_manager.win.audio.realtime import ThreadBoost
+from arctis_sound_manager.win.audio.tap import TapStream, load_rules, save_rules
 
 _log = logging.getLogger(__name__)
 
@@ -406,6 +408,10 @@ class Engine:
         self.mix = (100.0, 100.0)                                    # (non-chat channels, chat)
         self.chatmix_channels = ["game"]
         self.preset: dict = {}                                       # controls to apply right after the files are read
+        # the per-application tap (a TapBackend carries its helper); None with plain virtual cables
+        self.tap = getattr(backend, "tap", None)
+        self.rules = load_rules(self.config_dir) if self.tap is not None else None
+        self._tap_key: tuple | None = None
         self._declare_endpoints()
 
     # ── set-up ──────────────────────────────────────────────────────────────
@@ -436,6 +442,7 @@ class Engine:
             for ep in self.endpoints.values():
                 if ep.stream is not None:
                     ep.stream.start()
+            self._sync_tap()
             self.running = True
         if threaded:
             self._stop.clear()
@@ -457,6 +464,9 @@ class Engine:
             t.join(timeout=2.0)
         self._threads = []
         with self._lock:
+            if self.tap is not None:
+                self.tap.engage(False)                               # every program's volume back before the sound system closes
+                self._tap_key = None
             for ep in self.endpoints.values():
                 self._close(ep)
             self.running = False
@@ -575,6 +585,24 @@ class Engine:
                             self._after_reopen(ep)
             if failing:
                 self._maybe_refresh(now)
+            self._sync_tap()
+
+    def _sync_tap(self) -> None:
+        """Programs may be turned down at the headset only while the engine really plays to it, and only if
+        something reads the tap. A headset that is switched off must never leave anyone with a silent computer."""
+        tap = self.tap
+        if tap is None:
+            return
+        headset = self.endpoints.get("out:headset")
+        playing = headset is not None and headset.state == "running" and headset.stream is not None
+        reading = any(ep.state == "running" and isinstance(ep.stream, TapStream) for ep in self.endpoints.values())
+        engaged = bool(playing and reading)
+        key = (engaged, headset.device if playing else "")
+        if key == self._tap_key:
+            return
+        self._tap_key = key
+        tap.configure(endpoint=headset.device if playing else None, rules=self.rules, exclude={os.getpid()},
+                      engaged=engaged)
 
     def _after_reopen(self, ep: Endpoint) -> None:
         for pipeline in (self.playback, self.mic):
@@ -732,6 +760,7 @@ class Engine:
             "chatmix": {"channels_pct": self.mix[0], "chat_pct": self.mix[1], "channels": list(self.chatmix_channels)},
             "notes": notes,
             "problems": self.config.problems(),
+            "tap": self.tap.info() if self.tap is not None else None,
         }
 
     def handle(self, request: dict) -> dict:
@@ -751,6 +780,21 @@ class Engine:
                              list(channels) if isinstance(channels, list) else None)
         elif cmd == "reload":
             self.reload()
+        elif cmd in ("route", "unroute"):
+            return self.route(str(request.get("exe", "")), str(request["channel"]) if cmd == "route" else None)
         else:
             return {"ok": False, "error": f"unknown command {cmd!r}"}
+        return {}
+
+    def route(self, exe: str, channel: str | None) -> dict:
+        """Send a program to a channel (``None``: back to its default). Remembered across restarts."""
+        if self.rules is None or self.tap is None:
+            return {"ok": False, "error": "the per-application tap is not running"}
+        if not self.tap.set_rule(exe, channel):
+            return {"ok": False, "error": f"cannot route {exe!r} to {channel!r}"}
+        self.rules = self.tap.rules
+        try:
+            save_rules(self.rules, self.config_dir)
+        except OSError as exc:
+            _log.warning("cannot save the program routing: %s", exc)
         return {}

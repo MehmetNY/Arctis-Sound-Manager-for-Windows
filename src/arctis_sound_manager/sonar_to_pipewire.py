@@ -75,6 +75,7 @@ def link_permission_fallback_channels() -> set[str]:
     return {c for c in raw if isinstance(c, str)}
 
 
+@linux_audio_only(False)
 def mark_link_permission_fallback(channel: str) -> bool:
     """Remember that *channel* needs a pickable class. True if newly added."""
     channels = link_permission_fallback_channels()
@@ -1125,6 +1126,7 @@ def _restore_disabled_configs() -> None:
         _log.debug("safe mode: restore step failed: %s", exc)
 
 
+@linux_audio_only(None)
 def clear_safe_mode_and_restore() -> None:
     """User-initiated safe-mode reset: restore the disabled EQ configs, clear
     the latch, and restart the filter-chain so EQ audio returns.
@@ -1192,6 +1194,7 @@ def maybe_recover_from_safe_mode() -> bool:
     return True
 
 
+@linux_audio_only(None)
 def _enter_filter_chain_safe_mode() -> None:
     """Move ASM-generated configs out of filter-chain.conf.d/ and restart once.
 
@@ -1309,6 +1312,7 @@ def _dinit_crash_loop_settled(service: str, window_s: float = 12.0,
     return settled_inactive
 
 
+@linux_audio_only(None)
 def _restart_filter_chain() -> None:
     """Restart the filter-chain service with crash-loop detection and fallback.
 
@@ -1431,6 +1435,7 @@ def ensure_filter_chain_healthy() -> bool:
     return True
 
 
+@linux_audio_only(False)
 def ensure_hrir_materialized(hrir_id: str | None = None) -> bool:
     """Guarantee the HeSuVi HRIR WAV exists on disk so the convolver can load.
 
@@ -1482,6 +1487,7 @@ def ensure_hrir_materialized(hrir_id: str | None = None) -> bool:
         return False
 
 
+@linux_audio_only(None)
 def apply_hrir_choice(hrir_id: str | None) -> None:
     """Copy the chosen HRIR WAV to ~/.local/share/pipewire/hrir_hesuvi/hrir.wav
     and restart filter-chain so PipeWire picks up the new file.
@@ -3504,6 +3510,7 @@ def check_and_fix_stale_configs() -> tuple[bool, bool]:
     return fixed, needs_pw_restart
 
 
+@linux_audio_only(False)
 def sync_stream_mix_conf(enabled: bool | None = None) -> bool:
     """Make ``sonar-stream-mix.conf``'s presence match ``streamer_mode``.
 
@@ -3537,6 +3544,7 @@ def sync_stream_mix_conf(enabled: bool | None = None) -> bool:
     return False
 
 
+@linux_audio_only(False)
 def regenerate_hesuvi_if_changed() -> bool:
     """Rewrite each HeSuVi chain from its saved JSON and report if anything changed.
 
@@ -3575,6 +3583,7 @@ def regenerate_hesuvi_if_changed() -> bool:
     return changed
 
 
+@linux_audio_only(False)
 def apply_spatial_audio_change() -> bool:
     """Make an Immersion/Distance slider move take effect on the live pipeline (#169).
 
@@ -3601,6 +3610,7 @@ def apply_spatial_audio_change() -> bool:
     return True
 
 
+@linux_audio_only(False)
 def ensure_sonar_eq_configs() -> bool:
     """Generate or fix bypass EQ configs for game and chat channels.
 
@@ -3787,6 +3797,7 @@ def _spatial_enabled(channel: str) -> bool:
         return True
 
 
+@linux_audio_only({})
 def ensure_spatial_eq_links(
     channels: tuple[str, ...] | None = None,
     data: list | None = None,
@@ -4072,6 +4083,7 @@ def _note_output_fallback(absent_target: str | None) -> None:
         _log.info("Output channel: configured sink is back — routing restored")
 
 
+@linux_audio_only({})
 def ensure_physical_output_links(
     data: list | None = None, skip_targets: set[str] | None = None,
 ) -> dict[str, bool]:
@@ -4242,6 +4254,7 @@ def ensure_physical_output_links(
     return results
 
 
+@linux_audio_only(0)
 def release_physical_output_links(data: list | None = None) -> int:
     """Cut the last hop into the headset's own physical output(s) (#180).
 
@@ -4305,6 +4318,7 @@ def resolve_micro_input_source() -> str:
     return setting
 
 
+@linux_audio_only(False)
 def ensure_micro_capture_link(data: list | None = None) -> bool:
     """Ensure the Sonar Micro EQ's capture is fed by the configured source.
 
@@ -4361,6 +4375,7 @@ def ensure_micro_capture_link(data: list | None = None) -> bool:
     return ensure_capture_link(source, _MICRO_CAPTURE_NAME, data=data)
 
 
+@linux_audio_only(False)
 def ensure_stream_mix_links(data: list | None = None) -> bool:
     """Link the five sources into the Streamer mode mix, by explicit port pairs.
 

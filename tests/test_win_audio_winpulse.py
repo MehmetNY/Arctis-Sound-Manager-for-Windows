@@ -22,6 +22,7 @@ class FakeBridge:
     def volume(self, channel, pct): self.calls.append(("volume", channel, pct))
     def mute(self, channel, muted): self.calls.append(("mute", channel, muted))
     def chatmix(self, c, h, channels=None): self.calls.append(("chatmix", c, h, channels))
+    def route(self, exe, channel): self.calls.append(("route", exe, channel))
 
 
 def engine_status(**over):
@@ -212,3 +213,54 @@ def test_the_daemon_restores_the_saved_master_level():
     manager = WindowsAudioManager(bridge)
     assert manager.set_sink_volume_by_node(MASTER_NODE, 60)
     assert bridge.calls == [("volume", "master", 60)]
+
+
+# ── programs, from the per-application tap ───────────────────────────────────
+
+def tap_status(apps):
+    return engine_status(endpoints={"in:game": {"state": "running"}, "in:chat": {"state": "running"},
+                                    "in:media": {"state": "running"}, "out:headset": {"state": "running"}},
+                         tap={"available": True, "running": True, "apps": apps})
+
+
+APPS = [
+    {"exe": "RocketLeague.exe", "pid": 100, "channel": "game", "active": True, "level": 0.1},
+    {"exe": "discord.exe", "pid": 200, "channel": "chat", "active": True, "level": 0.0},
+    {"exe": "spotify.exe", "pid": 300, "channel": "media", "active": False, "level": 0.0},     # paused: not listed
+    {"exe": "obs64.exe", "pid": 400, "channel": "bypass", "active": True, "level": 0.0},
+    {"exe": "vlc.exe", "pid": 500, "channel": "media", "active": False, "level": 0.2},        # quiet flag lags but sound is there
+    {"exe": "foo.exe", "pid": 600, "channel": "aux", "active": True, "level": 0.1},            # aux has no cable here
+]
+
+
+def test_playing_programs_are_listed_on_the_sink_of_their_channel():
+    pulse = WinPulse(FakeBridge(tap_status(APPS)))
+    sinks = {s.name: s.index for s in pulse.sink_list()}
+    inputs = {si.proplist["application.process.binary"]: si for si in pulse.sink_input_list()}
+    assert set(inputs) == {"RocketLeague", "discord", "obs64", "vlc", "foo"}
+    assert inputs["RocketLeague"].sink == sinks["Arctis_Game"] and inputs["discord"].sink == sinks["Arctis_Chat"]
+    assert inputs["vlc"].sink == sinks["Arctis_Media"]
+    assert inputs["obs64"].sink == sinks[HEADSET_SINK_NAME] == inputs["foo"].sink      # straight to the headset / no such channel
+
+
+def test_a_listed_program_looks_like_a_pulse_stream_to_the_home_page():
+    si = next(i for i in WinPulse(FakeBridge(tap_status(APPS))).sink_input_list() if i.index == 100)
+    assert si.proplist["application.name"] == "RocketLeague" and si.proplist["application.process.id"] == "100"
+    assert si.proplist["application.icon_name"] == "rocketleague" and si.corked == 0
+
+
+def test_without_the_tap_no_programs_are_listed():
+    assert WinPulse(FakeBridge(engine_status())).sink_input_list() == []
+    assert WinPulse(FakeBridge(engine_status(tap=None))).sink_input_list() == []
+    assert WinPulse(FakeBridge(None)).sink_input_list() == []
+
+
+def test_dragging_a_program_onto_a_channel_sends_a_routing_rule():
+    bridge = FakeBridge(tap_status(APPS))
+    pulse = WinPulse(bridge)
+    sinks = {s.name: s.index for s in pulse.sink_list()}
+    pulse.sink_input_move(100, sinks["Arctis_Media"])
+    pulse.sink_input_move(200, sinks[HEADSET_SINK_NAME])                  # onto the headset card: not processed at all
+    pulse.sink_input_move(999, sinks["Arctis_Game"])                      # a program that is gone
+    pulse.sink_input_move(100, 424242)                                    # a sink that does not exist
+    assert bridge.calls == [("route", "RocketLeague.exe", "media"), ("route", "discord.exe", "bypass")]

@@ -1,0 +1,45 @@
+name: windows-e2e
+on:
+  push:
+    branches: [windows]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: windows-e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  e2e:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install numpy
+      - name: Build the native tools
+        shell: pwsh
+        run: ./ci/build_native.ps1
+      - name: Virtual audio device (VB-CABLE) and microphone consent
+        shell: pwsh
+        timeout-minutes: 8
+        run: ./ci/setup_audio.ps1
+      - name: asm-audiotap end to end
+        shell: pwsh
+        timeout-minutes: 12
+        run: python ci/e2e_tap.py
+        continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files e2e.log
+      - name: Publish
+        if: always()
+        shell: bash
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-e2e e2e.log setup.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-tools
+          path: build/*.exe

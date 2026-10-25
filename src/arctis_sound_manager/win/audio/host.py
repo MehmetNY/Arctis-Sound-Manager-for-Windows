@@ -30,6 +30,7 @@ from arctis_sound_manager.win.audio.engine_config import (EngineConfig, load_con
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.runtime import Engine
+from arctis_sound_manager.win.audio.tap import TapBackend, load_rules, restore_volumes, save_rules, shared_helper
 
 _log = logging.getLogger(__name__)
 
@@ -37,7 +38,10 @@ VERSION = "win-engine 1"
 
 
 def default_backend(config: EngineConfig):
-    return SoundDeviceBackend(latency=config.device_latency)
+    """PortAudio, plus the per-application tap when ``asm-audiotap.exe`` is installed."""
+    real = SoundDeviceBackend(latency=config.device_latency)
+    helper = shared_helper()
+    return TapBackend(real, helper) if helper.available() else real
 
 
 def subprocess_probe(timeout: float = 15.0) -> list[DeviceInfo]:
@@ -75,6 +79,8 @@ class EngineHost:
     # ── life cycle ──────────────────────────────────────────────────────────
 
     def start(self) -> None:
+        if shared_helper().available():
+            restore_volumes()                                        # a crashed run may have left programs turned down
         self.reconfigure()
 
     def stop(self) -> None:
@@ -180,11 +186,23 @@ class EngineHost:
                 channels = request.get("channels")
                 if isinstance(channels, list):
                     self._mix_channels = [c for c in channels if c in CHANNELS and c != "chat"]
+            elif cmd in ("route", "unroute"):
+                if self.engine is None:                              # remembered for when the engine starts
+                    return self._route_offline(request)
             elif cmd != "reload":
                 return {"ok": False, "error": f"unknown command {cmd!r}"}
             if self.engine is not None:
                 return self.engine.handle(request)
             return {"engine": "not running"}
+
+    def _route_offline(self, request: dict) -> dict:
+        rules = load_rules(self.config_dir)
+        exe, channel = str(request.get("exe", "")), request.get("channel") if request.get("cmd") == "route" else None
+        ok = rules.set(exe, str(channel)) if channel is not None else rules.clear(exe) or True
+        if not ok:
+            return {"ok": False, "error": f"cannot route {exe!r} to {channel!r}"}
+        save_rules(rules, self.config_dir)
+        return {"engine": "not running"}
 
     def wait(self, poll: float = 0.5) -> None:
         """Block until a ``shutdown`` command (or Ctrl+C in the caller); also starts the engine once a

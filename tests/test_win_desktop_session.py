@@ -58,11 +58,37 @@ def _fake_user32(monkeypatch, open_result=None, open_raises=None):
     return calls
 
 
-def test_now_playing_is_empty_and_never_touches_the_bus_on_windows(on_windows, desktop_session, monkeypatch):
+def test_now_playing_comes_from_the_media_controls_and_never_touches_the_bus_on_windows(
+        on_windows, desktop_session, monkeypatch):
+    from arctis_sound_manager.win import media
+
+    async def playing():
+        return "Artist - Title"
+    monkeypatch.setattr(media, "now_playing", playing)
     session = desktop_session.DesktopSession()
-    monkeypatch.setattr(session, "_run", lambda *a, **k: pytest.fail("a D-Bus query was attempted"))
-    assert session.now_playing() == ""
-    assert session._loop is None and session._thread is None   # no private loop / thread was started
+    monkeypatch.setattr(session, "_now_playing",
+                        lambda *a, **k: pytest.fail("an MPRIS query was attempted"))
+
+    async def no_bus(*a, **k):
+        pytest.fail("a D-Bus connection was attempted")
+    monkeypatch.setattr(session, "_bus", no_bus)
+    try:
+        assert session.now_playing() == "Artist - Title"
+    finally:
+        session.close()
+
+
+def test_now_playing_is_empty_when_the_media_controls_fail_on_windows(on_windows, desktop_session, monkeypatch):
+    from arctis_sound_manager.win import media
+
+    async def broken():
+        raise RuntimeError("media session service not running")
+    monkeypatch.setattr(media, "now_playing", broken)
+    session = desktop_session.DesktopSession()
+    try:
+        assert session.now_playing() == ""
+    finally:
+        session.close()
 
 
 def test_user_away_does_not_use_the_bus_on_windows(on_windows, desktop_session, monkeypatch):

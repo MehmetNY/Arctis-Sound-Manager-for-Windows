@@ -110,8 +110,8 @@ def _workstation_locked() -> bool:
 
 
 class DesktopSession:
-    """On Windows the D-Bus questions below have no counterpart (no MPRIS, no logind), so
-    ``now_playing`` is always empty and ``user_away`` means "the workstation is locked"."""
+    """On Windows the D-Bus questions below have no counterpart (no MPRIS, no logind): ``now_playing`` asks
+    the system media controls instead (win/media.py) and ``user_away`` means "the workstation is locked"."""
 
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -124,9 +124,10 @@ class DesktopSession:
     # ── public, blocking ────────────────────────────────────────────────────
 
     def now_playing(self) -> str:
-        """"Artist - Title" of the first playing MPRIS player, or ""."""
+        """"Artist - Title" of the first playing player (MPRIS; on Windows the system media controls), or ""."""
         if IS_WINDOWS:
-            return ""
+            from arctis_sound_manager.win import media
+            return self._run(media.now_playing(), default="")
         return self._run(self._now_playing(), default="")
 
     def user_away(self) -> bool:

@@ -30,6 +30,7 @@ from pathlib import Path
 
 from arctis_sound_manager.win.audio.backend import DeviceInfo, find_device
 from arctis_sound_manager.win.audio.graph import CHANNELS
+from arctis_sound_manager.win.audio.tap import is_tap_device, tap_device_name
 
 _log = logging.getLogger(__name__)
 
@@ -298,7 +299,16 @@ def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:
             cables.append((cap, end))
 
     stream_cable = None
-    if len(cables) > len(CHANNELS) + 1:
+    taps = {d.name for d in devices if is_tap_device(d)}
+    if all(tap_device_name(ch) in taps for ch in CHANNELS):
+        # the per-application tap needs no cable per channel: a cable is only for the processed microphone
+        # (and, with a second one, Streamer mode's mix)
+        channel_cables = []
+        for ch in CHANNELS:
+            cfg.inputs[ch] = tap_device_name(ch)
+        mic_cable = cables[0] if cables else None
+        stream_cable = cables[1] if len(cables) > 1 else None
+    elif len(cables) > len(CHANNELS) + 1:
         channel_cables, mic_cable = cables[:len(CHANNELS)], cables[len(CHANNELS)]
         stream_cable = cables[len(CHANNELS) + 1]
     elif len(cables) > len(CHANNELS):
