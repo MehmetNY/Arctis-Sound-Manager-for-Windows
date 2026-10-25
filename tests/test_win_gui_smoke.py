@@ -100,14 +100,23 @@ def test_the_pages_after_the_removed_one_are_still_the_right_pages(gui_run):
     assert result["settings_page_is_settings"] and result["help_page_is_help"] and result["theme_page_is_theme"]
 
 
-def test_pages_that_need_an_audio_engine_say_so(gui_run):
-    """Channels (0) and Equalizer (1) show the engine banner (here: not set up yet, with the assistant on offer);
-    Headset, DAC, Settings (4) and Help (5) do not."""
+def test_the_sound_processing_cards_are_on_the_headset_page_and_the_equaliser_stays_on_its_own(gui_run):
+    """Spatial audio, volume boost, Smart Volume and the microphone's noise cancelling / reduction / gate /
+    compressor are headset settings and live on the Headset page. The equaliser - curve, presets, macro
+    sliders - is NOT among them: it stays on the Equalizer page."""
+    placement = gui_run[0]["placement"]
+    assert placement["cards_on_headset"] == {ch: True for ch in ("game", "media", "aux", "chat", "micro")}
+    assert placement["eq_on_equalizer"] and all(placement["eq_on_equalizer"].values()), placement
+    assert not any(placement["eq_on_headset"].values()), placement
+    assert placement["presets_on_equalizer"] and all(placement["presets_on_equalizer"].values()), placement
+    assert not any(placement["presets_on_headset"].values()), placement
+
+
+def test_no_engine_banner_anywhere(gui_run):
+    """The Windows build starts its engine by itself; there is no "engine not set up" strip over the pages."""
     result, _ = gui_run
-    shown = {int(page): flag for page, flag in result["banner_by_page"].items()}
-    assert shown[0] is True and shown[1] is True
-    assert [shown[p] for p in (2, 3, 4, 5)] == [False] * 4
-    assert "not set up" in result["banner_text"]      # no virtual cables configured in this clean profile
+    assert result["has_banner_object"] is False
+    assert result["nag_text"] == [], result["nag_text"]
 
 
 def test_the_dac_wheel_osd_watcher_connects_to_the_daemon(gui_run):

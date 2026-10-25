@@ -23,7 +23,7 @@ def test_switched_off_wins_over_everything():
     assert engine_state(None, enabled=False).code == "off"
 
 
-def test_no_engine_is_stopped_or_unconfigured_depending_on_the_cables():
+def test_no_engine_is_stopped_or_unconfigured_depending_on_the_devices():
     assert engine_state(None, configured=True).code == "stopped"
     assert engine_state(None, configured=False).code == "unconfigured"
 
@@ -58,10 +58,19 @@ def test_every_text_formats_with_its_own_fields():
 
 
 def test_language_fallback_and_formatting():
-    assert strings.t("banner_start", "tr") == "Başlat"
-    assert strings.t("banner_start", "fr") == "Start"                # unknown language: English
-    assert strings.t("banner_start", None) == "Start"
+    assert strings.t("btn_close", "tr") == "Kapat"
+    assert strings.t("btn_close", "fr") == "Close"                   # unknown language: English
+    assert strings.t("btn_close", None) == "Close"
     assert strings.t("no-such-key") == "no-such-key"
-    assert strings.t("banner_problem", "tr", problem="X") == "Ses motoru: X"
-    assert strings.t("banner_problem", "en") == "Audio engine: {problem}"        # missing field: text returned as is
-    assert strings.t("banner_ok", "tr_TR", profile="safe", latency=90).startswith("Ses motoru çalışıyor")
+    assert strings.t("state_problem", "tr", problem="X") == "Ses motoru: X"
+    assert strings.t("state_problem", "en") == "Audio engine: {problem}"         # missing field: text returned as is
+    assert strings.t("state_ok", "tr_TR", profile="safe", latency=90).startswith("Ses motoru çalışıyor")
+
+
+def test_no_text_asks_for_cables_per_channel():
+    """The Windows build takes each program's sound by itself; no text asks the user to assign a cable to a channel
+    or to fetch the four-cable pack."""
+    for lang, table in strings._TABLES.items():
+        assert not [k for k in table if k.startswith("label_") and k.split("_", 1)[1] in ("game", "chat", "media", "aux")], lang
+        for key, text in table.items():
+            assert "(a, b, c, d)" not in text.lower(), (lang, key)

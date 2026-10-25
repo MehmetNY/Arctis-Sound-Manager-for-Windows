@@ -97,11 +97,6 @@ _SIDEBAR_ICON_SIZE = 44
 _SIDEBAR_HELP_ICON_SIZE = 30
 
 
-
-# Pages whose controls only matter once the audio engine is running to carry them out (Windows).
-_ENGINE_PAGES_ON_WINDOWS = (PAGE_HOME, PAGE_EQUALIZER)
-
-
 class QMainApp(QBaseDesktopApp):
     app: QApplication
     main_window: QMainAppProtoWidget
@@ -382,15 +377,6 @@ class QMainApp(QBaseDesktopApp):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        # Windows: say plainly when the audio engine (which does the actual sound processing) is not running,
-        # and offer to set it up or start it.
-        self._engine_banner = None
-        if IS_WINDOWS:
-            from arctis_sound_manager.gui.win_engine_banner import EngineBanner
-            banner = EngineBanner()
-            content_layout.addWidget(banner)
-            self._engine_banner = banner
-
         # Stacked pages
         self._stack = QStackedWidget()
 
@@ -442,14 +428,6 @@ class QMainApp(QBaseDesktopApp):
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
         for i, btn in enumerate(self._sidebar_buttons):
             btn.set_active(i == active_idx)
-        self._update_engine_banner(index)
-
-    def _update_engine_banner(self, index: int) -> None:
-        banner = getattr(self, "_engine_banner", None)
-        if banner is None:
-            return
-        banner.apply_theme()
-        banner.set_page_visible(index in _ENGINE_PAGES_ON_WINDOWS)
 
     def apply_clips_visibility(self) -> None:
         """Make sure the Video tab is present, and showing the right face.

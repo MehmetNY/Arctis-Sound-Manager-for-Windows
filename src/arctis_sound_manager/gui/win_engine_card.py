@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The "Audio engine" card of the Settings page (Windows): the on/off switch, how the engine is doing,
-and the way into the set-up assistant.
+and the way into the Devices window.
 
 The switch is saved the way the Channels page saves its Aux switch: into the settings file (so this
 window shows it at once) *and* to the daemon through ``SetSetting`` — the daemon keeps its own copy of
@@ -86,7 +86,7 @@ class EngineCard(QWidget):
         self._status = QLabel("")
         self._status.setWordWrap(True)
         status_row.addWidget(self._status, 1)
-        self._setup_btn = QPushButton(t("banner_setup", lang_code))
+        self._setup_btn = QPushButton(t("btn_devices", lang_code))
         self._setup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._setup_btn.clicked.connect(self._setup)
         status_row.addWidget(self._setup_btn)
@@ -158,6 +158,6 @@ class EngineCard(QWidget):
         if self._open_setup is not None:
             self._open_setup()
             return
-        from arctis_sound_manager.gui.win_audio_setup import AudioEngineSetupDialog
-        AudioEngineSetupDialog(self.window(), config_dir=self._config_dir).exec()
+        from arctis_sound_manager.gui.win_audio_devices import AudioDevicesDialog
+        AudioDevicesDialog(self.window(), config_dir=self._config_dir).exec()
         self.refresh()

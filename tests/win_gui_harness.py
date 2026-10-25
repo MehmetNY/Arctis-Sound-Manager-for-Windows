@@ -93,13 +93,20 @@ def _open_then_inspect(self):
             QTimer.singleShot(500, inspect)
             return
         w.resize(1100, 760)
-        # Which pages carry the "no audio engine yet" banner, and is the Clips tab gone?
         from arctis_sound_manager.gui import main_app as MA
-        banner = app._engine_banner
-        banner_by_page = {}
-        for page in range(app._stack.count()):
-            app._switch_page(page)
-            banner_by_page[page] = None if banner is None else (not banner.isHidden())
+        # Where do the sound-processing cards live, and did the equaliser stay where it was?
+        sonar = app._equalizer_page._sonar_page
+        owners = {"game": sonar._game_widget, "media": sonar._media_widget, "aux": sonar._aux_widget,
+                  "chat": sonar._chat_widget, "micro": sonar._micro_widget}
+        headset, equalizer = app._headset_page, app._equalizer_page
+        cards_on_headset = {ch: headset.isAncestorOf(o._processing_card) for ch, o in owners.items()}
+        eq_on_equalizer = {ch: equalizer.isAncestorOf(o._eq_widget) for ch, o in owners.items() if hasattr(o, "_eq_widget")}
+        eq_on_headset = {ch: headset.isAncestorOf(o._eq_widget) for ch, o in owners.items() if hasattr(o, "_eq_widget")}
+        presets_on_equalizer = {ch: equalizer.isAncestorOf(o._preset_bar) for ch, o in owners.items() if hasattr(o, "_preset_bar")}
+        presets_on_headset = {ch: headset.isAncestorOf(o._preset_bar) for ch, o in owners.items() if hasattr(o, "_preset_bar")}
+        placement = {"cards_on_headset": cards_on_headset, "eq_on_equalizer": eq_on_equalizer,
+                     "eq_on_headset": eq_on_headset, "presets_on_equalizer": presets_on_equalizer,
+                     "presets_on_headset": presets_on_headset}
         app._switch_page(MA.PAGE_HOME)
         help_labels = [l.text() for l in app._help_page.findChildren(QLabel)]
         from PySide6.QtWidgets import QAbstractButton
@@ -125,8 +132,9 @@ def _open_then_inspect(self):
             "settings_page_is_settings": app._stack.widget(MA.PAGE_SETTINGS) is app._device_page,
             "help_page_is_help": app._stack.widget(MA.PAGE_HELP) is app._help_page,
             "theme_page_is_theme": app._stack.widget(MA.PAGE_THEME_EDITOR) is app._theme_editor_page,
-            "banner_by_page": banner_by_page,
-            "banner_text": None if banner is None else banner.text(),
+            "placement": placement,
+            "has_banner_object": hasattr(app, "_engine_banner"),
+            "nag_text": [x for x in every_text if re.search(r"not set up|needs? virtual audio cables|kurulmad", x, re.I)],
             "help_has_clips": any(t.strip() == "Clips" for t in help_labels),
             "wheel_baselines": sum(1 for v in WHEEL_EVENTS if v is None),
             "wheel_errors": WHEEL_ERRORS,

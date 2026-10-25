@@ -62,7 +62,7 @@ def test_flipping_the_switch_saves_it_and_the_status_follows(tmp_path, qapp):
 
 def test_the_status_line_says_how_the_engine_is_doing(tmp_path, qapp):
     card, _ = make(tmp_path, True)
-    assert card.state.code == "unconfigured" and "not set up" in card.status_text()
+    assert card.state.code == "unconfigured" and "No headset output" in card.status_text()
     configure(tmp_path)
     bridge = FakeBridge(OK)
     card, _ = make(tmp_path, True, bridge=bridge)
@@ -89,7 +89,7 @@ def test_a_reply_without_a_proper_value_changes_nothing(tmp_path, qapp, settings
     assert card.enabled and written == []
 
 
-def test_the_setup_button_opens_the_assistant(tmp_path, qapp):
+def test_the_devices_button_opens_the_devices_window(tmp_path, qapp):
     opened = []
     card, _ = make(tmp_path, True, open_setup=lambda: opened.append(1))
     card._setup_btn.click()
@@ -118,13 +118,13 @@ def test_showing_the_card_refreshes_it_at_once(tmp_path, qapp):
 def test_the_texts_follow_the_ui_language(tmp_path, qapp):
     card = EngineCard(bridge=FakeBridge(), config_dir=tmp_path, read_enabled=lambda: True,
                       write_enabled=lambda v: None, lang=lambda: "tr")
-    assert card._setup_btn.text() == "Kurulum..." and "kurulmadı" in card.status_text()
+    assert card._setup_btn.text() == "Aygıtlar..." and "kulaklık çıkışı bulunamadı" in card.status_text()
     assert "ASM ses motoruyla" in card._switch_label.text()
 
 
 def test_the_switch_explains_what_switching_off_does(tmp_path, qapp):
     card, _ = make(tmp_path, True)
-    assert "silent" in card._toggle.toolTip()
+    assert "restarts the engine" in card._toggle.toolTip()
 
 
 # ── saving ──────────────────────────────────────────────────────────────────

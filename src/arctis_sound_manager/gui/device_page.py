@@ -275,7 +275,8 @@ class DevicePage(QWidget):
             init_state="right" if autostart_enabled() else "left",
             accent=True,
         )
-        self._startup_toggle.setToolTip(f"Autostart via: {active_backend_name()}")
+        self._startup_toggle.setToolTip(I18n.translate("ui", "launch_at_startup_hint_windows") if IS_WINDOWS
+                                        else f"Autostart via: {active_backend_name()}")
         self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
         self._add_row(general, I18n.translate("ui", "launch_at_startup"), self._startup_toggle)
 
