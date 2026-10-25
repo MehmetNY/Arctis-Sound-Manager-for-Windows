@@ -58,6 +58,7 @@ VB-CABLE is © VB-Audio Software and is donationware: if it is useful to you, pl
 * **Recorders and streaming tools** (OBS, Discord's screen capture, Xbox Game Bar, ...) are never turned down, so what they
   record stays what they record. A program ASM has never heard before is only *listened to* until it plays; the first
   tenth of a second of its very first sound can be heard unprocessed, once.
+* **VB-CABLE has two playing ends**, "CABLE Input" and "CABLE In 16ch". Windows lets only one of them be open at a time, and ASM uses "CABLE Input" for the processed microphone: do not point other programs at "CABLE In 16ch" while ASM runs.
 * With the audio engine switched off (Settings → Audio engine), ASM does not touch any sound.
 * The program is unsigned, so Windows warns when you run the installer. Signing is possible later.
 
