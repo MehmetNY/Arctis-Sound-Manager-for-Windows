@@ -1,0 +1,153 @@
+
+===== os
+
+Caption     : Microsoft Windows Server 2022 Datacenter
+BuildNumber : 20348
+Version     : 10.0.20348
+
+===== secure boot
+False
+
+===== bcdedit current
+
+Windows Boot Loader
+-------------------
+identifier              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows Server
+locale                  en-US
+inherit                 {bootloadersettings}
+recoveryenabled         No
+testsigning             Yes
+isolatedcontext         Yes
+allowedinmemorysettings 0x15000075
+osdevice                partition=C:
+systemroot              \Windows
+resumeobject            {683347ca-c6ca-11f1-b839-00224846f572}
+nx                      OptOut
+bootstatuspolicy        IgnoreAllFailures
+hypervisorlaunchtype    Auto
+hypervisorschedulertype Root
+ems                     Yes
+
+===== audio services
+
+Name                  Status StartType
+----                  ------ ---------
+AudioEndpointBuilder Stopped    Manual
+Audiosrv             Stopped    Manual
+
+===== start audio service
+
+Name      Status
+----      ------
+Audiosrv Running
+
+===== pip sounddevice
+
+
+===== sound devices (before)
+
+
+===== download
+50999  \Virtual.Audio.Driver.Signed.-.25.7.14.zip
+14122  \Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\virtualaudiodriver.cat
+14822  \Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf
+74552  \Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.sys
+inf = D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf
+hardware id = ROOT\VirtualAudioDriver
+
+===== pnputil add-driver (timed)
+see below
+[pnputil-add] still running; open windows:
+      3844 hosted-compute-agent     'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+      5060 rundll32                 'Windows Security'
+      6496 TextInputHost            'Windows Input Experience'
+[pnputil-add] still running; open windows:
+      3844 hosted-compute-agent     'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+      5060 rundll32                 'Windows Security'
+      6496 TextInputHost            'Windows Input Experience'
+[pnputil-add] still running; open windows:
+      3844 hosted-compute-agent     'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+      5060 rundll32                 'Windows Security'
+      6496 TextInputHost            'Windows Input Experience'
+[pnputil-add] still running; open windows:
+      3844 hosted-compute-agent     'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+      5060 rundll32                 'Windows Security'
+      6496 TextInputHost            'Windows Input Experience'
+[pnputil-add] TIMEOUT after 120 s
+      3844 hosted-compute-agent     'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+      5060 rundll32                 'Windows Security'
+      6496 TextInputHost            'Windows Input Experience'
+screenshot saved: D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\hang-pnputil-add.png
+
+===== driver store
+
+[devnode] exit code 0
+
+===== setupapi.dev.log (tail)
+     inf:                          {Install from INF Section - exit(0x00000000)} 00:52:01.222
+     inf:                          AddService=WUDFWpdFs,0x000001fa,WUDFWpdFs_ServiceInstall  (wpdfs.inf line 38)
+     inf:                          {Install from INF Section - exit(0x00000000)} 00:52:01.238
+     dvi:                     {Install DEVICE exit (0x00000000)}
+     dvi:           {DIF_INSTALLDEVICE - exit(0x00000000)} 00:52:02.192
+     dvi:           {DIF_NEWDEVICEWIZARD_FINISHINSTALL - exit(0x00000000)} 00:52:02.661
+     dvi:      {Install Device - exit(0x00000000)} 00:52:02.661
+     dvi: {Core Device Install - exit(0x00000000)} 00:52:02.661
+>>>  [Driver Install (DrvSetupInstallDriver) - D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf]
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver "D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf" /install
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Import Driver Package: D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf} 00:54:59.178
+     sto:      {Copy Driver Package: D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf} 00:54:59.193
+     sto:           Driver Package = D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf
+     sto:           Flags          = 0x00000007
+     flq:                Copying 'D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.cat' to 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.cat'.
+     flq:                Copying 'D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf' to 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.inf'.
+     flq:                Copying 'D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\virtualaudiodriver.sys' to 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\virtualaudiodriver.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:54:59.286
+     sto:      {Copy Driver Package: exit(0x00000000)} 00:54:59.286
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check - exit(0x00000000)} 00:54:59.318
+     sto:      {Stage Driver Package: C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.inf} 00:54:59.318
+     inf:           {Query Configurability: C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.inf} 00:54:59.333
+     inf:                Driver package 'VirtualAudioDriver.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 00:54:59.333
+     flq:                Copying 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.cat' to 'C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.cat'.
+     flq:                Copying 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\VirtualAudioDriver.inf' to 'C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.inf'.
+     flq:                Copying 'C:\Users\RUNNER~1\AppData\Local\Temp\{64141e9b-f95e-494a-83c4-f0550e1ee359}\virtualaudiodriver.sys' to 'C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\virtualaudiodriver.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:54:59.349
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:54:59.364
+     sig:                     Key      = VirtualAudioDriver.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.cat
+!    sig:                     Error 0x800b0109: A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 00:54:59.396
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:54:59.396
+     sig:                     Key      = VirtualAudioDriver.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{1427bd2c-d5fd-eb4d-bf2b-d096f0515dcf}\VirtualAudioDriver.cat
+     sig:                     Error 0xe0000242: The publisher of an Authenticode(tm) signed catalog has not yet been established as trusted.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000242)} 00:54:59.411
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - ROOT\VirtualAudioDriver]
+     ndv: INF path: D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf
+     ndv: Install flags: 0x00000001
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\work\vad\Virtual.Audio.Driver.Signed.-.25.7.14\Virtual Audio Driver\VirtualAudioDriver.inf'
+     dvi:                root\virtualaudiodriver
+     dvi:      {Build Driver List - exit(0x00000000)} 00:57:08.090
+<<<  [Exit status: FAILURE(0x00000103)]
+
+===== sound devices (after)
+
+
+
+FriendlyName : 
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : ROOT\MEDIA\0000
+
+===== portaudio devices
+
+
+INSTALL DONE
