@@ -20,6 +20,10 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: ./ci/probe_static.ps1
         continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files static.log
       - name: Publish
         if: always()
         shell: bash
@@ -41,6 +45,10 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: ./ci/probe_install.ps1 -Which ${{ matrix.which }}
         continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files install-${{ matrix.which }}.log
       - name: Publish
         if: always()
         shell: bash
