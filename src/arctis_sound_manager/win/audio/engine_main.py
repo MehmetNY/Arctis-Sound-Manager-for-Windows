@@ -256,6 +256,43 @@ def run_engine(config_dir: Path, verbose: bool = False, force: bool = False) -> 
     return 0
 
 
+def open_test(config_dir: Path, query: str, kind: str = "output") -> int:
+    """Open one device the way the engine does - on this thread and on another one - and say what happened.
+
+    A diagnostic for "cannot open output device": it prints every attempt the backend makes (channel counts, shared
+    mode / auto-convert) with the reason each one failed.
+    """
+    import threading
+    logging.basicConfig(level=logging.DEBUG, stream=sys.stdout, format="%(levelname)s %(name)s: %(message)s")
+    backend = default_backend(load_config(config_dir))
+    device = find_device(backend.devices(), query, kind)
+    print("device:", device.label() if device else None, flush=True)
+    if device is None:
+        return 2
+    opener = backend.open_output if kind == "output" else backend.open_input
+    callback = (lambda block: block.fill(0.0)) if kind == "output" else (lambda block: None)
+    results: dict[str, str] = {}
+
+    def attempt(where: str) -> None:
+        try:
+            stream = opener(device, 2, callback)
+            stream.start()
+            time.sleep(0.4)
+            results[where] = f"OK ({stream.channels} ch{', ' + stream.note if stream.note else ''})"
+            stream.stop()
+            stream.close()
+        except Exception as exc:                                   # noqa: BLE001 — the point is to see it
+            results[where] = f"FAILED: {type(exc).__name__}: {exc}"
+
+    attempt("main thread")
+    worker = threading.Thread(target=attempt, args=("worker thread",))
+    worker.start()
+    worker.join(30)
+    for where, outcome in results.items():
+        print(f"open-test {where}: {outcome}", flush=True)
+    return 0 if all(v.startswith("OK") for v in results.values()) and len(results) == 2 else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="engine_main", description=__doc__.split("\n")[0])
     ap.add_argument("--config-dir", type=Path, default=None)
@@ -265,12 +302,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--write", action="store_true", help="with --suggest: save the guess if there is no configuration yet")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--bench", action="store_true")
+    ap.add_argument("--open-test", metavar="DEVICE", default=None, help="try to open one device (a piece of its name) and report")
+    ap.add_argument("--input", action="store_true", help="with --open-test: a capture device instead of a render device")
     ap.add_argument("--block", type=int, default=None, help="block size for --bench")
     ap.add_argument("--force", action="store_true", help="start even if an engine answers on the control port")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     config_dir = args.config_dir or default_config_dir()
 
+    if args.open_test:
+        return open_test(config_dir, args.open_test, "input" if args.input else "output")
     if args.bench:
         cfg = load_config(config_dir)
         print(json.dumps(benchmark(config_dir, args.block or cfg.playback_block), indent=2))

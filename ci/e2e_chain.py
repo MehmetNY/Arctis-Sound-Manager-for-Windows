@@ -212,6 +212,12 @@ def main() -> int:
     check("C3.1 the installed program runs", version.returncode == 0 and re.match(r"\d+\.\d+", version.stdout.strip() or "") is not None,
           (version.stdout + version.stderr).strip()[:80])
 
+    log("== can the installed program open the headset device? (the engine's own code path, on two threads)")
+    probe = subprocess.run([str(EXE), "--engine", "--open-test", HEADSET], capture_output=True, text=True, timeout=240)
+    for line in (probe.stdout + probe.stderr).splitlines()[-40:]:
+        log("    " + line[:300])
+    check("C3.2 opening the headset device works in the installed program", probe.returncode == 0, f"exit {probe.returncode}")
+
     log("== the engine starts by itself, the way Start with Windows starts the program")
     write_config()
     client = EngineClient(CONFIG_DIR, timeout=3.0)
