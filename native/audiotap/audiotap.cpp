@@ -420,6 +420,7 @@ class Notifier : public IAudioSessionNotification {
     LONG ref_ = 1;
 public:
     std::function<void()> wake;
+    std::function<void(IAudioSessionControl*)> created;      // runs on an audio-service thread, before the program has played a sample
     virtual ~Notifier() {}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** o) override {
         if (IsEqualIID(r, IID_IUnknown) || IsEqualIID(r, __uuidof(IAudioSessionNotification))) { *o = static_cast<IAudioSessionNotification*>(this); AddRef(); return S_OK; }
@@ -427,8 +428,29 @@ public:
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
     ULONG STDMETHODCALLTYPE Release() override { LONG n = InterlockedDecrement(&ref_); if (!n) delete this; return n; }
-    HRESULT STDMETHODCALLTYPE OnSessionCreated(IAudioSessionControl*) override { if (wake) wake(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnSessionCreated(IAudioSessionControl* s) override { if (created) created(s); if (wake) wake(); return S_OK; }
 };
+
+// Give every session of `saved` programs that is still at eps on this endpoint its volume back. Returns how many.
+static int restoreSessionsOn(IAudioSessionManager2* mgr, const std::map<std::wstring, float>& saved, std::set<std::wstring>* done = nullptr) {
+    Ptr<IAudioSessionEnumerator> se;
+    if (FAILED(mgr->GetSessionEnumerator(&se))) return 0;
+    int cnt = 0; se->GetCount(&cnt);
+    int fixed = 0;
+    for (int k = 0; k < cnt; k++) {
+        Ptr<IAudioSessionControl> sc; Ptr<IAudioSessionControl2> sc2; Ptr<ISimpleAudioVolume> v;
+        if (FAILED(se->GetSession(k, &sc)) || FAILED(sc->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&sc2)) ||
+            FAILED(sc->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&v))) continue;
+        DWORD pid = 0; sc2->GetProcessId(&pid);
+        std::wstring key = lc(procInfo(pid).path);
+        auto it = saved.find(key);
+        if (it == saved.end()) continue;
+        float cur = 1.0f; v->GetMasterVolume(&cur);
+        if (cur < 1e-3f) { v->SetMasterVolume(it->second, (LPCGUID)&ASM_CONTEXT); fixed++; }
+        if (done) done->insert(key);
+    }
+    return fixed;
+}
 
 class Tap {
 public:
@@ -456,7 +478,9 @@ private:
     Ptr<IAudioSessionManager2> manager;
     Notifier* notifier = nullptr;
     std::map<std::wstring, std::unique_ptr<Session>> sessions;
+    std::mutex remMutex;                              // guards remembered (the manager and the session-created callback both write it)
     std::map<std::wstring, float> remembered;         // exe path -> the volume it had before we turned it down (kept in the state file)
+    std::mutex knownMutex;
     std::set<std::wstring> known;                     // exe paths heard playing (lower case); kept in <state>.known
     std::mutex capMutex;
     std::vector<std::shared_ptr<Capture>> captures;
@@ -471,7 +495,10 @@ private:
     void releaseEndpoint();
     void refresh();
     int channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& excl, const std::map<std::wstring, int>& rl, int def);
-    bool isKnown(const Session& s) const;
+    bool knownPath(const std::wstring& path, const std::wstring& exe);
+    float lowerVolume(ISimpleAudioVolume* vol, const std::wstring& path, bool fast);
+    void onSessionCreated(IAudioSessionControl* ctl);
+    void sweepRestore(const std::map<std::wstring, float>& saved);
     void loadKnown();
     void saveKnown();
     void prove(const std::map<DWORD, DWORD>& rootOf, DWORD root);
@@ -513,6 +540,7 @@ bool Tap::resolveEndpoint() {
     if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&manager))) { releaseEndpoint(); return false; }
     notifier = new Notifier();
     notifier->wake = [this] { requestWake(); };
+    notifier->created = [this](IAudioSessionControl* c) { onSessionCreated(c); };
     manager->RegisterSessionNotification(notifier);
     { Ptr<IAudioSessionEnumerator> first; manager->GetSessionEnumerator(&first); }     // notifications start only after one read
     logMsg("endpoint: " + U(endpointName));
@@ -520,9 +548,13 @@ bool Tap::resolveEndpoint() {
 }
 
 void Tap::releaseEndpoint() {
-    restoreAll();
+    // no new session may be turned down behind our back from here on
     if (manager && notifier) manager->UnregisterSessionNotification(notifier);
-    if (notifier) { notifier->Release(); notifier = nullptr; }
+    if (notifier) { notifier->created = nullptr; notifier->wake = nullptr; notifier->Release(); notifier = nullptr; }
+    std::map<std::wstring, float> before;
+    { std::lock_guard<std::mutex> l(remMutex); before = remembered; }
+    restoreAll();
+    if (manager && !before.empty()) sweepRestore(before);          // programs the session-created callback turned down that the manager never met
     manager.reset(); endpoint.reset();
     endpointId.clear(); endpointName.clear();
 }
@@ -537,15 +569,16 @@ int Tap::channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& e
     return def;
 }
 
-bool Tap::isKnown(const Session& s) const {
-    if (known.count(lc(s.path))) return true;
-    std::wstring e = lc(s.exe);
+bool Tap::knownPath(const std::wstring& path, const std::wstring& exe) {
+    { std::lock_guard<std::mutex> l(knownMutex); if (known.count(lc(path))) return true; }
+    std::wstring e = lc(exe);
     for (const wchar_t* k : kKnownPlayers) if (e == k) return true;
     return false;
 }
 
 void Tap::loadKnown() {
     if (state.path.empty()) return;
+    std::lock_guard<std::mutex> kl(knownMutex);
     FILE* f = _wfopen((state.path + L".known").c_str(), L"rb");
     if (!f) return;
     char line[4096];
@@ -559,6 +592,7 @@ void Tap::loadKnown() {
 
 void Tap::saveKnown() {
     if (state.path.empty()) return;
+    std::lock_guard<std::mutex> kl(knownMutex);
     std::wstring path = state.path + L".known", tmp = path + L".tmp";
     FILE* f = _wfopen(tmp.c_str(), L"wb");
     if (!f) return;
@@ -575,7 +609,7 @@ void Tap::prove(const std::map<DWORD, DWORD>& rootOf, DWORD root) {
         if (s.channel == -1 || s.lowered) continue;
         auto r = rootOf.find(s.pid);
         if (r == rootOf.end() || r->second != root) continue;
-        known.insert(lc(s.path));
+        { std::lock_guard<std::mutex> kl(knownMutex); known.insert(lc(s.path)); }
         attenuate(s);
         any = true;
         logMsg("heard " + U(s.exe) + " (pid " + std::to_string(s.pid) + "): turned down from now on");
@@ -583,20 +617,44 @@ void Tap::prove(const std::map<DWORD, DWORD>& rootOf, DWORD root) {
     if (any) saveKnown();
 }
 
-void Tap::attenuate(Session& s) {
-    float v = 1.0f; BOOL m = FALSE;
-    s.vol->GetMasterVolume(&v); s.vol->GetMute(&m);
+// Turn a program's session down to eps and remember the volume it had. `fast` (the session-created callback):
+// lower first and write the state file afterwards, because every millisecond is sound that reaches the headset
+// unprocessed; otherwise the file is written BEFORE the change, so a crash right now is still recoverable.
+float Tap::lowerVolume(ISimpleAudioVolume* vol, const std::wstring& path, bool fast) {
+    std::lock_guard<std::mutex> l(remMutex);
+    float v = 1.0f;
+    vol->GetMasterVolume(&v);
     float v0 = v;
-    if (v <= g_eps * 4.0f) {                           // already low: Windows kept the volume of an earlier, turned-down run
-        auto it = remembered.find(lc(s.path));
+    if (v <= g_eps * 4.0f) {                           // already low: Windows kept the volume of an earlier, turned-down run (or the callback was first)
+        auto it = remembered.find(lc(path));
         v0 = it != remembered.end() ? it->second : 1.0f;
     }
+    remembered[lc(path)] = v0;
+    if (fast) { vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT); saveState(); }
+    else { saveState(); vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT); }
+    return v0;
+}
+
+void Tap::attenuate(Session& s) {
+    float v0 = lowerVolume(s.vol.p, s.path, false);
     s.v0 = v0;
-    remembered[lc(s.path)] = v0;
-    saveState();                                       // written BEFORE the change: a crash right now is still recoverable
     if (s.events) { s.events->v0 = v0; s.events->armed = true; }
-    s.vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT);
     s.lowered = true; s.lastSet = nowMs();
+}
+
+// The session of a program we know plays sound has just appeared: turn it down before its first sample.
+void Tap::onSessionCreated(IAudioSessionControl* ctl) {
+    if (!ctl || !engaged.load()) return;
+    Ptr<IAudioSessionControl2> c2; Ptr<ISimpleAudioVolume> vol;
+    if (FAILED(ctl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&c2)) ||
+        FAILED(ctl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&vol))) return;
+    DWORD pid = 0; c2->GetProcessId(&pid);
+    ProcInfo pi = procInfo(pid);
+    std::map<std::wstring, int> rl; int def; std::set<DWORD> excl;
+    { std::lock_guard<std::mutex> l(cfgMutex); rl = rules; def = defaultChannel; excl = excludePids; }
+    if (channelFor(pi.exe, pid, excl, rl, def) == -1) return;
+    if (!knownPath(pi.path, pi.exe)) return;
+    lowerVolume(vol.p, pi.path, true);
 }
 
 void Tap::release(Session& s, bool vanished) {
@@ -608,11 +666,21 @@ void Tap::release(Session& s, bool vanished) {
     if (vanished && !gone) return;                     // it ended without giving us the chance: Windows may have kept -160 dB, so keep the memory
     // the program's volume is its own again: forget it, unless another session of the same program is still turned down
     for (auto& kv : sessions) if (kv.second.get() != &s && kv.second->lowered && lc(kv.second->path) == lc(s.path)) return;
+    std::lock_guard<std::mutex> l(remMutex);
     remembered.erase(lc(s.path));
     saveState();
 }
 
 void Tap::saveState() { state.write(remembered); }
+
+void Tap::sweepRestore(const std::map<std::wstring, float>& saved) {
+    std::set<std::wstring> done;
+    int n = restoreSessionsOn(manager.p, saved, &done);
+    if (n) logMsg("restored " + std::to_string(n) + " session volume(s) that were turned down on the way out");
+    std::lock_guard<std::mutex> l(remMutex);
+    for (auto& d : done) remembered.erase(d);
+    saveState();
+}
 
 void Tap::restoreAll() {
     for (auto& kv : sessions) release(*kv.second);
@@ -640,7 +708,8 @@ void Tap::refresh() {
         if (SUCCEEDED(c2->GetSessionInstanceIdentifier(&inst)) && inst) { key = inst; CoTaskMemFree(inst); }
         if (key.empty()) key = L"pid" + std::to_wstring(pid);
         auto it = sessions.find(key);
-        if (it == sessions.end()) {
+        bool fresh = it == sessions.end();
+        if (fresh) {
             auto s = std::make_unique<Session>();
             s->id = key; s->pid = pid;
             ProcInfo pi = procInfo(pid);
@@ -656,18 +725,25 @@ void Tap::refresh() {
         Session& s = *it->second;
         s.seen = true;
         int ch = channelFor(s.exe, s.pid, excl, rl, def);
+        if (fresh && ch == -1) {                          // turned down by the session-created callback a moment before the rules changed?
+            float cur = 1.0f; s.vol->GetMasterVolume(&cur);
+            std::lock_guard<std::mutex> rl2(remMutex);
+            auto rm = remembered.find(lc(s.path));
+            if (cur < 1e-3f && rm != remembered.end()) { s.vol->SetMasterVolume(rm->second, (LPCGUID)&ASM_CONTEXT); remembered.erase(rm); saveState(); }
+        }
         if (ch != s.channel) {
             if (s.lowered && ch == -1) release(s);
             s.channel = ch;
         }
         if (s.channel != -1) {
-            if (!s.lowered) { if (isKnown(s)) attenuate(s); }       // an unknown program is only listened to until it plays (reconcileCaptures)
+            if (!s.lowered) { if (knownPath(s.path, s.exe)) attenuate(s); }       // an unknown program is only listened to until it plays (reconcileCaptures)
             else {
                 // somebody (the user at the volume mixer, the program itself) changed the volume: that is the new
                 // "volume the program wants"; remember it and go back to eps at once
                 float v = 1.0f; s.vol->GetMasterVolume(&v);
                 if (std::fabs(v - g_eps) > g_eps * 0.5f && v > g_eps * 4.0f) {
-                    s.v0 = v; remembered[lc(s.path)] = v; saveState();
+                    s.v0 = v;
+                    { std::lock_guard<std::mutex> rl2(remMutex); remembered[lc(s.path)] = v; saveState(); }
                     if (s.events) s.events->v0 = v;
                     s.vol->SetMasterVolume(g_eps, (LPCGUID)&ASM_CONTEXT);
                     s.lastSet = nowMs();
@@ -922,20 +998,9 @@ static int restoreMode(StateFile& sf) {
     UINT n = 0; col->GetCount(&n);
     int fixed = 0;
     for (UINT i = 0; i < n; i++) {
-        Ptr<IMMDevice> d; Ptr<IAudioSessionManager2> mgr; Ptr<IAudioSessionEnumerator> se;
-        if (FAILED(col->Item(i, &d)) || FAILED(d->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&mgr)) ||
-            FAILED(mgr->GetSessionEnumerator(&se))) continue;
-        int cnt = 0; se->GetCount(&cnt);
-        for (int k = 0; k < cnt; k++) {
-            Ptr<IAudioSessionControl> sc; Ptr<IAudioSessionControl2> sc2; Ptr<ISimpleAudioVolume> v;
-            if (FAILED(se->GetSession(k, &sc)) || FAILED(sc->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&sc2)) ||
-                FAILED(sc->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&v))) continue;
-            DWORD pid = 0; sc2->GetProcessId(&pid);
-            auto it = saved.find(lc(procInfo(pid).path));
-            if (it == saved.end()) continue;
-            float cur = 1.0f; v->GetMasterVolume(&cur);
-            if (cur < 1e-3f) { v->SetMasterVolume(it->second, (LPCGUID)&ASM_CONTEXT); fixed++; }
-        }
+        Ptr<IMMDevice> d; Ptr<IAudioSessionManager2> mgr;
+        if (FAILED(col->Item(i, &d)) || FAILED(d->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&mgr))) continue;
+        fixed += restoreSessionsOn(mgr.p, saved);
     }
     sf.write({});
     logMsg("restored " + std::to_string(fixed) + " session volume(s)");

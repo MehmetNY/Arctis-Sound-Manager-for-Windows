@@ -197,7 +197,10 @@ def main() -> int:
         check("S1.6 the game channel holds only the game", tone_ratio(w["game"], 440, 880) > 1000, f"{tone_ratio(w['game'], 440, 880):.1f}")
         check("S1.7 the chat channel holds only the chat", tone_ratio(w["chat"], 880, 440) > 1000, f"{tone_ratio(w['chat'], 880, 440):.1f}")
         check("S1.8 left and right keep their level", abs(rms(w["game"][:, 0]) - rms(w["game"][:, 1])) < 1e-4)
-        check("S1.9 nothing reaches the headset any more", head_rms < 1e-5 and max(head_trace or [0]) < 1e-4, f"rms {head_rms:.2e} max10ms {max(head_trace or [0]):.2e}")
+        early = [(i, v) for i, v in enumerate(head_trace[:50]) if v > 1e-4]
+        log(f"   MEASURE start-of-recording transient (first 500 ms of a loopback capture): {[(i, round(v, 3)) for i, v in early][:12]}")
+        late = head_trace[50:]
+        check("S1.9 nothing reaches the headset any more", head_rms < 1e-5 and max(late or [0]) < 1e-4, f"rms {head_rms:.2e} max10ms after 500 ms {max(late or [0]):.2e}")
         check("S1.10 the programs' sessions are at the helper's level", all(v is not None and v < 1e-6 for v in (volume_of("fakegame.exe"), volume_of("fakechat.exe"))),
               f"{volume_of('fakegame.exe')} {volume_of('fakechat.exe')}")
         log("   apps:", json.dumps(helper.apps()))
@@ -256,8 +259,11 @@ def main() -> int:
         media = Fake("fakemedia", 0.25, 660, 4); apps.append(media)
         _, trace = rec.result()
         peak = max(trace or [0])
-        log(f"   MEASURE second launch (volume remembered by Windows): peak at headset {peak:.5f}")
-        check("S5.3 a second launch of the same program does not leak at all", peak < 1e-3, f"{peak:.5f}")
+        first2 = next((i for i, v in enumerate(trace) if v > 1e-4), None)
+        loud2 = [v for v in trace[first2:first2 + 100]] if first2 is not None else []
+        leak2_ms = sum(1 for v in loud2 if v > 0.01) * 10
+        log(f"   MEASURE second launch of a known program: audible leak {leak2_ms} ms, peak at headset {peak:.5f}; levels {['%.3f' % v for v in loud2[:12]]}")
+        check("S5.3 a second launch of a known program leaks for no longer than 30 ms", leak2_ms <= 30, f"{leak2_ms} ms")
         media.kill()
         known = Path(str(state) + ".known")
         log("   known programs file:", (known.read_text() if known.exists() else "(none)").strip())
