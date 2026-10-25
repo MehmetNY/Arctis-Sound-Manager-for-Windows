@@ -1,0 +1,179 @@
+
+===== os
+
+Caption     : Microsoft Windows Server 2025 Datacenter
+BuildNumber : 26100
+Version     : 10.0.26100
+
+===== secure boot
+False
+
+===== bcdedit current
+
+Windows Boot Loader
+-------------------
+identifier              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows Server
+locale                  en-US
+inherit                 {bootloadersettings}
+recoverysequence        {3167a661-c6d0-11f1-b839-00224846f572}
+displaymessageoverride  Recovery
+recoveryenabled         No
+testsigning             Yes
+isolatedcontext         Yes
+allowedinmemorysettings 0x15000075
+osdevice                partition=C:
+systemroot              \Windows
+resumeobject            {3167a65d-c6d0-11f1-b839-00224846f572}
+nx                      OptOut
+bootstatuspolicy        IgnoreAllFailures
+hypervisorlaunchtype    Auto
+hypervisorschedulertype Root
+ems                     Yes
+
+===== audio services
+
+Name                  Status StartType
+----                  ------ ---------
+AudioEndpointBuilder Running Automatic
+Audiosrv             Running Automatic
+
+===== start audio service
+
+Name      Status
+----      ------
+Audiosrv Running
+
+===== download VB-CABLE
+downloaded VBCABLE_Driver_Pack45.zip
+[vbcable] exit code 0
+
+===== allow microphone access
+ok
+
+===== build audioprobe
+audioprobe.cpp
+built: True
+
+----- E7b a watcher lowers every new session to 1e-6 at once; endpoint loopback shows what reaches the device from the first packet
+NEWSESSION t=172ms pid=0 exe=(system) volume_before=1 set_to=1e-06
+WATCH CABLE Input (VB-Audio Virtual Cable)
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=203ms pid=0 exe=(system) volume_before=1 set_to=1e-06
+NEWSESSION t=1516ms pid=4056 exe=audioprobe.exe volume_before=1 set_to=1e-06
+NEWSESSION t=1610ms pid=4056 exe=audioprobe.exe volume_before=1e-06 set_to=1e-06
+NEWSESSION t=3016ms pid=9212 exe=audioprobe.exe volume_before=1 set_to=1e-06
+NEWSESSION t=3063ms pid=9212 exe=audioprobe.exe volume_before=1e-06 set_to=1e-06
+
+RESULT record device='CABLE Input (VB-Audio Virtual Cable)' loopback=1 mix=[2ch 48000Hz 32bit float] frames=220800 ch1_rms=0.0000000 ch2_rms=0.0000000
+TRACE record 10ms-rms: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+
+
+----- E8a persistence: the same program starts again right away
+tone[e8aa] pid=8812: TONE start pid=8812 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+RESULT setvol pid=8812 sessions=1
+tone[e8ab] pid=3224: TONE start pid=3224 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=3224 exe=audioprobe.exe state=1 volume=0.123 mute=0
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+NEWSESSION t=15ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE Input (VB-Audio Virtual Cable)
+NEWSESSION t=31ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=1218ms pid=8812 exe=audioprobe.exe volume_before=1e-06 set_to=-1
+NEWSESSION t=1250ms pid=8812 exe=audioprobe.exe volume_before=1e-06 set_to=-1
+NEWSESSION t=5078ms pid=3224 exe=audioprobe.exe volume_before=0.123 set_to=-1
+NEWSESSION t=5093ms pid=3224 exe=audioprobe.exe volume_before=0.123 set_to=-1
+
+
+----- E8b persistence across a restart of the Windows audio service
+tone[e8ba] pid=6788: TONE start pid=6788 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+RESULT setvol pid=6788 sessions=1
+tone[e8bb] pid=8516: TONE start pid=8516 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=8516 exe=audioprobe.exe state=1 volume=0.123 mute=0
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+NEWSESSION t=0ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE Input (VB-Audio Virtual Cable)
+NEWSESSION t=16ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=1219ms pid=6788 exe=audioprobe.exe volume_before=0.123 set_to=-1
+NEWSESSION t=1250ms pid=6788 exe=audioprobe.exe volume_before=0.123 set_to=-1
+
+
+----- E8c where does it live? registry diff around setting a volume (HKCU\Software\Microsoft, Multimedia, Audio)
+tone[e8c] pid=5124: TONE start pid=5124 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+RESULT setvol pid=5124 sessions=1
+no audio-related registry difference in HKCU\Software\Microsoft
+total differing lines in HKCU\Software\Microsoft: 2
+tone[e9] pid=7104: TONE start pid=7104 device='CABLE Input (VB-Audio Virtual Cable)' mix=[8ch 48000Hz 32bit float] amp=0.800 freq=440
+
+----- E9 an 8-channel program (channel k at k/8 of 0.8): process loopback asked for 8 channels, and for 6
+RESULT capture pid=7104 mode=include frames=119520 packets=249 silent_packets=0 rms=0.053861078 peak=0.158479854
+RESULT capture-channels 8: ch1=0.10320 ch2=0.11206 ch3=0.00000 ch4=0.00000 ch5=0.00000 ch6=0.00000 ch7=0.00000 ch8=0.00000
+RESULT capture pid=7104 mode=include frames=119520 packets=249 silent_packets=0 rms=0.062195919 peak=0.158479854
+RESULT capture-channels 6: ch1=0.10321 ch2=0.11206 ch3=0.00000 ch4=0.00000 ch5=0.00000 ch6=0.00000
+RESULT capture pid=7104 mode=include frames=120000 packets=250 silent_packets=0 rms=0.107725559 peak=0.158479854
+
+----- E13 the followed program exits after 2 s of a 6 s capture (trace: what is delivered afterwards?)
+TRACE capture volume-change-at-bucket=0 10ms-rms: 0.00e+00 0.00e+00 0.00e+00 1.04e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00
+RESULT capture pid=4668 mode=include frames=263040 packets=548 silent_packets=0 rms=0.068909997 peak=0.160500005
+
+----- E15 capture starts the moment the program is launched, before it renders anything (trace: when does sound appear?)
+TRACE capture volume-change-at-bucket=0 10ms-rms: 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 0.00e+00 1.06e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01 1.13e-01 1.14e-01 1.15e-01 1.13e-01 1.12e-01
+RESULT capture pid=3584 mode=include frames=119520 packets=249 silent_packets=0 rms=0.113492637 peak=0.160500005
+
+===== summary
+-------------------
+----- E7b a watcher lowers every new session to 1e-6 at once; endpoint loopback shows what reaches the device from the first packet
+NEWSESSION t=172ms pid=0 exe=(system) volume_before=1 set_to=1e-06
+WATCH CABLE Input (VB-Audio Virtual Cable)
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=203ms pid=0 exe=(system) volume_before=1 set_to=1e-06
+NEWSESSION t=1516ms pid=4056 exe=audioprobe.exe volume_before=1 set_to=1e-06
+NEWSESSION t=1610ms pid=4056 exe=audioprobe.exe volume_before=1e-06 set_to=1e-06
+NEWSESSION t=3016ms pid=9212 exe=audioprobe.exe volume_before=1 set_to=1e-06
+NEWSESSION t=3063ms pid=9212 exe=audioprobe.exe volume_before=1e-06 set_to=1e-06
+RESULT record device='CABLE Input (VB-Audio Virtual Cable)' loopback=1 mix=[2ch 48000Hz 32bit float] frames=220800 ch1_rms=0.0000000 ch2_rms=0.0000000
+----- E8a persistence: the same program starts again right away
+RESULT setvol pid=8812 sessions=1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=3224 exe=audioprobe.exe state=1 volume=0.123 mute=0
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+NEWSESSION t=15ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE Input (VB-Audio Virtual Cable)
+NEWSESSION t=31ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=1218ms pid=8812 exe=audioprobe.exe volume_before=1e-06 set_to=-1
+NEWSESSION t=1250ms pid=8812 exe=audioprobe.exe volume_before=1e-06 set_to=-1
+NEWSESSION t=5078ms pid=3224 exe=audioprobe.exe volume_before=0.123 set_to=-1
+NEWSESSION t=5093ms pid=3224 exe=audioprobe.exe volume_before=0.123 set_to=-1
+----- E8b persistence across a restart of the Windows audio service
+RESULT setvol pid=6788 sessions=1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=8516 exe=audioprobe.exe state=1 volume=0.123 mute=0
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1e-06 mute=0
+NEWSESSION t=0ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE Input (VB-Audio Virtual Cable)
+NEWSESSION t=16ms pid=0 exe=(system) volume_before=1e-06 set_to=-1
+WATCH CABLE In 16ch (VB-Audio Virtual Cable)
+NEWSESSION t=1219ms pid=6788 exe=audioprobe.exe volume_before=0.123 set_to=-1
+NEWSESSION t=1250ms pid=6788 exe=audioprobe.exe volume_before=0.123 set_to=-1
+----- E8c where does it live? registry diff around setting a volume (HKCU\Software\Microsoft, Multimedia, Audio)
+RESULT setvol pid=5124 sessions=1
+no audio-related registry difference in HKCU\Software\Microsoft
+total differing lines in HKCU\Software\Microsoft: 2
+----- E9 an 8-channel program (channel k at k/8 of 0.8): process loopback asked for 8 channels, and for 6
+RESULT capture pid=7104 mode=include frames=119520 packets=249 silent_packets=0 rms=0.053861078 peak=0.158479854
+RESULT capture-channels 8: ch1=0.10320 ch2=0.11206 ch3=0.00000 ch4=0.00000 ch5=0.00000 ch6=0.00000 ch7=0.00000 ch8=0.00000
+RESULT capture pid=7104 mode=include frames=119520 packets=249 silent_packets=0 rms=0.062195919 peak=0.158479854
+RESULT capture-channels 6: ch1=0.10321 ch2=0.11206 ch3=0.00000 ch4=0.00000 ch5=0.00000 ch6=0.00000
+RESULT capture pid=7104 mode=include frames=120000 packets=250 silent_packets=0 rms=0.107725559 peak=0.158479854
+----- E13 the followed program exits after 2 s of a 6 s capture (trace: what is delivered afterwards?)
+RESULT capture pid=4668 mode=include frames=263040 packets=548 silent_packets=0 rms=0.068909997 peak=0.160500005
+----- E15 capture starts the moment the program is launched, before it renders anything (trace: when does sound appear?)
+RESULT capture pid=3584 mode=include frames=119520 packets=249 silent_packets=0 rms=0.113492637 peak=0.160500005
+
+PROBE DONE
