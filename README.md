@@ -17,7 +17,7 @@
 
 > [!NOTE]
 > ## 🪟 Windows
-> This branch also runs on Windows 10/11: one installer, no driver of its own, nothing to set up by hand. Download `ASM-Setup-<version>.exe` from the [`windows-latest` pre-release](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases/tag/windows-latest) and read [docs/windows.md](docs/windows.md) for how the sound is handled and what is different from Linux.
+> This branch also runs on Windows 10/11: one installer, no driver of its own, nothing to set up by hand. Download `ASM-Setup-<version>.exe` from the [latest release](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases/latest) (or, before the first release, the [`windows-latest` pre-release](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases/tag/windows-latest)); later versions are offered inside the program. Read [docs/windows.md](docs/windows.md) for how the sound is handled and what is different from Linux.
 
 > [!NOTE]
 > ## 🔬 Help map your headset

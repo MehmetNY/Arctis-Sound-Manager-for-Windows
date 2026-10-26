@@ -15,8 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The audio engine sets itself up.** On first run ASM picks the headset, its microphone and the virtual microphone by itself and follows them when devices come and go. The old "audio engine not set up" strip and the cable-assignment wizard are gone; Settings → Audio engine → **Devices...** only corrects a wrong guess.
 - **CI on real Windows machines** (`windows-e2e`, `windows-installer`): the helper against a real audio stack, the installer run silently on a clean machine, the program started the way Start with Windows starts it, programs playing through the engine, and the uninstaller.
 
+- **Updates on Windows.** ASM checks this repository for a newly published (not pre-release) release and tells you once; **Settings → Check for updates → Update now** downloads the installer, verifies its SHA-256 and size, and runs it (one administrator prompt); the installer replaces the files and starts ASM again. Releases are made by pushing a `v<version>` tag (`windows-release` workflow).
+- **About page** under Help: what the program is for, where the source and bug reports live, that anyone may fork it, the credits to elegos/Linux-Arctis-Manager and loteran/Arctis-Sound-Manager (the biggest thanks), and a donation button.
+- **Screen off when away (Windows):** the DAC screen goes dark while the session is locked (the lock screen and screen saver are told apart from the user's desktop, which also works on administrator accounts) or after five minutes without keyboard or mouse input.
+
 ### Changed
+- **DAC screen timeout** also works with Custom Display (it only counted in the other display mode); it counts from the last wheel turn or settings change, and 0 means never. The default of 30 s therefore darkens a Custom Display too: set it to 0 to keep it on.
+- **Donation button** of the sidebar opens this build's own donation page; the logo links to this repository and bug reports are filed here, not upstream.
+- **Sidebar (Windows):** the buttons scroll when the window is too short to show all of them, so About never runs into the logo on a laptop screen.
+- **Audio engine configuration:** files written by earlier builds are brought to the current layout automatically, and an engine switch that an earlier build left off is turned on once.
+- **Settings (Windows):** the audio options that only exist on Linux (PipeWire filter chains, channel outputs, "redirect audio on disconnect") are hidden instead of showing empty lists.
 - **Headset page (Windows):** spatial audio, surround, volume boost, Smart Volume and the microphone's AI noise cancelling, noise reduction, gate and compressor sit on the Headset page next to the headset's own settings. The equaliser - curve, presets, macro sliders - stays on the Equalizer page.
+
+### Removed
+- **Telemetry (Windows):** the option is gone and nothing is ever asked or sent.
+- **PipeWire "safe mode" banner (Windows):** the filter-chain watchdog it reports on does not exist there.
 
 ## [1.6.4] - 23 October 2026
 

@@ -13,6 +13,10 @@ place of PipeWire.
 3. Leave **Start Arctis Sound Manager with Windows** ticked if you want it. It then starts by itself, quietly, in the
    background (a tray icon, no window) every time you sign in.
 
+Published releases (the ones that are not marked "pre-release") are on the
+[Releases page](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases); the `windows-latest` pre-release is
+the newest build of the branch and is rebuilt on every change.
+
 That is all. The setup installs everything the program needs, including the one virtual audio device it uses for the
 processed microphone (VB-CABLE, see below), and nothing has to be installed or configured by hand afterwards. A silent
 installation works too: `ASM-Setup-<version>.exe /VERYSILENT /TASKS=autostart`.
@@ -20,6 +24,24 @@ installation works too: `ASM-Setup-<version>.exe /VERYSILENT /TASKS=autostart`.
 To remove it, use *Apps → Installed apps*. The uninstaller stops every ASM process, gives every program its volume back
 and removes the Start-with-Windows entry; it asks whether the virtual microphone driver should go as well, because other
 programs may use it.
+
+## Updates
+
+ASM checks this repository for a newly **published** release (a pre-release or a draft never counts, so the
+continuously rebuilt `windows-latest` build does not trigger anything) a minute and a half after it starts and then every six hours. When there is
+one, a notification appears once and **Settings → Check for updates** (and the banner on the Channels page) offers
+**Update now**: ASM downloads `ASM-Setup-<version>.exe` from that release, checks it against the SHA-256 and size GitHub
+states for it, and runs it. Windows asks for the administrator's permission once (the program lives in Program Files);
+the installer then ends every ASM process, replaces the files and opens the program again. Nothing is installed
+without that click.
+
+To publish an update, push a tag such as `v1.7.0` (the number must be higher than the one shown in the window's corner):
+the `windows-release` workflow builds the installer with that version and attaches it to a new release. Until the
+installer is attached, the release is not announced to anybody. The version number of builds that were not made from a
+tag is only a label; releases are what people are told about.
+
+The update check is the only thing the program ever asks the internet for. There is no telemetry, no account and no
+usage statistics in the Windows build.
 
 ## How the sound is handled
 
@@ -46,7 +68,8 @@ VB-CABLE is © VB-Audio Software and is donationware: if it is useful to you, pl
 | Channels | Game / Chat / Media / Aux volumes, ChatMix, which program is on which channel |
 | Equalizer | The equaliser of every channel, the presets (Sonar's and your own), the microphone's equaliser |
 | Headset | The headset's own settings, and next to them everything that shapes its sound: spatial audio, surround, volume boost, Smart Volume, and the microphone's AI noise cancelling, noise reduction, gate and compressor |
-| DAC | The base-station screen: what it shows, fonts, and the media line (the track playing in your browser or player, read from Windows' media controls) |
+| DAC | The base-station screen: what it shows, fonts, and the media line (the track playing in your browser or player, read from Windows' media controls). The screen goes dark after the **screen timeout** (counted from the last turn of the wheel or change of a setting; 0 = never), and, with **turn the screen off while locked or idle**, while the PC is locked (lock screen, screen saver) or has had no keyboard or mouse input for five minutes |
+| Help, About | How the program works; who made it, where its source and bug reports live, the credits, and the donation button |
 | Settings | Start with Windows, theme, language, the **Audio engine** switch and **Devices...** (headset, microphone and where the processed microphone goes - ASM chooses them by itself, change them only if it chose wrongly) |
 
 ## Good to know
