@@ -278,6 +278,9 @@ def read_logs() -> dict[Path, str]:
     return out
 
 
+MIN_JUDGED_SPAN_S = 600.0                                   # a process younger than this is still starting up
+
+
 def judge_health(title: str) -> None:
     texts = read_logs()
     series = soak_report.collect(texts.values())
@@ -286,7 +289,7 @@ def judge_health(title: str) -> None:
         fail(f"{title}: no process wrote a 'health:' line")
         return
     log(soak_report.table(series))
-    for problem in soak_report.verdict(series):
+    for problem in soak_report.verdict(series, min_span=MIN_JUDGED_SPAN_S):
         fail(f"{title}: {problem}")
     roles = {role for role, _ in series}
     for needed in ("tray", "daemon", "engine"):

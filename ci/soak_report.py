@@ -106,12 +106,16 @@ def _delta(rows, key) -> str:
     return "-" if d is None else f"{d:+d}" if isinstance(d, int) else f"{d:+.0f}"
 
 
-def verdict(series: dict[tuple[str, int], list[dict]], limits: dict | None = None, min_samples: int = 6) -> list[str]:
-    """Every way the run broke the limits, as sentences (empty when it is healthy)."""
+def verdict(series: dict[tuple[str, int], list[dict]], limits: dict | None = None, min_samples: int = 6,
+            min_span: float = 0.0) -> list[str]:
+    """Every way the run broke the limits, as sentences (empty when it is healthy).
+
+    A process that lived for less than *min_span* seconds is not judged: what it does in its first minutes (the window
+    being built, the libraries loading) is a step, not growth."""
     limits = limits or LIMITS
     problems: list[str] = []
     for (role, pid), rows in sorted(series.items()):
-        if len(rows) < min_samples:
+        if len(rows) < min_samples or rows[-1]["up"] - rows[0]["up"] < min_span:
             continue
         g = growth(rows)
         if g > limits["growth_mb_per_h"]:

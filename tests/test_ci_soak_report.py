@@ -89,6 +89,17 @@ def test_a_process_with_too_few_samples_is_not_judged():
     assert sr.verdict(_run(lambda m: 80.0 + 100.0 * m, minutes=4)) == []
 
 
+def test_a_process_that_lived_only_a_few_minutes_is_not_judged_when_asked_not_to():
+    """A replacement tray lives three minutes in the soak and takes a 100 MB step once it starts working."""
+    privates = [48.0, 49.7, 51.9, 53.0, 158.5, 158.4]
+    short = series_from([line(private=p, up=f"{(60 + 30 * i) // 60}m{(60 + 30 * i) % 60:02d}s", handles=200 + (300 if p > 100 else 0))
+                         for i, p in enumerate(privates)])
+    assert sr.verdict(short, min_span=600.0) == []
+    assert sr.verdict(short, min_span=0.0) != []                     # the same run is a "leak" without the span rule
+    long = _run(lambda m: 80.0 + 4.0 * m, minutes=30)
+    assert len(sr.verdict(long, min_span=600.0)) == 1                # a real leak over half an hour is still found
+
+
 def test_the_table_has_one_row_per_process():
     text = "\n".join([line(pid=1, up="5m00s"), line(pid=1, up="10m00s"), line(role="engine", pid=2, up="5m00s"),
                       line(role="engine", pid=2, up="10m00s")])
