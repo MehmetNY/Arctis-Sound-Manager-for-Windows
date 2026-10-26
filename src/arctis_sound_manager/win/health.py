@@ -134,7 +134,14 @@ def diag_from_file() -> str:
 
 
 def python_objects() -> int:
-    return len(gc.get_objects())
+    """How many memory blocks Python has allocated (the number that grows when objects pile up).
+
+    Counting ``len(gc.get_objects())`` instead builds a list of every tracked object with the interpreter lock held,
+    which stalls the audio callbacks of the engine for a few milliseconds each time; this is O(1)."""
+    try:
+        return sys.getallocatedblocks()
+    except AttributeError:                                  # not CPython
+        return len(gc.get_objects())
 
 
 def type_counts() -> Counter:
