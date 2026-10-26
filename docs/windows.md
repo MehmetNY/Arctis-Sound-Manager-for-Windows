@@ -85,6 +85,26 @@ VB-CABLE is © VB-Audio Software and is donationware: if it is useful to you, pl
 * With the audio engine switched off (Settings → Audio engine), ASM does not touch any sound.
 * The program is unsigned, so Windows warns when you run the installer. Signing is possible later.
 
+## Memory and CPU
+
+ASM runs as a few small processes (the tray with its window, the daemon, the audio engine and the audio helper); the
+tray gives its hidden window back to Windows after ten minutes without use, so what is left is a few hundred MB while
+the sound is processed. Each process writes a line like this about itself every five minutes:
+
+```
+health: tray pid 4120, private 212.4 MB, ws 96.0 MB, handles 410, gdi 61, user 33, threads 24, python-objects 188201, cpu 0.4%, up 3h05m, window closed
+```
+
+They are in `%LOCALAPPDATA%\arctis_manager\logs\tray.log` and `daemon.log`, and in
+`%USERPROFILE%\.config\arctis_manager\asm-audio-engine.log` (the engine, which also reports the helper). "private" is
+the number that matters (Task Manager's "Commit size"); the working set shrinks and grows by itself. A process whose
+private memory keeps growing by more than 150 MB an hour logs a `health: ... grows by` warning, and one that passes
+1.2 GB (tray) or 1.5 GB (engine) starts again by itself without interrupting the daemon or the sound.
+
+If memory use is still too high on your PC, create a text file `%LOCALAPPDATA%\arctis_manager\diag.txt` containing
+`1` and restart ASM: the same lines then also say which kinds of Python objects grew and which lines of code
+allocated the memory (`diag:` lines). Send those logs with the report. Setting `ASM_NO_HEALTH=1` turns all of this off.
+
 ## Building it yourself
 
 ```powershell
