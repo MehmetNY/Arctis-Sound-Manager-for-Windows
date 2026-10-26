@@ -498,10 +498,19 @@ def test_programs_are_turned_down_only_while_the_engine_plays_to_the_headset(tmp
     rig = Rig(tmp_path)
     rig.start()
     sent = rig.commands()
-    assert "engage\t1" in sent and "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)" in sent
+    # the headset, and the virtual cable's Input end for people who pick the cable as Windows' output
+    assert "engage\t1" in sent and "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)\tCABLE Input (VB-Audio Virtual Cable)" in sent
     assert f"exclude\t{os.getpid()}" in sent                       # the engine's own sound is never captured back
     rig.engine.stop()
     assert "engage\t0" in rig.commands()
+    rig.helper.stop()
+
+
+def test_the_cable_end_is_left_alone_when_tapping_cables_is_switched_off(tmp_path):
+    rig = Rig(tmp_path, tap_config(tap_cables=False))
+    rig.start()
+    assert "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)" in rig.commands()
+    rig.engine.stop()
     rig.helper.stop()
 
 

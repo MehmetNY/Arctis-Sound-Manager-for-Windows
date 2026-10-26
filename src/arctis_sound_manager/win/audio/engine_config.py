@@ -79,6 +79,7 @@ class EngineConfig:
     mic_input: str = ""
     mic_output: str = ""
     master_limiter: bool = True
+    tap_cables: bool = True                   # also take programs that play into a virtual cable's Input end (Windows' output picked as "CABLE Input")
     auto: bool = False                        # made by ASM itself (first run): it may be redone when devices appear or go
 
     # ── derived ─────────────────────────────────────────────────────────────
@@ -110,6 +111,8 @@ class EngineConfig:
                "inputs": dict(self.inputs), "outputs": dict(self.outputs), "routing": dict(self.routing),
                "mic": {"input": self.mic_input, "output": self.mic_output},
                "master_limiter": self.master_limiter}
+        if not self.tap_cables:
+            out["tap_cables"] = False
         if self.auto:
             out["auto"] = True
         if self.block:
@@ -157,6 +160,8 @@ class EngineConfig:
             cfg.master_limiter = raw["master_limiter"]
         if raw.get("auto") is True:
             cfg.auto = True
+        if raw.get("tap_cables") is False:
+            cfg.tap_cables = False
         return cfg
 
     def problems(self) -> list[str]:
@@ -290,6 +295,17 @@ def _cable_base(name: str) -> str:
     # VB-CABLE also lists "CABLE In 16ch": a second render end of the same cable. Windows lets only one of the
     # two be open at a time (measured: the second one is refused as an invalid device), so it counts as the same end.
     return re.sub(r"\b(output|input|in 16ch)\b", "", bare, flags=re.IGNORECASE).strip().lower()
+
+
+def cable_inputs(devices: list[DeviceInfo]) -> list[str]:
+    """The Input (render) ends of virtual cables, which people pick as Windows' sound output. ``CABLE In 16ch`` is left
+    out: it shares its wire with ``CABLE Input`` and Windows lets only one of the two be open."""
+    names = []
+    for d in devices:
+        if d.max_outputs > 0 and d.wasapi and not is_tap_device(d) and _CABLE.search(d.name) \
+                and re.search(r"\binput\b", re.sub(r"\(.*?\)", "", d.name), re.IGNORECASE) and "16ch" not in d.name.lower():
+            names.append(d.name)
+    return names
 
 
 def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:

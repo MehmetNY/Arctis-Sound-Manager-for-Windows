@@ -30,7 +30,7 @@ import numpy as np
 
 from arctis_sound_manager.win.audio import fast
 from arctis_sound_manager.win.audio.backend import BackendError, DeviceInfo, OpenedStream, find_device
-from arctis_sound_manager.win.audio.engine_config import EngineConfig
+from arctis_sound_manager.win.audio.engine_config import EngineConfig, cable_inputs
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS, MASTER, EngineGraph, StateSnapshot, read_state
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.ports import InputPort, OutputPort
@@ -597,12 +597,18 @@ class Engine:
         playing = headset is not None and headset.state == "running" and headset.stream is not None
         reading = any(ep.state == "running" and isinstance(ep.stream, TapStream) for ep in self.endpoints.values())
         engaged = bool(playing and reading)
-        key = (engaged, headset.device if playing else "")
+        endpoints: list[str] = []
+        if playing:
+            endpoints.append(headset.device)
+            if self.config.tap_cables:
+                # Windows' output picked as "CABLE Input": those programs are heard in the headset too (the engine's own
+                # microphone stream into that cable is left alone: it is excluded by process id)
+                endpoints += [name for name in cable_inputs(self._devices) if name != headset.device]
+        key = (engaged, tuple(endpoints))
         if key == self._tap_key:
             return
         self._tap_key = key
-        tap.configure(endpoint=headset.device if playing else None, rules=self.rules, exclude={os.getpid()},
-                      engaged=engaged)
+        tap.configure(endpoint=endpoints or None, rules=self.rules, exclude={os.getpid()}, engaged=engaged)
 
     def _after_reopen(self, ep: Endpoint) -> None:
         for pipeline in (self.playback, self.mic):

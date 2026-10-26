@@ -20,11 +20,13 @@
 // Whenever this program stops - the engine closes the pipe, a quit command, Ctrl-C, log-off - every session
 // volume is put back. A list of what was lowered is kept on disk so that `--restore` can undo it after a crash.
 //
-//   asm-audiotap [--endpoint <name piece>|default] [--exclude-pid N]... [--state <file>] [--eps 1e-7]
+//   asm-audiotap [--endpoint <name piece>|default]... [--exclude-pid N]... [--state <file>] [--eps 1e-7]
+//     (several --endpoint: the headset, and e.g. "CABLE Input" for people who pick the cable as Windows' output:
+//      programs playing to any of them are taken the same way)
 //   asm-audiotap --restore [--state <file>]
 //   asm-audiotap --list            (what is playing where; for diagnostics)
 //
-// stdin  (tab separated lines):  endpoint<TAB>text | default<TAB>channel|bypass | rule<TAB>exe<TAB>channel|bypass |
+// stdin  (tab separated lines):  endpoint<TAB>text[<TAB>text...] | default<TAB>channel|bypass | rule<TAB>exe<TAB>channel|bypass |
 //                                 exclude<TAB>pid | apply | quit
 // stdout (binary, repeated):     "ATP1" u32 frames u32 channels u32 reserved, then frames*channels float32
 // stderr (one JSON per line):    {"t":"status",...}  {"t":"log",...}
@@ -394,6 +396,7 @@ public:
 
 struct Session {
     std::wstring id;                                  // endpoint id + session instance id
+    std::wstring device;                              // friendly name of the endpoint it plays to
     DWORD pid = 0;
     std::wstring exe, path;
     Ptr<IAudioSessionControl> ctl;
@@ -456,7 +459,7 @@ class Tap {
 public:
     // configuration (changed from the stdin thread, applied by the manager thread)
     std::mutex cfgMutex;
-    std::wstring endpointQuery = L"default";
+    std::vector<std::wstring> endpointQueries{L"default"};
     std::map<std::wstring, int> rules;                // lower exe -> channel (-1 bypass)
     int defaultChannel = 0;
     std::set<DWORD> excludePids;
@@ -473,10 +476,13 @@ public:
 private:
     std::mutex wakeMutex; std::condition_variable wakeCv; bool wakeFlag = false;
     Ptr<IMMDeviceEnumerator> enumerator;
-    Ptr<IMMDevice> endpoint;
-    std::wstring endpointId, endpointName;
-    Ptr<IAudioSessionManager2> manager;
-    Notifier* notifier = nullptr;
+    struct Ep {                                       // one watched endpoint (the headset, a cable's Input end...)
+        Ptr<IMMDevice> device;
+        std::wstring id, name;
+        Ptr<IAudioSessionManager2> manager;
+        Notifier* notifier = nullptr;
+    };
+    std::vector<std::unique_ptr<Ep>> eps;
     std::map<std::wstring, std::unique_ptr<Session>> sessions;
     std::mutex remMutex;                              // guards remembered (the manager and the session-created callback both write it)
     std::map<std::wstring, float> remembered;         // exe path -> the volume it had before we turned it down (kept in the state file)
@@ -491,8 +497,9 @@ private:
     uint64_t lastStatus = 0;
     std::string lastAppsJson;
 
-    bool resolveEndpoint();
+    bool resolveEndpoints();
     void releaseEndpoint();
+    std::wstring endpointNames();
     void refresh();
     int channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& excl, const std::map<std::wstring, int>& rl, int def);
     bool knownPath(const std::wstring& path, const std::wstring& exe);
@@ -512,51 +519,80 @@ private:
     void status();
 };
 
-bool Tap::resolveEndpoint() {
-    std::wstring query;
-    { std::lock_guard<std::mutex> l(cfgMutex); query = endpointQuery; }
-    Ptr<IMMDevice> found; std::wstring name, id;
+static bool findEndpoint(IMMDeviceEnumerator* enumerator, const std::wstring& query, Ptr<IMMDevice>& found, std::wstring& name, std::wstring& id) {
     if (lc(query) == L"default" || query.empty()) {
         if (FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &found))) return false;
         name = friendlyName(found.p); id = deviceId(found.p);
-    } else {
-        Ptr<IMMDeviceCollection> col;
-        if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &col))) return false;
-        UINT n = 0; col->GetCount(&n);
-        size_t best = (size_t)-1;
-        for (UINT i = 0; i < n; i++) {
-            Ptr<IMMDevice> d;
-            if (FAILED(col->Item(i, &d))) continue;
-            std::wstring f = friendlyName(d.p);
-            if (lc(f).find(lc(query)) == std::wstring::npos) continue;
-            if (f.size() < best) { best = f.size(); found.reset(); found.p = d.p; d.p = nullptr; name = f; id = deviceId(found.p); }
-        }
-        if (!found) return false;
+        return true;
     }
-    if (id == endpointId && manager) return true;
+    Ptr<IMMDeviceCollection> col;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &col))) return false;
+    UINT n = 0; col->GetCount(&n);
+    size_t best = (size_t)-1;
+    for (UINT i = 0; i < n; i++) {
+        Ptr<IMMDevice> d;
+        if (FAILED(col->Item(i, &d))) continue;
+        std::wstring f = friendlyName(d.p);
+        if (lc(f).find(lc(query)) == std::wstring::npos) continue;
+        if (f.size() < best) { best = f.size(); found.reset(); found.p = d.p; d.p = nullptr; name = f; id = deviceId(found.p); }
+    }
+    return (bool)found;
+}
+
+std::wstring Tap::endpointNames() {
+    std::wstring all;
+    for (auto& e : eps) { if (!all.empty()) all += L" + "; all += e->name; }
+    return all;
+}
+
+bool Tap::resolveEndpoints() {
+    std::vector<std::wstring> queries;
+    { std::lock_guard<std::mutex> l(cfgMutex); queries = endpointQueries; }
+    struct Found { IMMDevice* dev = nullptr; std::wstring name, id; };
+    std::vector<Found> want;
+    for (auto& q : queries) {
+        Ptr<IMMDevice> found; std::wstring name, id;
+        if (!findEndpoint(enumerator.p, q, found, name, id)) continue;            // a cable that is not there is simply not watched
+        bool dup = false;
+        for (auto& w : want) if (w.id == id) dup = true;
+        if (dup) continue;
+        Found f; f.dev = found.p; found.p = nullptr; f.name = name; f.id = id;
+        want.push_back(f);
+    }
+    auto dropWanted = [&] { for (auto& w : want) if (w.dev) { w.dev->Release(); w.dev = nullptr; } };
+    if (want.empty()) return false;
+    bool same = eps.size() == want.size();
+    if (same) for (size_t i = 0; i < want.size(); i++) if (eps[i]->id != want[i].id) same = false;
+    if (same) { dropWanted(); return true; }
     releaseEndpoint();
-    endpoint.p = found.p; found.p = nullptr;
-    endpointId = id; endpointName = name;
-    if (FAILED(endpoint->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&manager))) { releaseEndpoint(); return false; }
-    notifier = new Notifier();
-    notifier->wake = [this] { requestWake(); };
-    notifier->created = [this](IAudioSessionControl* c) { onSessionCreated(c); };
-    manager->RegisterSessionNotification(notifier);
-    { Ptr<IAudioSessionEnumerator> first; manager->GetSessionEnumerator(&first); }     // notifications start only after one read
-    logMsg("endpoint: " + U(endpointName));
-    return true;
+    for (auto& w : want) {
+        auto e = std::make_unique<Ep>();
+        e->device.p = w.dev; w.dev = nullptr;
+        e->id = w.id; e->name = w.name;
+        if (FAILED(e->device->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&e->manager))) continue;
+        e->notifier = new Notifier();
+        e->notifier->wake = [this] { requestWake(); };
+        e->notifier->created = [this](IAudioSessionControl* c) { onSessionCreated(c); };
+        e->manager->RegisterSessionNotification(e->notifier);
+        { Ptr<IAudioSessionEnumerator> first; e->manager->GetSessionEnumerator(&first); }     // notifications start only after one read
+        logMsg("endpoint: " + U(e->name));
+        eps.push_back(std::move(e));
+    }
+    dropWanted();
+    return !eps.empty();
 }
 
 void Tap::releaseEndpoint() {
     // no new session may be turned down behind our back from here on
-    if (manager && notifier) manager->UnregisterSessionNotification(notifier);
-    if (notifier) { notifier->created = nullptr; notifier->wake = nullptr; notifier->Release(); notifier = nullptr; }
+    for (auto& e : eps) {
+        if (e->manager && e->notifier) e->manager->UnregisterSessionNotification(e->notifier);
+        if (e->notifier) { e->notifier->created = nullptr; e->notifier->wake = nullptr; e->notifier->Release(); e->notifier = nullptr; }
+    }
     std::map<std::wstring, float> before;
     { std::lock_guard<std::mutex> l(remMutex); before = remembered; }
     restoreAll();
-    if (manager && !before.empty()) sweepRestore(before);          // programs the session-created callback turned down that the manager never met
-    manager.reset(); endpoint.reset();
-    endpointId.clear(); endpointName.clear();
+    if (!before.empty()) sweepRestore(before);                     // programs the session-created callback turned down that the manager never met
+    eps.clear();
 }
 
 int Tap::channelFor(const std::wstring& exe, DWORD pid, const std::set<DWORD>& excl, const std::map<std::wstring, int>& rl, int def) {
@@ -675,7 +711,8 @@ void Tap::saveState() { state.write(remembered); }
 
 void Tap::sweepRestore(const std::map<std::wstring, float>& saved) {
     std::set<std::wstring> done;
-    int n = restoreSessionsOn(manager.p, saved, &done);
+    int n = 0;
+    for (auto& e : eps) if (e->manager) n += restoreSessionsOn(e->manager.p, saved, &done);
     if (n) logMsg("restored " + std::to_string(n) + " session volume(s) that were turned down on the way out");
     std::lock_guard<std::mutex> l(remMutex);
     for (auto& d : done) remembered.erase(d);
@@ -692,12 +729,16 @@ void Tap::restoreAll() {
 void Tap::refresh() {
     std::map<std::wstring, int> rl; int def; std::set<DWORD> excl;
     { std::lock_guard<std::mutex> l(cfgMutex); rl = rules; def = defaultChannel; excl = excludePids; }
-    if (!engaged) { if (manager || !sessions.empty()) releaseEndpoint(); return; }   // volumes back at once
-    if (!resolveEndpoint()) return;
-    Ptr<IAudioSessionEnumerator> en;
-    if (FAILED(manager->GetSessionEnumerator(&en))) return;
-    int count = 0; en->GetCount(&count);
+    if (!engaged) { if (!eps.empty() || !sessions.empty()) releaseEndpoint(); return; }   // volumes back at once
+    if (!resolveEndpoints()) return;
     for (auto& kv : sessions) kv.second->seen = false;
+    for (auto& ep : eps) {
+    Ptr<IAudioSessionEnumerator> en;
+    if (FAILED(ep->manager->GetSessionEnumerator(&en))) {          // cannot look right now: what was seen there stays
+        for (auto& kv : sessions) if (kv.second->device == ep->name) kv.second->seen = true;
+        continue;
+    }
+    int count = 0; en->GetCount(&count);
     for (int i = 0; i < count; i++) {
         Ptr<IAudioSessionControl> ctl;
         if (FAILED(en->GetSession(i, &ctl))) continue;
@@ -711,7 +752,7 @@ void Tap::refresh() {
         bool fresh = it == sessions.end();
         if (fresh) {
             auto s = std::make_unique<Session>();
-            s->id = key; s->pid = pid;
+            s->id = key; s->pid = pid; s->device = ep->name;
             ProcInfo pi = procInfo(pid);
             s->exe = pi.exe; s->path = pi.path;
             s->ctl.p = ctl.p; ctl.p = nullptr;
@@ -750,6 +791,7 @@ void Tap::refresh() {
                 }
             }
         }
+    }
     }
     for (auto it = sessions.begin(); it != sessions.end();) {
         if (!it->second->seen) { release(*it->second, true); it = sessions.erase(it); }   // the program is gone (or moved to another device)
@@ -850,7 +892,7 @@ void Tap::status() {
             if (!first) apps += ",";
             first = false;
             apps += "{\"exe\":\"" + jesc(U(s.exe)) + "\",\"pid\":" + std::to_string(s.pid) + ",\"channel\":\"" +
-                    (s.channel >= 0 ? kChannelNames[s.channel] : "bypass") + "\",\"managed\":" + (s.lowered ? "true" : "false") + ",\"watching\":" + (s.channel >= 0 && !s.lowered ? "true" : "false") +
+                    (s.channel >= 0 ? kChannelNames[s.channel] : "bypass") + "\",\"device\":\"" + jesc(U(s.device)) + "\",\"managed\":" + (s.lowered ? "true" : "false") + ",\"watching\":" + (s.channel >= 0 && !s.lowered ? "true" : "false") +
                     ",\"active\":" + (st == AudioSessionStateActive ? "true" : "false");
             snprintf(b, sizeof b, ",\"level\":%.5f,\"leaks\":%llu}", level, (unsigned long long)leaks);
             apps += b;
@@ -860,7 +902,7 @@ void Tap::status() {
     if (nowMs() - lastStatus >= 250) {                  // four a second is plenty for a level meter and an app list
         lastAppsJson = apps;
         lastStatus = nowMs();
-        emit(std::string("{\"t\":\"status\",\"engaged\":") + (engaged ? "true" : "false") + ",\"endpoint\":\"" + jesc(U(endpointName)) +
+        emit(std::string("{\"t\":\"status\",\"engaged\":") + (engaged ? "true" : "false") + ",\"endpoint\":\"" + jesc(U(endpointNames())) +
              "\",\"eps\":" + std::to_string((double)g_eps) + ",\"apps\":" + apps + "}");
     }
 }
@@ -950,7 +992,12 @@ int Tap::run() {
             auto chan = [](const std::string& n) { for (int i = 0; i < kChannels; i++) if (n == kChannelNames[i]) return i; return -1; };
             std::lock_guard<std::mutex> l(cfgMutex);
             if (t[0] == "quit") { quit = true; }
-            else if (t[0] == "endpoint" && t.size() > 1) { endpointQuery = W(t[1]); configDirty = true; }
+            else if (t[0] == "endpoint" && t.size() > 1) {
+                endpointQueries.clear();
+                for (size_t k = 1; k < t.size(); k++) if (!t[k].empty()) endpointQueries.push_back(W(t[k]));
+                if (endpointQueries.empty()) endpointQueries.push_back(L"default");
+                configDirty = true;
+            }
             else if (t[0] == "default" && t.size() > 1) { defaultChannel = chan(t[1]); configDirty = true; }
             else if (t[0] == "rule" && t.size() > 2) { rules[lc(W(t[1]))] = chan(t[2]); configDirty = true; }
             else if (t[0] == "clear") { rules.clear(); excludePids.clear(); configDirty = true; }
@@ -1042,7 +1089,7 @@ int main(int argc, char** argv) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     Tap tap;
-    bool doRestore = false, doList = false;
+    bool doRestore = false, doList = false, endpointGiven = false;
     std::wstring statePath;
     {
         wchar_t la[MAX_PATH];
@@ -1054,7 +1101,7 @@ int main(int argc, char** argv) {
         auto next = [&](void) -> std::string { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
         if (a == "--restore") doRestore = true;
         else if (a == "--list") doList = true;
-        else if (a == "--endpoint") tap.endpointQuery = W(next());
+        else if (a == "--endpoint") { if (!endpointGiven) { tap.endpointQueries.clear(); endpointGiven = true; } tap.endpointQueries.push_back(W(next())); }
         else if (a == "--exclude-pid") tap.excludePids.insert((DWORD)strtoul(next().c_str(), nullptr, 10));
         else if (a == "--state") statePath = W(next());
         else if (a == "--eps") g_eps = (float)atof(next().c_str());

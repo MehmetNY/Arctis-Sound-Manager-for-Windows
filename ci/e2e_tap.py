@@ -61,19 +61,19 @@ def sessions() -> list[dict]:
     return rows
 
 
-def volume_of(exe: str) -> float | None:
-    vols = [s["volume"] for s in sessions() if s["exe"].lower() == exe.lower() and "CABLE Input" in s["device"]]
+def volume_of(exe: str, device: str = "CABLE Input") -> float | None:
+    vols = [s["volume"] for s in sessions() if s["exe"].lower() == exe.lower() and device in s["device"]]
     return vols[0] if vols else None
 
 
 class Fake:
     """A 'program': audioprobe.exe under another name playing a sine into the headset endpoint."""
 
-    def __init__(self, name: str, amp: float, freq: float, secs: float):
+    def __init__(self, name: str, amp: float, freq: float, secs: float, device: str = HEADSET):
         self.exe = WORK / f"{name}.exe"
         shutil.copy(BUILD / "audioprobe.exe", self.exe)
         self.name = f"{name}.exe"
-        self.proc = subprocess.Popen([str(self.exe), "tone", "--device", HEADSET, "--amp", str(amp), "--freq", str(freq),
+        self.proc = subprocess.Popen([str(self.exe), "tone", "--device", device, "--amp", str(amp), "--freq", str(freq),
                                       "--secs", str(secs)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.pid = self.proc.pid
         self.first = self.proc.stdout.readline().strip()
@@ -341,6 +341,38 @@ def main() -> int:
         check("S9.1 game volume restored", abs((volume_of("fakegame.exe") or 0) - 1.0) < 1e-3, str(volume_of("fakegame.exe")))
         check("S9.2 chat volume restored", abs((volume_of("fakechat.exe") or 0) - 1.0) < 1e-3, str(volume_of("fakechat.exe")))
         log("   state file:", (state.read_text() if state.exists() else "(none)").strip())
+
+        # ------------------------------------------------------------------------------------------- S10
+        log("\n== S10 several endpoints: a program that plays to the cable's other end, which is not the default device")
+        helper.stop()
+        for a in apps:
+            a.kill()
+        apps.clear()
+        time.sleep(1.5)
+        helper = TapHelper(exe=str(BUILD / "asm-audiotap.exe"), state=WORK / "tap_state.txt")
+        other_rules = AppRules(user={"fakeother.exe": "media"})
+        helper.configure(endpoint=[HEADSET, "CABLE In 16ch"], rules=other_rules, engaged=True)
+        sinks = Sinks(helper)
+        check("S10.0 the helper starts with two endpoints", helper.ensure_running(), helper.last_error)
+        other = Fake("fakeother", 0.25, 700, 90, device="CABLE In 16ch"); apps.append(other)
+        log("   ", other.first)
+        check("S10.1 the program on the second endpoint is found and turned down",
+              wait_for(lambda: any(a.get("exe") == "fakeother.exe" and a.get("managed") for a in helper.apps()), 10), json.dumps(helper.apps()))
+        time.sleep(1.0)
+        w = sinks.window(2.0)
+        check("S10.2 its sound reaches its channel at the level it plays", rel_ok(rms(w["media"]), 0.25 / 2 ** .5, 0.05), f"{rms(w['media']):.5f} vs {0.25/2**.5:.5f}")
+        check("S10.3 and its session is at the helper's level", (volume_of("fakeother.exe", "CABLE In 16ch") or 1) < 1e-6, str(volume_of("fakeother.exe", "CABLE In 16ch")))
+        log("   status endpoint:", helper.info().get("endpoint"), "| apps:", json.dumps(helper.apps()))
+        other.kill()
+        time.sleep(1.5)
+        check("S10.4 when it ends nothing is left turned down", (volume_of("fakeother.exe", "CABLE In 16ch") is None))
+        again = Fake("fakeother", 0.25, 700, 90, device=HEADSET); apps.append(again)
+        check("S10.5 the same program on the first endpoint is taken too", wait_for(lambda: any(a.get("exe") == "fakeother.exe" and a.get("managed") for a in helper.apps()), 10), json.dumps(helper.apps()))
+        w = sinks.window(2.0)
+        check("S10.6 with its sound", rel_ok(rms(w["media"]), 0.25 / 2 ** .5, 0.05), f"{rms(w['media']):.5f}")
+        helper.stop()
+        time.sleep(0.5)
+        check("S10.7 stopping puts its volume back", abs((volume_of("fakeother.exe") or 0) - 1.0) < 1e-3, str(volume_of("fakeother.exe")))
     finally:
         log("\n== helper log"); [log("   ", x) for x in helper.stderr_log[-40:]]
         log("   info:", json.dumps({k: v for k, v in helper.info().items() if k != "apps"}))

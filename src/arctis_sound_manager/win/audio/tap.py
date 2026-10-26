@@ -283,7 +283,7 @@ class TapHelper:
         self._sinks: dict[str, Callable[[np.ndarray], None]] = {}
         self._refs = 0
         self._stop_timer: threading.Timer | None = None
-        self._endpoint = ""
+        self._endpoints: list[str] = []
         self._rules = AppRules()
         self._exclude: set[int] = {os.getpid()}
         self._engaged = False
@@ -307,13 +307,15 @@ class TapHelper:
 
     # ── configuration (remembered, replayed into every new process) ─────────
 
-    def configure(self, endpoint: str | None = None, rules: AppRules | None = None, exclude: set[int] | None = None,
-                  engaged: bool | None = None) -> None:
+    def configure(self, endpoint: "str | list[str] | tuple[str, ...] | None" = None, rules: AppRules | None = None,
+                  exclude: set[int] | None = None, engaged: bool | None = None) -> None:
+        """*endpoint*: the device whose programs are taken (the headset), or several (the headset and the virtual
+        cable people may pick as Windows' output)."""
         with self._lock:
             if engaged is not None:
                 self._engaged = bool(engaged)
             if endpoint is not None:
-                self._endpoint = endpoint
+                self._endpoints = [endpoint] if isinstance(endpoint, str) else [e for e in endpoint if e]
             if rules is not None:
                 self._rules = rules
             if exclude is not None:
@@ -346,7 +348,7 @@ class TapHelper:
         return self._rules
 
     def _config_lines(self) -> list[str]:
-        lines = ["clear", f"endpoint\t{self._endpoint or 'default'}"]
+        lines = ["clear", "endpoint\t" + "\t".join(self._endpoints or ["default"])]
         lines += self._rules.commands()
         lines += [f"exclude\t{pid}" for pid in sorted(self._exclude)]
         lines += [f"engage\t{'1' if self._engaged else '0'}", "apply"]
