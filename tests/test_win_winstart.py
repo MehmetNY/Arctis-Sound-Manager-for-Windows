@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 import sys
 import types
 
@@ -111,8 +112,37 @@ def test_without_stdout_the_output_goes_to_the_tray_log(tmp_path, monkeypatch):
 
 def test_with_a_console_the_streams_are_left_alone(monkeypatch):
     out, err = sys.stdout, sys.stderr
+    monkeypatch.setattr(winstart, "_attached", False)
     winstart.attach_output()
     assert sys.stdout is out and sys.stderr is err
+
+
+def test_a_frozen_tray_logs_to_its_file_even_when_started_with_its_output_discarded(tmp_path, monkeypatch):
+    """A launcher that passes NUL for stdout/stderr gives the program streams, but nothing written to them is kept."""
+    monkeypatch.setattr(winstart, "log_dir", lambda: tmp_path)
+    monkeypatch.setattr(winstart, "_attached", False)
+    nul = open(os.devnull, "w")
+    monkeypatch.setattr(sys, "stdout", nul)
+    monkeypatch.setattr(sys, "stderr", nul)
+    winstart.attach_output(force=True)
+    assert sys.stderr is not nul
+    print("health: tray pid 1", file=sys.stderr)
+    sys.stderr.flush()
+    assert "health: tray pid 1" in (tmp_path / "tray.log").read_text()
+    sys.stderr.close()
+    nul.close()
+
+
+def test_the_file_is_attached_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(winstart, "log_dir", lambda: tmp_path)
+    monkeypatch.setattr(winstart, "_attached", False)
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    winstart.attach_output()
+    first = sys.stderr
+    winstart.attach_output(force=True)               # winmain attached it, then winstart.main asks again
+    assert sys.stderr is first
+    first.close()
 
 
 def _fake_gui(monkeypatch, exit_code=None):
@@ -132,7 +162,7 @@ def _fake_gui(monkeypatch, exit_code=None):
 def test_main_starts_the_daemon_and_then_the_tray(monkeypatch):
     order = []
     monkeypatch.setattr(winstart, "start_daemon", lambda: order.append("daemon"))
-    monkeypatch.setattr(winstart, "attach_output", lambda: None)
+    monkeypatch.setattr(winstart, "attach_output", lambda force=False: None)
     seen = _fake_gui(monkeypatch)
     assert winstart.main(["--background"]) == 0
     assert order == ["daemon"] and seen["argv"][1:] == ["--systray"]
@@ -140,7 +170,7 @@ def test_main_starts_the_daemon_and_then_the_tray(monkeypatch):
 
 def test_main_show_opens_the_window(monkeypatch):
     monkeypatch.setattr(winstart, "start_daemon", lambda: None)
-    monkeypatch.setattr(winstart, "attach_output", lambda: None)
+    monkeypatch.setattr(winstart, "attach_output", lambda force=False: None)
     seen = _fake_gui(monkeypatch)
     winstart.main(["--show"])
     assert seen["argv"][1:] == []
@@ -149,7 +179,7 @@ def test_main_show_opens_the_window(monkeypatch):
 def test_main_flags_select_what_is_started(monkeypatch):
     started = []
     monkeypatch.setattr(winstart, "start_daemon", lambda: started.append("daemon"))
-    monkeypatch.setattr(winstart, "attach_output", lambda: None)
+    monkeypatch.setattr(winstart, "attach_output", lambda force=False: None)
     seen = _fake_gui(monkeypatch)
     assert winstart.main(["--no-tray"]) == 0 and started == ["daemon"] and "argv" not in seen
     started.clear()
@@ -159,6 +189,6 @@ def test_main_flags_select_what_is_started(monkeypatch):
 
 def test_main_returns_the_guis_exit_code(monkeypatch):
     monkeypatch.setattr(winstart, "start_daemon", lambda: None)
-    monkeypatch.setattr(winstart, "attach_output", lambda: None)
+    monkeypatch.setattr(winstart, "attach_output", lambda force=False: None)
     _fake_gui(monkeypatch, exit_code=4)
     assert winstart.main([]) == 4

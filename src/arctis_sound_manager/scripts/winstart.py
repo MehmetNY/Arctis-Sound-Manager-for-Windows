@@ -127,17 +127,29 @@ def start_daemon(popen: Callable[..., object] = subprocess.Popen, running: Calla
     return True
 
 
-def attach_output() -> None:
-    """Under ``pythonw`` there is no stdout/stderr at all: give print() and logging a file to write to."""
-    if sys.stdout is not None and sys.stderr is not None:
+_attached = False
+
+
+def attach_output(force: bool = False) -> None:
+    """Under ``pythonw`` there is no stdout/stderr at all: give print() and logging a file to write to.
+
+    The installed program is a windowed one, so whoever starts it may hand it ``NUL`` instead of nothing (a script
+    that starts it with its output discarded, some launchers): the streams then exist and everything the tray logs,
+    its ``health:`` lines included, disappears. ``force`` (what the tray passes when frozen) puts the file in place
+    in both cases."""
+    global _attached
+    if _attached:
+        return
+    if not force and sys.stdout is not None and sys.stderr is not None:
         return
     try:
         stream = open_log("tray.log")
     except OSError:
         stream = open(os.devnull, "w")
-    if sys.stdout is None:
+    _attached = True
+    if force or sys.stdout is None:
         sys.stdout = stream
-    if sys.stderr is None:
+    if force or sys.stderr is None:
         sys.stderr = stream
 
 
@@ -149,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--show", action="store_true", help="open the window instead of staying in the tray")
     args = parser.parse_args(argv)
 
-    attach_output()
+    attach_output(force=bool(getattr(sys, "frozen", False)))      # the installed program always logs to tray.log
     logging.basicConfig(level=logging.INFO, format="%(name)20s %(levelname)8s | %(message)s")
 
     if os.name == "nt":
