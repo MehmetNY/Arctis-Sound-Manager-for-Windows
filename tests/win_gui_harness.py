@@ -76,7 +76,7 @@ _orig_open = S.QSystrayApp.open_main_window
 def _open_then_inspect(self):
     _orig_open(self)
     from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QLabel
+    from PySide6.QtWidgets import QApplication, QLabel
 
     attempts = [0]
 
@@ -107,6 +107,47 @@ def _open_then_inspect(self):
         placement = {"cards_on_headset": cards_on_headset, "eq_on_equalizer": eq_on_equalizer,
                      "eq_on_headset": eq_on_headset, "presets_on_equalizer": presets_on_equalizer,
                      "presets_on_headset": presets_on_headset}
+        # About page: its text, its screenshot, and the donation button of the sidebar (what it opens)
+        app._switch_page(MA.PAGE_ABOUT)
+        about_labels = [l.text() for l in app._about_page.findChildren(QLabel)]
+        about_shot = SHOT.replace(".png", "_about.png")
+        about_saved = w.grab().save(about_shot)
+        opened_urls = []
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl = staticmethod(lambda url: opened_urls.append(url.toString()) or True)
+        app._donate_button.click()
+        from PySide6.QtWidgets import QWidget as _QWidget
+        sidebar_box = w.findChild(_QWidget, "sidebar")
+        nav = app._sidebar_nav
+        sidebar_needs = sidebar_box.layout().minimumSize().height()
+        bar = nav.verticalScrollBar()
+        original_h = w.height()
+        w.resize(w.width(), 990)                                   # the window's default height on a roomy screen
+        QApplication.processEvents()
+        QApplication.processEvents()
+        nav_at_default = {"window_h": w.height(), "bar_visible": bar.isVisible(), "scroll_range": bar.maximum()}
+        w.resize(w.width(), 700)                                   # a laptop window
+        QApplication.processEvents()
+        QApplication.processEvents()
+        nav_short = {"window_h": w.height(), "bar_range": bar.maximum(), "sidebar_h": sidebar_box.height(),
+                     "sidebar_min": sidebar_box.minimumSizeHint().height()}
+        about_btn = app._sidebar_buttons[-1]
+        bottom = sidebar_box.layout().itemAt(sidebar_box.layout().count() - 1).widget()
+        app._switch_page(MA.PAGE_ABOUT)
+        QApplication.processEvents()
+        # the About button is inside the visible part of the scroll area and does not overlap the logo block
+        about_top = about_btn.mapTo(sidebar_box, about_btn.rect().topLeft()).y()
+        about_bottom = about_top + about_btn.height()
+        nav_short.update({"about_visible_area": nav.viewport().rect().height(),
+                          "about_bottom_vs_block": bottom.y() - about_bottom,
+                          "nav_bottom_vs_block": bottom.y() - (nav.y() + nav.height())})
+        short_shot = SHOT.replace(".png", "_short.png")
+        nav_short["saved"] = w.grab().save(short_shot)
+        nav_short["shot"] = short_shot
+        w.resize(w.width(), original_h)
+        QApplication.processEvents()
+        sidebar_items = []
+        donate_label = app._donate_button.text()
         app._switch_page(MA.PAGE_HOME)
         help_labels = [l.text() for l in app._help_page.findChildren(QLabel)]
         from PySide6.QtWidgets import QAbstractButton
@@ -128,7 +169,10 @@ def _open_then_inspect(self):
             "stack_pages": app._stack.count(),
             "clips_page_object": app._clips_page is not None,
             "clip_text_anywhere": [t for t in every_text if re.search(r"\bclips?\b", t, re.I)],
-            "page_numbers": [MA.PAGE_SETTINGS, MA.PAGE_HELP, MA.PAGE_THEME_EDITOR],
+            "page_numbers": [MA.PAGE_SETTINGS, MA.PAGE_HELP, MA.PAGE_ABOUT, MA.PAGE_THEME_EDITOR],
+            "about_page_is_about": app._stack.widget(MA.PAGE_ABOUT) is app._about_page,
+            "about_labels": about_labels, "about_shot": about_shot, "about_saved": about_saved,
+            "sidebar_needs": sidebar_needs, "nav_at_default": nav_at_default, "nav_short": nav_short, "donation_opened": opened_urls, "donate_label": donate_label,
             "settings_page_is_settings": app._stack.widget(MA.PAGE_SETTINGS) is app._device_page,
             "help_page_is_help": app._stack.widget(MA.PAGE_HELP) is app._help_page,
             "theme_page_is_theme": app._stack.widget(MA.PAGE_THEME_EDITOR) is app._theme_editor_page,

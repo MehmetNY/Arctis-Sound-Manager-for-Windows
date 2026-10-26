@@ -273,9 +273,8 @@ def test_status_lines_become_the_app_list_and_stale_ones_disappear(tmp_path):
     helper.ensure_running()
     procs[0].say(json.dumps({"t": "status", "engaged": True, "endpoint": "H", "apps": [{"exe": "a.exe", "pid": 1, "leaks": 2}]}) + "\n")
     procs[0].say("not json\n" + json.dumps({"t": "log", "msg": "tapping a.exe"}) + "\n")
-    for _ in range(100):
-        if helper.apps():
-            break
+    deadline = time.monotonic() + 10.0                              # the reader thread may be slow on a busy machine
+    while not helper.apps() and time.monotonic() < deadline:
         time.sleep(0.01)
     assert helper.apps()[0]["exe"] == "a.exe" and helper.info()["leaks"] == 2 and helper.info()["engaged"] is True
     assert helper.stderr_log == ["tapping a.exe"]
@@ -350,14 +349,14 @@ def test_a_real_process_streams_blocks_status_and_commands(fake_exe, tmp_path):
     try:
         helper.configure(endpoint="Fake Headset", engaged=True)
         assert helper.ensure_running()
-        for _ in range(300):
+        for _ in range(1000):
             if len(got) >= 20 and helper.apps() and helper.info()["engaged"]:
                 break
             time.sleep(0.01)
         assert len(got) >= 20 and got[0].shape == (CHUNK, 2)
         assert 0.15 < float(np.abs(got[3][:, 0]).max()) <= 0.2001 and 0.07 < float(np.abs(got[3][:, 1]).max()) <= 0.1001
         assert helper.apps()[0]["exe"] == "game.exe" and helper.info()["engaged"] is True
-        for _ in range(100):
+        for _ in range(500):
             if (tmp_path / "state.txt.cmds").exists():
                 break
             time.sleep(0.01)
@@ -365,7 +364,7 @@ def test_a_real_process_streams_blocks_status_and_commands(fake_exe, tmp_path):
         assert "endpoint\tFake Headset" in text and "engage\t1" in text
     finally:
         helper.stop()
-    for _ in range(100):
+    for _ in range(500):
         if "exited" in (tmp_path / "state.txt.cmds").read_text():
             break
         time.sleep(0.01)

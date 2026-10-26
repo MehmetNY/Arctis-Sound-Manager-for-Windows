@@ -91,7 +91,7 @@ def test_the_sidebar_still_fits_the_default_window():
     from arctis_sound_manager.gui.components import HOME_ICON, SidebarButton
 
     source = Path(main_app.__file__).read_text()
-    spacing = int(re.search(r"sidebar_layout\.setSpacing\((\d+)\)", source).group(1))
+    spacing = main_app._SIDEBAR_SPACING          # the Linux value here: the Windows build scrolls what does not fit
     margins = re.search(r"sidebar_layout\.setContentsMargins\(\d+, (\d+), \d+, (\d+)\)", source)
     vertical_margins = int(margins.group(1)) + int(margins.group(2))
 

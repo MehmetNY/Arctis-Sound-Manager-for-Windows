@@ -7,7 +7,7 @@ import logging
 from configparser import ConfigParser, RawConfigParser
 from pathlib import Path
 
-from arctis_sound_manager.constants import HOME_LANG_FOLDER
+from arctis_sound_manager.constants import HOME_LANG_FOLDER, IS_WINDOWS
 from arctis_sound_manager.lang_sanitize import sanitize_ini_text
 
 _BUILTIN_LANG_DIR = Path(__file__).parent / 'lang'
@@ -95,7 +95,9 @@ class I18n:
         home_path = HOME_LANG_FOLDER / f'{lang_code or default}.ini'
         sys_path = Path(__file__).parent / 'lang' / f'{lang_code or default}.ini'
 
-        lang_file = home_path if home_path.is_file() else sys_path
+        # On Windows the bundled file always wins: a copy downloaded by an older build from the original project
+        # lacks the Windows-specific texts and would hide them.
+        lang_file = sys_path if (IS_WINDOWS and sys_path.is_file()) else (home_path if home_path.is_file() else sys_path)
         logger = logging.getLogger('I18n')
         if not lang_file.exists():
             lang_file = Path(__file__).parent / 'lang' / f'{default}.ini'

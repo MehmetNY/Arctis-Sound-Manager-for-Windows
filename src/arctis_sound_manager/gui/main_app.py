@@ -18,15 +18,18 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from arctis_sound_manager import branding
 from arctis_sound_manager.constants import IS_WINDOWS
 from arctis_sound_manager.gui.base_app import QBaseDesktopApp
 from arctis_sound_manager.gui.components import (
+    ABOUT_ICON,
     CLIPS_ICON,
     EQUALIZER_ICON,
     GAMEDAC_ICON,
@@ -43,6 +46,7 @@ from arctis_sound_manager.gui.device_page import DevicePage
 from arctis_sound_manager.gui.headset_page import HeadsetPage
 if not IS_WINDOWS:   # Clips is not part of the Windows build
     from arctis_sound_manager.gui.clips_page import ClipsPage
+from arctis_sound_manager.gui.about_page import AboutPage
 from arctis_sound_manager.gui.help_page import HelpPage
 from arctis_sound_manager.gui.equalizer_page import EqualizerPage
 from arctis_sound_manager.gui.home_page import HomePage
@@ -83,11 +87,13 @@ if IS_WINDOWS:
     PAGE_CLIPS = -1
     PAGE_SETTINGS = 4
     PAGE_HELP = 5
-    PAGE_THEME_EDITOR = 6
+    PAGE_ABOUT = 6                  # under Help (the Windows build only)
+    PAGE_THEME_EDITOR = 7
 else:
     PAGE_CLIPS = 4
     PAGE_SETTINGS = 5
     PAGE_HELP = 6
+    PAGE_ABOUT = -1
     PAGE_THEME_EDITOR = 7
 
 
@@ -95,6 +101,13 @@ else:
 #: top_pages_def in _build_window.
 _SIDEBAR_ICON_SIZE = 44
 _SIDEBAR_HELP_ICON_SIZE = 30
+_SIDEBAR_SPACING = 6
+if IS_WINDOWS:
+    # Seven entries (About under Help) plus the logo block must still fit a laptop screen's window
+    # (768 px high screens give ~720): a little smaller icons and tighter gaps; what still does not fit scrolls.
+    _SIDEBAR_ICON_SIZE = 38
+    _SIDEBAR_HELP_ICON_SIZE = 26
+    _SIDEBAR_SPACING = 3
 
 
 class QMainApp(QBaseDesktopApp):
@@ -165,10 +178,13 @@ class QMainApp(QBaseDesktopApp):
         self._device_page.sig_update_result.connect(self._home_page.on_update_available)
 
         # Check for new/updated translation files (non-blocking)
-        from arctis_sound_manager.lang_updater import LangUpdateWorker
-        self._lang_worker = LangUpdateWorker()
-        self._lang_worker.langs_updated.connect(self._device_page.rebuild_lang_combo)
-        self._lang_worker.start()
+        # (not on Windows: the translations ship with the program, and the original project's files would
+        # replace the Windows-specific texts with ones that lack them)
+        if not IS_WINDOWS:
+            from arctis_sound_manager.lang_updater import LangUpdateWorker
+            self._lang_worker = LangUpdateWorker()
+            self._lang_worker.langs_updated.connect(self._device_page.rebuild_lang_combo)
+            self._lang_worker.start()
 
         # Wire profile bar
         self._home_page.profile_bar.sig_apply.connect(self._on_apply_profile)
@@ -210,6 +226,7 @@ class QMainApp(QBaseDesktopApp):
             self._dac_page,
             self._device_page,
             self._help_page,
+            self._about_page,
             self._theme_editor_page,
             getattr(self, "_clips_page", None),
         ):
@@ -271,7 +288,7 @@ class QMainApp(QBaseDesktopApp):
         # shrinking a second icon, because 2px between buttons and 4px at
         # the ends is not something anyone can see, and a mismatched icon is.
         sidebar_layout.setContentsMargins(15, 12, 15, 12)
-        sidebar_layout.setSpacing(6)
+        sidebar_layout.setSpacing(_SIDEBAR_SPACING)
 
         # Resolve current theme accent color for icon
         current_theme = THEMES.get(self._general_settings.theme, THEMES["steelseries"])
@@ -295,6 +312,43 @@ class QMainApp(QBaseDesktopApp):
 
         if IS_WINDOWS:   # Clips is not part of the Windows build: no entry, not even a hidden one
             top_pages_def = [entry for entry in top_pages_def if entry[0] != CLIPS_ICON]
+            # About sits right under Help, with the same small icon
+            top_pages_def.append(
+                (ABOUT_ICON, I18n.translate('ui', 'about'), current_accent, _SIDEBAR_HELP_ICON_SIZE))
+
+        # Where the buttons go. On Windows they sit in a scroll area of their own: a laptop screen (1080p at 150 %
+        # scaling is only 720 px high) cannot show seven buttons, the logo and the donation block at once, and
+        # without this the About button ran into the logo. When the window is tall enough nothing scrolls and
+        # nothing looks different; when it is not, the buttons scroll and the logo block stays put.
+        nav_layout = sidebar_layout
+        if IS_WINDOWS:
+            nav_host = QWidget()
+            nav_host.setStyleSheet("background: transparent;")
+            nav_layout = QVBoxLayout(nav_host)
+            nav_layout.setContentsMargins(12, 0, 12, 0)
+            nav_layout.setSpacing(_SIDEBAR_SPACING)
+            nav_scroll = QScrollArea()
+            nav_scroll.setObjectName("sidebarNav")
+            nav_scroll.setWidgetResizable(True)
+            nav_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            nav_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            nav_scroll.setMinimumHeight(160)
+            nav_scroll.setStyleSheet(
+                "QScrollArea#sidebarNav { background: transparent; border: none; }"
+                "QScrollArea#sidebarNav > QWidget > QWidget { background: transparent; }"
+                "QScrollArea#sidebarNav QScrollBar:vertical { width: 6px; background: transparent; margin: 0; }"
+                "QScrollArea#sidebarNav QScrollBar::handle:vertical { background: #55606e; border-radius: 3px;"
+                " min-height: 24px; }"
+                "QScrollArea#sidebarNav QScrollBar::add-line:vertical,"
+                "QScrollArea#sidebarNav QScrollBar::sub-line:vertical { height: 0; }"
+                "QScrollArea#sidebarNav QScrollBar::add-page:vertical,"
+                "QScrollArea#sidebarNav QScrollBar::sub-page:vertical { background: transparent; }")
+            nav_scroll.setWidget(nav_host)
+            # the scroll area spans the sidebar's full width: its margins moved into the host
+            sidebar_layout.setContentsMargins(0, 12, 0, 12)
+            sidebar_layout.addWidget(nav_scroll, 1)
+            self._sidebar_nav = nav_scroll
 
         self._sidebar_buttons: list[SidebarButton] = []
         for svg_path, label, color_active, icon_size in top_pages_def:
@@ -308,10 +362,13 @@ class QMainApp(QBaseDesktopApp):
             )
             idx = len(self._sidebar_buttons)
             btn.clicked.connect(lambda checked=False, i=idx: self._switch_page(i))
-            sidebar_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+            nav_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
             self._sidebar_buttons.append(btn)
 
-        sidebar_layout.addStretch(1)
+        if IS_WINDOWS:
+            nav_layout.addStretch(1)
+        else:
+            sidebar_layout.addStretch(1)
 
         # Bottom block: logo + github + kofi + version, groupés serré
         _bottom = QWidget()
@@ -321,9 +378,10 @@ class QMainApp(QBaseDesktopApp):
         _bottom_layout.setSpacing(3)
         _bottom_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        # ASM logo cliquable → repo GitHub
+        # ASM logo cliquable → repo GitHub (on Windows: this build's own repository)
         _logo_path = Path(__file__).parent / 'images' / 'asm_logo.png'
         _logo_px = QPixmap(str(_logo_path))
+        _repo_url = branding.REPO_URL if IS_WINDOWS else branding.UPSTREAM_ASM_URL
         if not _logo_px.isNull():
             logo_lbl = QLabel()
             logo_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -331,34 +389,56 @@ class QMainApp(QBaseDesktopApp):
             logo_lbl.setPixmap(_logo_px.scaledToWidth(55, Qt.TransformationMode.SmoothTransformation))
             logo_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             logo_lbl.setToolTip("Arctis Sound Manager on GitHub")
-            logo_lbl.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl("https://github.com/loteran/Arctis-Sound-Manager"))
+            logo_lbl.mousePressEvent = lambda _: QDesktopServices.openUrl(QUrl(_repo_url))
             _bottom_layout.addWidget(logo_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # Support label
-        support_lbl = QLabel("You like it ? Support me !")
+        support_lbl = QLabel(I18n.translate('ui', 'support_me') if IS_WINDOWS else "You like it ? Support me !")
         support_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         support_lbl.setStyleSheet("color: #aaaaaa; font-size: 7pt; background: transparent;")
         _bottom_layout.addWidget(support_lbl, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        # Ko-fi support button — bouton stylisé compact
-        kofi_btn = QPushButton("☕ Ko-fi")
-        kofi_btn.setObjectName("kofiBtn")
-        kofi_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        kofi_btn.setToolTip("Support me on Ko-fi")
-        kofi_btn.setStyleSheet("""
-            QPushButton#kofiBtn {
-                background-color: #FF5E5B;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 9pt;
-                font-weight: bold;
-            }
-            QPushButton#kofiBtn:hover { background-color: #e04f4c; }
-        """)
-        kofi_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/W7W31VXIVC")))
-        _bottom_layout.addWidget(kofi_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # Donation button — compact. On Windows it opens this build's own donation page (BoomFi); the original's
+        # Ko-fi button stays on the other systems.
+        if IS_WINDOWS:
+            donate_btn = QPushButton(I18n.translate('ui', 'donate_button'))
+            donate_btn.setObjectName("donateBtn")
+            donate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            donate_btn.setToolTip(I18n.translate('ui', 'donate_tooltip'))
+            donate_btn.setStyleSheet("""
+                QPushButton#donateBtn {
+                    background-color: #F2A900;
+                    color: #1b1b1b;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton#donateBtn:hover { background-color: #FFC233; }
+            """)
+            donate_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(branding.DONATION_URL)))
+            self._donate_button = donate_btn
+            _bottom_layout.addWidget(donate_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        else:
+            kofi_btn = QPushButton("☕ Ko-fi")
+            kofi_btn.setObjectName("kofiBtn")
+            kofi_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            kofi_btn.setToolTip("Support me on Ko-fi")
+            kofi_btn.setStyleSheet("""
+                QPushButton#kofiBtn {
+                    background-color: #FF5E5B;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                    font-size: 9pt;
+                    font-weight: bold;
+                }
+                QPushButton#kofiBtn:hover { background-color: #e04f4c; }
+            """)
+            kofi_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/W7W31VXIVC")))
+            _bottom_layout.addWidget(kofi_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # Version label
         from arctis_sound_manager.utils import project_version
@@ -367,7 +447,15 @@ class QMainApp(QBaseDesktopApp):
         ver_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         _bottom_layout.addWidget(ver_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        sidebar_layout.addWidget(_bottom)
+        if IS_WINDOWS:                                  # the block keeps the margins the full-width scroll area dropped
+            _bottom_wrap = QWidget()
+            _bottom_wrap.setStyleSheet("background: transparent;")
+            _bottom_wrap_layout = QVBoxLayout(_bottom_wrap)
+            _bottom_wrap_layout.setContentsMargins(15, 0, 15, 0)
+            _bottom_wrap_layout.addWidget(_bottom)
+            sidebar_layout.addWidget(_bottom_wrap)
+        else:
+            sidebar_layout.addWidget(_bottom)
 
         root_layout.addWidget(sidebar)
 
@@ -390,6 +478,7 @@ class QMainApp(QBaseDesktopApp):
         # install) instead of the recorder.
         self._clips_page = None if IS_WINDOWS else self._build_clips_page()
         self._help_page      = HelpPage()
+        self._about_page     = AboutPage() if IS_WINDOWS else None
 
         self._theme_editor_page = ThemeEditorPage()
 
@@ -408,6 +497,8 @@ class QMainApp(QBaseDesktopApp):
         # Windows, where there is no Clips page).
         self._stack.addWidget(self._device_page)      # Settings
         self._stack.addWidget(self._help_page)        # Help
+        if IS_WINDOWS:
+            self._stack.addWidget(self._about_page)   # About (Windows build, under Help)
         self._stack.addWidget(self._theme_editor_page) # Theme Editor
 
         content_layout.addWidget(self._stack)
@@ -428,6 +519,8 @@ class QMainApp(QBaseDesktopApp):
         active_idx = PAGE_SETTINGS if index == PAGE_THEME_EDITOR else index
         for i, btn in enumerate(self._sidebar_buttons):
             btn.set_active(i == active_idx)
+            if i == active_idx and getattr(self, "_sidebar_nav", None) is not None:
+                self._sidebar_nav.ensureWidgetVisible(btn)      # a short window scrolls to the page it opened
 
     def apply_clips_visibility(self) -> None:
         """Make sure the Video tab is present, and showing the right face.

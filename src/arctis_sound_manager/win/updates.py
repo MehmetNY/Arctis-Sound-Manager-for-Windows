@@ -30,12 +30,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from arctis_sound_manager import branding
 from arctis_sound_manager.win.audio.params import default_config_dir
 
 log = logging.getLogger(__name__)
 
-REPO = "MehmetNY/Arctis-Sound-Manager-for-Windows"
-RELEASES_PAGE = f"https://github.com/{REPO}/releases"
+REPO = branding.REPO
+RELEASES_PAGE = branding.RELEASES_URL
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 #: Where installers may come from. Whatever the API says, a download elsewhere is refused.
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"

@@ -85,8 +85,8 @@ def test_clips_is_removed_from_the_windows_build_not_just_hidden(gui_run):
     """The user asked for it gone from inside the program: no button (hidden or not), no page, no
     text anywhere in the window or in the Help page."""
     result, _ = gui_run
-    assert len(result["sidebar_labels"]) == 6, result["sidebar_labels"]        # Channels, EQ, Headset, DAC, Settings, Help
-    assert result["stack_pages"] == 7                                           # six pages + the theme editor
+    assert len(result["sidebar_labels"]) == 7, result["sidebar_labels"]        # Channels, EQ, Headset, DAC, Settings, Help, About
+    assert result["stack_pages"] == 8                                           # seven pages + the theme editor
     assert result["clips_page_object"] is False
     assert result["help_has_clips"] is False
     assert result["clip_text_anywhere"] == [], result["clip_text_anywhere"]
@@ -96,8 +96,35 @@ def test_the_pages_after_the_removed_one_are_still_the_right_pages(gui_run):
     """Sidebar index == stack index. Removing a page renumbers the ones after it; Settings, Help and
     the theme editor must still land on their own widgets."""
     result, _ = gui_run
-    assert result["page_numbers"] == [4, 5, 6]
+    assert result["page_numbers"] == [4, 5, 6, 7]
     assert result["settings_page_is_settings"] and result["help_page_is_help"] and result["theme_page_is_theme"]
+    assert result["about_page_is_about"]
+
+
+def test_about_sits_under_help_with_the_asked_for_content_and_the_sidebar_donates_to_boomfi(gui_run):
+    result, _ = gui_run
+    assert result["sidebar_labels"][-1] == "About" and result["sidebar_labels"][-2] == "Help"
+    text = "\n".join(result["about_labels"])
+    assert "github.com/MehmetNY/Arctis-Sound-Manager-for-Windows" in text
+    assert "elegos/Linux-Arctis-Manager" in text and "loteran/Arctis-Sound-Manager" in text
+    assert result["about_saved"] and Path(result["about_shot"]).stat().st_size > 10_000
+    assert result["donation_opened"] == ["https://pay.boomfi.xyz/lite/3LDETXyLVlVUrjbQwydY5dPZGYY"]
+    assert "Ko-fi" not in result["donate_label"]
+
+
+def test_the_sidebar_keeps_its_look_in_a_tall_window_and_scrolls_instead_of_overlapping_in_a_short_one(gui_run):
+    """Seven entries need about 760 px of buttons. A tall window shows them all (no scroll bar); a laptop's 700 px
+    window scrolls the buttons while the logo / donation block stays below them - the About button never runs into
+    the logo."""
+    result = gui_run[0]
+    tall = result["nav_at_default"]
+    assert tall["scroll_range"] == 0, tall                     # nothing to scroll at the default size
+    short = result["nav_short"]
+    assert short["window_h"] <= 700 and short["bar_range"] > 0, short            # it does scroll when short
+    assert short["sidebar_min"] <= 600, short                  # the column no longer forces a tall window
+    assert short["nav_bottom_vs_block"] >= 0, short            # the buttons end above the logo block
+    assert short["about_bottom_vs_block"] >= 0, short          # About (the active page) is scrolled into view
+    assert short["saved"] and Path(short["shot"]).stat().st_size > 10_000
 
 
 def test_the_sound_processing_cards_are_on_the_headset_page_and_the_equaliser_stays_on_its_own(gui_run):

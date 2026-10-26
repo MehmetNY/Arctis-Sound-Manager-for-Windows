@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
+from arctis_sound_manager.branding import issue_repo
 from arctis_sound_manager.runtime_staleness import RUNNING_VERSION
 
 CRASH_REPORT_FILE = Path.home() / '.config' / 'arctis_manager' / 'crash_report.json'
-GITHUB_ISSUES_URL = 'https://github.com/loteran/Arctis-Sound-Manager/issues/new'
+GITHUB_ISSUES_URL = f'https://github.com/{issue_repo()}/issues/new'
 
 
 def _python_lib_versions() -> dict[str, str]:
@@ -1733,7 +1734,7 @@ def _which(cmd: str) -> bool:
 
 
 def submit_via_gh_cli(title: str, short_body: str, full_report_path: Path,
-                     repo: str = 'loteran/Arctis-Sound-Manager') -> Optional[str]:
+                     repo: Optional[str] = None) -> Optional[str]:
     """File the issue end-to-end via `gh` CLI:
       1. Upload the full diagnostic as a SECRET gist (not searchable, but
          accessible to anyone with the URL — same visibility as the issue).
@@ -1744,6 +1745,7 @@ def submit_via_gh_cli(title: str, short_body: str, full_report_path: Path,
     Returns None on any failure so the caller can fall back to the manual
     drag-and-drop flow.
     """
+    repo = repo or issue_repo()
     try:
         gist = subprocess.run(
             ['gh', 'gist', 'create', '--filename', full_report_path.name,

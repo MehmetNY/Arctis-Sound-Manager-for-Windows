@@ -24,6 +24,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github" / "workflows" / "pacman-repo.yaml"
 
+# The Windows fork does not carry the pacman repository workflow (it only builds the Windows installer): without it
+# there is no key to pin, so these upstream checks have nothing to check.
+pytestmark = pytest.mark.skipif(not WORKFLOW.exists(), reason="this tree has no pacman-repo workflow")
+
 TRUSTING_FILES = [
     "docs/install.sh",
     "scripts/distrobox/_common.sh",
