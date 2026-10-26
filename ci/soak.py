@@ -220,8 +220,10 @@ def asm_window() -> dict | None:
 
 
 def open_window(env: dict) -> bool:
-    """Ask the running program for its window the way a second launch does (Start menu) and wait for it to appear."""
-    handoff = subprocess.Popen([str(EXE)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Ask the running program for its window the way the Start menu shortcut does (``--show``) and wait for it to appear.
+
+    A bare second launch is the same as ``--background``: it only tells the running tray that it is alive."""
+    handoff = subprocess.Popen([str(EXE), "--show"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 90
     while time.time() < deadline:
         w = asm_window()
@@ -338,6 +340,15 @@ def phase_one(minutes: float, cpu_limits: dict) -> None:
     judge_health("phase 1")
     for p in programs:
         p.kill()
+    # What a PC costs while nobody is playing anything: every device is open, the cable delivers silence. This is
+    # most of a day's time, so it is the number that decides whether ASM is "light".
+    time.sleep(8)
+    quiet = Sampler()
+    quiet.run(120, "1q")
+    cpu_quiet = quiet.report("phase 1, nothing playing (devices open, silence)")
+    for role, limit in {"engine": 15.0, "helper": 8.0, "tray": 5.0, "daemon": 4.0}.items():
+        if cpu_quiet.get(role, 0.0) > limit:
+            fail(f"phase 1: the {role} used {cpu_quiet[role]:.1f}% of a core on average while nothing played (limit {limit}%)")
     dump_logs()
 
 
