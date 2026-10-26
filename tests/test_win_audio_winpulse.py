@@ -264,3 +264,11 @@ def test_dragging_a_program_onto_a_channel_sends_a_routing_rule():
     pulse.sink_input_move(999, sinks["Arctis_Game"])                      # a program that is gone
     pulse.sink_input_move(100, 424242)                                    # a sink that does not exist
     assert bridge.calls == [("route", "RocketLeague.exe", "media"), ("route", "discord.exe", "bypass")]
+
+
+def test_asms_own_programs_are_not_listed_as_applications():
+    """The Channels page showed "ArctisSoundManager" (the engine's own streams) as something to move to a channel."""
+    own = [{"exe": "ArctisSoundManager.exe", "pid": 13004, "channel": "bypass", "active": True, "level": 0.2},
+           {"exe": "asm-audiotap.exe", "pid": 13005, "channel": "bypass", "active": True, "level": 0.2}]
+    pulse = WinPulse(FakeBridge(tap_status(own + APPS[:1])))
+    assert [si.proplist["application.process.binary"] for si in pulse.sink_input_list()] == ["RocketLeague"]

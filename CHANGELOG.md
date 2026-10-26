@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings (Windows):** the audio options that only exist on Linux (PipeWire filter chains, channel outputs, "redirect audio on disconnect") are hidden instead of showing empty lists.
 - **Headset page (Windows):** spatial audio, surround, volume boost, Smart Volume and the microphone's AI noise cancelling, noise reduction, gate and compressor sit on the Headset page next to the headset's own settings. The equaliser - curve, presets, macro sliders - stays on the Equalizer page.
 
+### Fixed
+- **The audio engine no longer dies when Windows has not yet let go of a device.** The log of a real machine showed `AUDCLNT_E_DEVICE_IN_USE` each time the engine was rebuilt right after another build had ended (every click through the settings does that): one stream that would not start took the whole engine down, left the devices it had opened held, and nothing tried again - so sound processing, the equaliser and spatial audio silently did nothing until the next change. Now a stream that will not start is retried a moment later while the others keep running, a start that fails halfway gives back everything it opened, a rebuild waits a moment for the devices and tries again, asking for what already runs changes nothing, and an engine that could not start is started again by itself (3, 6, 12, then every 30 s).
+- **The Aux button no longer restarts the headset (Windows).** Every click released the USB handle, waited five seconds for the transmitter and re-initialised the headset and the screen, to rebuild PipeWire sinks that do not exist on Windows.
+- **The Channels page no longer lists ASM itself** among the programs that can be moved to a channel.
+- Turkish texts for three messages that fell back to English.
+
 ### Removed
 - **Telemetry (Windows):** the option is gone and nothing is ever asked or sent.
 - **PipeWire "safe mode" banner (Windows):** the filter-chain watchdog it reports on does not exist there.

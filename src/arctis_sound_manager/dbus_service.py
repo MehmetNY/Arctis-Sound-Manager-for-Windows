@@ -597,6 +597,12 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 return False
             gs.aux_enabled = value
             gs.write_to_file()
+            if IS_WINDOWS:
+                # There are no virtual sinks to create or remove: the audio engine always has its four channels. Running
+                # configure_virtual_sinks here re-initialised the whole headset (USB handle released, five seconds of
+                # waiting for the transmitter, the screen restarted) on every click of the Aux button.
+                self.logger.info("aux_enabled set to %r", value)
+                return True
             self.logger.info(
                 "aux_enabled set to %r — reconfiguring virtual sinks", value)
             threading.Thread(

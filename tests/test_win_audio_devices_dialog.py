@@ -55,7 +55,7 @@ class FakeClient:
     def available(self):
         return self.up
 
-    def reconfigure(self):
+    def reconfigure(self, force=False):
         self.reconfigured += 1
         return {"ok": True, "problems": self.problems}
 

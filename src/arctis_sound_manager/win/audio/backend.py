@@ -260,13 +260,20 @@ class SoundDeviceBackend:
 class FakeStream(OpenedStream):
     """Drives the engine's callbacks by hand (``deliver`` / ``collect``) or from a clock thread."""
 
-    def __init__(self, device: DeviceInfo, kind: str, channels: int, callback, status=None):
+    def __init__(self, device: DeviceInfo, kind: str, channels: int, callback, status=None, backend=None):
         super().__init__(device, kind, channels, None)
         self.callback = callback
         self.running = False
         self.frames = 0                                        # frames delivered / collected so far
+        self.closed = False
+        self._backend = backend
 
     def start(self) -> None:
+        backend = self._backend
+        if backend is not None and backend.fail_start.get(self.device.name, 0) > 0:
+            backend.fail_start[self.device.name] -= 1          # the endpoint is still "in use" (AUDCLNT_E_DEVICE_IN_USE)
+            raise RuntimeError("Error starting stream: Unanticipated host error [PaErrorCode -9999]: "
+                               "'AUDCLNT_E_DEVICE_IN_USE'")
         self.running = True
 
     def stop(self) -> None:
@@ -274,6 +281,7 @@ class FakeStream(OpenedStream):
 
     def close(self) -> None:
         self.running = False
+        self.closed = True
 
     @property
     def active(self) -> bool:
@@ -305,6 +313,7 @@ class FakeBackend:
         self.opened: list[FakeStream] = []
         self._cap = max_channels or {}                         # name -> channels it will actually accept
         self.fail_open: set[str] = set()                       # names that refuse to open right now
+        self.fail_start: dict[str, int] = {}                   # name -> how many times its stream refuses to *start*
         self.min_channels: dict[str, int] = {}                 # name -> fewest channels it accepts (a stereo-only mic)
 
     def devices(self) -> list[DeviceInfo]:
@@ -321,7 +330,7 @@ class FakeBackend:
             accept = max(accept, min(self.min_channels[device.name], device.channels(kind)))
         if accept < 1 or device.name in self.fail_open:
             raise BackendError(f"cannot open {kind} device {device.name!r}")
-        stream = FakeStream(device, kind, accept, callback, status)
+        stream = FakeStream(device, kind, accept, callback, status, backend=self)
         self.opened.append(stream)
         return stream
 

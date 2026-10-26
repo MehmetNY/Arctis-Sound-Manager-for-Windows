@@ -184,8 +184,10 @@ class EngineClient:
     def reload(self) -> dict:
         return self.request("reload")
 
-    def reconfigure(self) -> dict:
-        return self.request("reconfigure")
+    def reconfigure(self, force: bool = False) -> dict:
+        """Ask the engine to read its configuration again. It leaves a running engine alone when nothing changed
+        in the file, unless ``force`` (somebody pressed Apply and expects the devices to be looked at again)."""
+        return self.request("reconfigure", force=True) if force else self.request("reconfigure")
 
     def shutdown(self) -> dict:
         return self.request("shutdown")

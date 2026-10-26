@@ -332,7 +332,7 @@ class AudioDevicesDialog(QDialog):
         if not up:
             return {"started": False}
         client = self._client_factory(self._config_dir, timeout=20.0)
-        reply = client.reconfigure()
+        reply = client.reconfigure(force=True)
         return {"started": True, "problems": reply.get("problems") or []}
 
     def _on_applied(self, result, error, done_key: str = "saved") -> None:

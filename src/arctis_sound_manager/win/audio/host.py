@@ -37,6 +37,9 @@ _log = logging.getLogger(__name__)
 
 VERSION = "win-engine 1"
 AUTOSETUP_RETRY = 6.0                                               # seconds between looks for devices while there is no engine
+SETTLE_SECONDS = 0.4                                                # after an engine ended: the devices are still being released
+START_DELAYS = (0.6, 1.5)                                           # waits between the tries of one (re)configuration
+RESTART_BACKOFF = (3.0, 6.0, 12.0, 30.0)                            # then the host itself keeps trying, ever less often
 
 
 def default_backend(config: EngineConfig):
@@ -64,8 +67,13 @@ class EngineHost:
     def __init__(self, config_dir: Path | None = None,
                  backend_factory: Callable[[EngineConfig], object] = default_backend,
                  probe: Callable[[], list[DeviceInfo]] | None = subprocess_probe,
-                 native=None, hrir_id: str | None = None):
+                 native=None, hrir_id: str | None = None, sleep: Callable[[float], None] = time.sleep,
+                 monotonic: Callable[[], float] = time.monotonic):
         self.config_dir = config_dir or default_config_dir()
+        self._sleep = sleep
+        self._monotonic = monotonic
+        self._failures = 0                                           # starts in a row that failed (drives the back-off)
+        self._retry_at = 0.0
         self._backend_factory = backend_factory
         self._probe = probe
         self._native = native
@@ -146,33 +154,57 @@ class EngineHost:
             except Exception:                                        # noqa: BLE001
                 _log.exception("stopping the engine failed")
 
-    def reconfigure(self) -> list[str]:
-        """Re-read ``win_audio_engine.json`` and rebuild the engine. Returns what is wrong with the configuration."""
+    def reconfigure(self, force: bool = False) -> list[str]:
+        """Re-read ``win_audio_engine.json`` and rebuild the engine. Returns what is wrong with the configuration.
+
+        Asking for what is already running changes nothing (the daemon and the GUI send this on every setting they
+        touch, and tearing the sound system down and up again for nothing is how a device ends up "in use");
+        ``force`` rebuilds anyway. A start that fails is tried again a little later, with everything the failed
+        try opened closed first; if it keeps failing, :meth:`wait` goes on trying (see ``RESTART_BACKOFF``)."""
         with self._lock:
+            wanted = load_config(self.config_dir)
+            engine = self.engine
+            if (not force and engine is not None and engine.running and not self.error
+                    and wanted.to_dict() == self.config.to_dict()):
+                _log.debug("the engine already runs with this configuration")
+                return []
+            had_engine = engine is not None
             self._stop_engine()
-            self.config = load_config(self.config_dir)
+            self.config = wanted
             problems = self.config.problems()
             self.error = ""
             if problems:
                 _log.info("not starting the engine yet: %s", "; ".join(problems))
                 return problems
-            try:
-                backend = self._backend_factory(self.config)
-                engine = Engine(self.config, backend, config_dir=self.config_dir, native=self._native,
-                                hrir_id=self._hrir_id, probe=self._probe)
-                engine.preset = {"volumes": dict(self._volumes), "muted": dict(self._muted), "mix": self._mix,
-                                 "mix_channels": self._mix_channels}
-                engine.start(threaded=True)
-            except BackendError as exc:
-                self.error = str(exc)
-                _log.error("%s", exc)
-                return [str(exc)]
-            except Exception as exc:                                  # noqa: BLE001 — never take the host down
-                self.error = f"{type(exc).__name__}: {exc}"
-                _log.exception("the engine could not start")
-                return [self.error]
-            self.engine = engine
-            return []
+            if had_engine:
+                self._sleep(SETTLE_SECONDS)                          # Windows needs a moment to let go of the devices just closed
+            for attempt in range(len(START_DELAYS) + 1):
+                try:
+                    backend = self._backend_factory(self.config)
+                    engine = Engine(self.config, backend, config_dir=self.config_dir, native=self._native,
+                                    hrir_id=self._hrir_id, probe=self._probe)
+                    engine.preset = {"volumes": dict(self._volumes), "muted": dict(self._muted), "mix": self._mix,
+                                     "mix_channels": self._mix_channels}
+                    engine.start(threaded=True)
+                except BackendError as exc:
+                    self.error = str(exc)
+                    _log.error("%s", exc)
+                except Exception as exc:                              # noqa: BLE001 — never take the host down
+                    self.error = f"{type(exc).__name__}: {exc}"
+                    if attempt < len(START_DELAYS):
+                        _log.warning("the engine could not start (%s); trying again", self.error)
+                    else:
+                        _log.exception("the engine could not start")
+                else:
+                    self.engine = engine
+                    self.error = ""
+                    self._failures = 0
+                    return []
+                if attempt < len(START_DELAYS):
+                    self._sleep(START_DELAYS[attempt])
+            self._failures += 1
+            self._retry_at = self._monotonic() + RESTART_BACKOFF[min(self._failures, len(RESTART_BACKOFF)) - 1]
+            return [self.error]
 
     # ── the control channel ─────────────────────────────────────────────────
 
@@ -206,7 +238,7 @@ class EngineHost:
             return {}
         with self._lock:
             if cmd == "reconfigure":
-                problems = self.reconfigure()
+                problems = self.reconfigure(force=bool(request.get("force")))
                 return {"problems": problems, "ok": not problems}
             if cmd == "devices":
                 try:
@@ -269,6 +301,9 @@ class EngineHost:
             if self.engine is None and stamp != last:
                 _log.info("configuration changed; trying to start")
                 self.reconfigure()
+            elif self.engine is None and self.error and self._monotonic() >= self._retry_at:
+                _log.info("the engine is not running (%s); trying to start it again", self.error)
+                self.reconfigure(force=True)                          # a failure is never left standing: start it again
             last = stamp
 
     def _config_stamp(self):

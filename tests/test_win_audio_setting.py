@@ -90,3 +90,31 @@ def test_the_daemon_does_not_wait_for_the_engine_to_start(tmp_path, monkeypatch)
         assert entered.wait(5) and not release.is_set()
     finally:
         release.set()
+
+
+# ── the Aux button must not re-initialise the headset on Windows (the daemon log of a real machine) ──────────
+
+@pytest.mark.parametrize("value", [True, False])
+def test_on_windows_the_aux_button_only_stores_the_value(tmp_path, monkeypatch, value):
+    """Every click used to release the USB handle, wait five seconds for the transmitter, re-initialise the headset and
+    restart the screen - all to rebuild PipeWire sinks that do not exist on Windows."""
+    monkeypatch.setattr(dbus_service, "IS_WINDOWS", True)
+    svc = make_service(tmp_path)
+    svc.core_engine.general_settings.aux_enabled = not value
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        assert _set_setting(svc, "aux_enabled", json.dumps(value)) is True
+        assert GeneralSettings.read_from_file().aux_enabled is value
+    assert svc.core_engine.general_settings.aux_enabled is value
+    time = __import__("time")
+    time.sleep(0.2)                                              # a thread would have had time to start
+    svc.core_engine.configure_virtual_sinks.assert_not_called()
+
+
+def test_on_linux_the_aux_button_still_rebuilds_the_sinks(tmp_path, monkeypatch):
+    monkeypatch.setattr(dbus_service, "IS_WINDOWS", False)
+    svc = make_service(tmp_path)
+    called = threading.Event()
+    svc.core_engine.configure_virtual_sinks.side_effect = lambda *a, **k: called.set()
+    with patch("arctis_sound_manager.settings.SETTINGS_FOLDER", tmp_path):
+        assert _set_setting(svc, "aux_enabled", json.dumps(True)) is True
+    assert called.wait(5)

@@ -73,6 +73,9 @@ class WinSink:
 
 MASTER_INDEX = 1000                                              # the sink index of the headset's own (master) level
 CHANNEL_INDEX = {channel: 1001 + i for i, channel in enumerate(CHANNEL_NODE)}
+#: ASM's own programs are not applications of the Channels page: the engine's streams into the headset and the cable are
+#: what it plays, and "moving" them to a channel means nothing.
+OWN_EXES = {"arctissoundmanager.exe", "asm-audiotap.exe"}
 AUDIBLE_LEVEL = 5e-4                                             # a program quieter than this (rms) is not "playing"
 
 
@@ -134,7 +137,7 @@ class WinPulse:
         out: list[WinSinkInput] = []
         for app in tap.get("apps", []) or []:
             exe, pid = str(app.get("exe") or ""), int(app.get("pid") or 0)
-            if not exe or not pid:
+            if not exe or not pid or exe.lower() in OWN_EXES:
                 continue
             playing = bool(app.get("active")) or float(app.get("level") or 0.0) > AUDIBLE_LEVEL
             if not playing:

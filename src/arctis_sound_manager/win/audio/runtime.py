@@ -43,6 +43,7 @@ RATE = 48000
 MAX_CATCHUP = 12                        # blocks per wake-up, however late the thread was
 STALE_POLLS = 2                         # supervisor polls without a callback before a device counts as dead
 RETRY_SECONDS = 2.0
+START_RETRY_SECONDS = 0.6                                           # a stream that would not start (AUDCLNT_E_DEVICE_IN_USE ...): look again soon
 REFRESH_SECONDS = 15.0
 SETTINGS_FILES = ("sonar_micro_state.json", "general_settings.yaml", "channel_volumes.json", "stream_mix.json")
 VOLUME_KEYS = {"Arctis_Game": "game", "Arctis_Chat": "chat", "Arctis_Media": "media", "Arctis_Master": "master"}
@@ -432,17 +433,24 @@ class Engine:
         """Open every device that can be opened, pre-fill the outputs, start the streams and the threads."""
         fast.wait_ready()                                            # kernels compiled before any audio callback runs
         with self._lock:
-            self._devices = self.backend.devices()
-            self.load_state(self.watcher.read())
-            self._apply_preset()
-            for ep in self.endpoints.values():
-                self._try_open(ep, self._clock(), start_stream=False)
-            self.playback.prefill()
-            self.mic.prefill()
-            for ep in self.endpoints.values():
-                if ep.stream is not None:
-                    ep.stream.start()
-            self._sync_tap()
+            try:
+                self._devices = self.backend.devices()
+                self.load_state(self.watcher.read())
+                self._apply_preset()
+                for ep in self.endpoints.values():
+                    self._try_open(ep, self._clock(), start_stream=False)
+                self.playback.prefill()
+                self.mic.prefill()
+                now = self._clock()
+                for ep in self.endpoints.values():
+                    if ep.stream is not None:
+                        # one device that will not start (still being released by the engine that just ended, or taken
+                        # by another program) must not take the others down: it is looked at again shortly
+                        self._start_stream(ep, now)
+                self._sync_tap()
+            except BaseException:
+                self._abort()                                        # nothing opened so far may stay open: the next start needs those devices
+                raise
             self.running = True
         if threaded:
             self._stop.clear()
@@ -453,6 +461,38 @@ class Engine:
             t = threading.Thread(target=self._monitor, name="asm-monitor", daemon=True)
             t.start()
             self._threads.append(t)
+
+    def _abort(self) -> None:
+        """Give back everything a start that failed halfway had opened (devices, the tap's volumes)."""
+        try:
+            if self.tap is not None:
+                self.tap.engage(False)
+                self._tap_key = None
+        except Exception:                                            # noqa: BLE001
+            _log.debug("could not put the programs' volumes back", exc_info=True)
+        for ep in self.endpoints.values():
+            try:
+                self._close(ep)
+            except Exception:                                        # noqa: BLE001
+                _log.debug("could not close %s", ep.key, exc_info=True)
+        self.running = False
+
+    def _start_stream(self, ep: Endpoint, now: float) -> bool:
+        """Start an opened stream. On failure the endpoint is closed and retried soon; the rest keeps running."""
+        stream = ep.stream
+        if stream is None:
+            return False
+        try:
+            stream.start()
+            return True
+        except Exception as exc:                                     # noqa: BLE001 — PortAudioError and friends
+            _log.warning("%s: %s would not start (%s); trying again shortly", ep.key, ep.device or ep.query, exc)
+            attempts = ep.attempts + 1
+            self._close(ep)
+            ep.attempts = attempts
+            ep.state, ep.error = "waiting", f"could not start: {exc}"
+            ep.next_try = now + START_RETRY_SECONDS
+            return False
 
     def stop(self) -> None:
         self._stop.set()
@@ -503,8 +543,8 @@ class Engine:
         ep.port = self._make_port(ep, stream.channels, block, blocks)
         self._attach(ep)
         ep.state, ep.attempts, ep.last_count, ep.stale = "running", 0, -1, 0
-        if start_stream:
-            stream.start()
+        if start_stream and not self._start_stream(ep, now):
+            return False
         _log.info("%s: %s (%d ch)", ep.key, device.name, stream.channels)
         return True
 
@@ -654,7 +694,7 @@ class Engine:
             pipeline.prefill()
         for ep in self.endpoints.values():
             if ep.stream is not None:
-                ep.stream.start()
+                self._start_stream(ep, now)
 
     # ── state and controls ──────────────────────────────────────────────────
 

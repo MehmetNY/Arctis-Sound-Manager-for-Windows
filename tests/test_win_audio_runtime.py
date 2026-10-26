@@ -447,6 +447,61 @@ def test_a_device_that_refuses_to_open_is_reported_and_retried(tmp_path):
     assert ep.state == "running" and ep.reopened == 1
 
 
+def test_a_stream_that_will_not_start_does_not_take_the_engine_down_and_is_retried(tmp_path):
+    """The log of a real machine: starting right after another engine let go of the devices answered
+    AUDCLNT_E_DEVICE_IN_USE, the exception left the whole engine dead and its other streams open."""
+    rig = Rig(tmp_path)
+    rig.backend.fail_start = {"CABLE-C Input (VB-Audio Cable C)": 1}          # the microphone's cable is still held
+    rig.start()                                                               # must not raise
+    e = rig.engine
+    assert e.running
+    states = {k: ep.state for k, ep in e.endpoints.items()}
+    assert states["mic:out"] == "waiting" and "could not start" in e.endpoints["mic:out"].error
+    assert states["out:headset"] == "running" and states["in:game"] == "running" and states["mic:in"] == "running"
+    ep = e.endpoints["mic:out"]
+    assert rig.backend.stream("CABLE-C Input", "output").closed                # the half-open stream was let go
+    e.supervise(ep.next_try - 0.01)
+    assert ep.state == "waiting"                                              # not before the pause is over
+    e.supervise(ep.next_try + 0.01)
+    assert ep.state == "running" and ep.reopened == 1 and ep.stream.running   # and then it simply works
+
+
+def test_a_stream_that_keeps_refusing_is_tried_again_and_again_without_a_storm(tmp_path):
+    rig = Rig(tmp_path)
+    rig.backend.fail_start = {"Headset Earphone (Arctis Nova Pro Wireless)": 3}
+    rig.start()
+    e = rig.engine
+    ep = e.endpoints["out:headset"]
+    for _ in range(3):
+        assert ep.state == "waiting"
+        e.supervise(ep.next_try + 0.01)
+    assert ep.state == "running" and rig.backend.fail_start["Headset Earphone (Arctis Nova Pro Wireless)"] == 0
+
+
+def test_a_start_that_fails_halfway_gives_back_every_device_it_had_opened(tmp_path):
+    rig = Rig(tmp_path)
+    rig.engine.playback.prefill = lambda: (_ for _ in ()).throw(RuntimeError("prefill blew up"))
+    with pytest.raises(RuntimeError, match="prefill blew up"):
+        rig.start()
+    assert rig.backend.opened and all(s.closed and not s.running for s in rig.backend.opened)
+    assert not rig.engine.running
+
+
+def test_a_failed_start_puts_the_programs_volumes_back(tmp_path):
+    class Tap:
+        def __init__(self):
+            self.calls = []
+
+        def engage(self, on):
+            self.calls.append(on)
+    rig = Rig(tmp_path)
+    rig.engine.tap = Tap()
+    rig.engine.playback.prefill = lambda: (_ for _ in ()).throw(RuntimeError("x"))
+    with pytest.raises(RuntimeError):
+        rig.start()
+    assert rig.engine.tap.calls == [False]
+
+
 def test_a_reopened_master_output_is_refilled_before_it_plays(tmp_path):
     spatial_off(tmp_path)
     rig = Rig(tmp_path)

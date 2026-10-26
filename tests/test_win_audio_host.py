@@ -43,7 +43,7 @@ def host(tmp_path):
         backends.append(b)
         return b
 
-    h = EngineHost(tmp_path, backend_factory=factory, probe=None)
+    h = EngineHost(tmp_path, backend_factory=factory, probe=None, sleep=lambda seconds: None)
     h.backends = backends
     yield h
     h.stop()
@@ -157,7 +157,7 @@ def test_a_missing_sound_library_is_an_error_status_not_a_crash(tmp_path):
 
 
 def test_an_unexpected_failure_while_starting_is_contained(tmp_path, monkeypatch):
-    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None)
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None, sleep=lambda seconds: None)
     save_config(good_config(), tmp_path)
     from arctis_sound_manager.win.audio import host as host_module
     monkeypatch.setattr(host_module.Engine, "start", lambda self, threaded=True: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -485,3 +485,106 @@ def test_with_too_few_devices_nothing_is_written(tmp_path):
     h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend([dev(9, "Speakers (Realtek(R) Audio)", outs=2)]), probe=None)
     assert not h.autoconfigure()
     assert not config_path(tmp_path).exists()
+
+
+# ── restarts: what a real machine's log showed (AUDCLNT_E_DEVICE_IN_USE storms, an engine left dead) ──────────
+
+def test_asking_for_what_already_runs_changes_nothing(host, tmp_path):
+    save_config(good_config(), tmp_path)
+    assert host.reconfigure() == []
+    engine = host.engine
+    assert host.reconfigure() == [] and host.engine is engine                  # same engine, devices untouched
+    assert len(host.backends) == 1
+    assert host.handle({"cmd": "reconfigure"}) == {"problems": [], "ok": True} and host.engine is engine
+    assert host.reconfigure(force=True) == [] and host.engine is not engine    # unless somebody insists
+    assert host.handle({"cmd": "reconfigure", "force": True})["ok"] is True
+
+
+def test_a_changed_configuration_does_rebuild_the_engine(host, tmp_path):
+    save_config(good_config(), tmp_path)
+    host.reconfigure()
+    engine = host.engine
+    cfg = good_config()
+    cfg.latency = "safe"
+    save_config(cfg, tmp_path)
+    assert host.reconfigure() == [] and host.engine is not engine and host.config.latency == "safe"
+
+
+def test_a_rebuild_waits_a_moment_for_windows_to_let_go_of_the_devices(tmp_path):
+    from arctis_sound_manager.win.audio import host as host_module
+    waits = []
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None, sleep=waits.append)
+    save_config(good_config(), tmp_path)
+    h.reconfigure()
+    assert waits == []                                                          # a first start has nothing to wait for
+    h.reconfigure(force=True)
+    assert waits == [host_module.SETTLE_SECONDS]
+    h.stop()
+
+
+def test_a_start_that_fails_is_tried_again_and_what_the_failed_try_opened_is_let_go(tmp_path, monkeypatch):
+    from arctis_sound_manager.win.audio import host as host_module
+    waits, attempts, engines = [], [], []
+    real_start = host_module.Engine.start
+
+    def flaky(self, threaded=True):
+        engines.append(self)
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise RuntimeError("Error starting stream: 'AUDCLNT_E_DEVICE_IN_USE'")
+        return real_start(self, threaded)
+    monkeypatch.setattr(host_module.Engine, "start", flaky)
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None, sleep=waits.append)
+    save_config(good_config(), tmp_path)
+    assert h.reconfigure() == []                                                # the third try works
+    assert h.engine is engines[-1] and h.error == "" and len(attempts) == 3
+    assert waits == list(host_module.START_DELAYS)                              # with a pause before each new try
+    h.stop()
+
+
+def test_a_start_that_keeps_failing_is_reported_and_then_retried_by_the_host_on_its_own(tmp_path, monkeypatch):
+    import threading
+    from arctis_sound_manager.win.audio import host as host_module
+    now = [100.0]
+    state = {"fail": True, "starts": 0}
+    real_start = host_module.Engine.start
+
+    def maybe(self, threaded=True):
+        state["starts"] += 1
+        if state["fail"]:
+            raise RuntimeError("Error starting stream: 'AUDCLNT_E_DEVICE_IN_USE'")
+        return real_start(self, threaded)
+    monkeypatch.setattr(host_module.Engine, "start", maybe)
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None, sleep=lambda s: None,
+                   monotonic=lambda: now[0])
+    save_config(good_config(), tmp_path)
+    problems = h.reconfigure()
+    assert "AUDCLNT_E_DEVICE_IN_USE" in problems[0] and h.engine is None
+    assert state["starts"] == len(host_module.START_DELAYS) + 1
+    t = threading.Thread(target=lambda: h.wait(poll=0.01), daemon=True)
+    t.start()
+    time.sleep(0.15)
+    assert state["starts"] == len(host_module.START_DELAYS) + 1                 # not before the back-off is over
+    state["fail"] = False
+    now[0] += host_module.RESTART_BACKOFF[0] + 0.1
+    deadline = time.time() + 5
+    while h.engine is None and time.time() < deadline:
+        time.sleep(0.01)
+    assert h.engine is not None and h.engine.running and h.error == ""          # nobody had to touch anything
+    h.handle({"cmd": "shutdown"})
+    t.join(timeout=2)
+    h.stop()
+
+
+def test_the_back_off_grows_while_the_failures_go_on(tmp_path, monkeypatch):
+    from arctis_sound_manager.win.audio import host as host_module
+    now = [0.0]
+    monkeypatch.setattr(host_module.Engine, "start", lambda self, threaded=True: (_ for _ in ()).throw(RuntimeError("no")))
+    h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend(DEVICES), probe=None, sleep=lambda s: None,
+                   monotonic=lambda: now[0])
+    save_config(good_config(), tmp_path)
+    waits = []
+    for _ in range(6):
+        h.reconfigure(force=True)
+        waits.append(h._retry_at - now[0])
+    assert waits[:4] == list(host_module.RESTART_BACKOFF) and waits[4:] == [host_module.RESTART_BACKOFF[-1]] * 2

@@ -230,6 +230,28 @@ def microphone_phase(client: "EngineClient") -> None:
         bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
         check("C10.3 the microphone's devices are open", not bad and set(st.get("endpoints") or {}) == {"mic:in", "mic:out"},
               f"{sorted((st.get('endpoints') or {}))} {json.dumps(bad)[:300]} {st.get('problems')}")
+        # What a real machine's log showed: a rebuild right after another one answered AUDCLNT_E_DEVICE_IN_USE (the cable
+        # is let go of slowly) and the engine stayed dead. Ask for rebuilds in a burst, the way the GUI and the daemon do
+        # while somebody clicks through the settings, and see that every device ends up open and nothing stays failed.
+        slow = EngineClient(CONFIG_DIR, timeout=90.0)
+        t0 = time.time()
+        replies = []
+        for _ in range(8):
+            try:
+                replies.append(bool(slow.request("reconfigure", force=True).get("ok")))
+            except EngineUnavailable as exc:
+                replies.append(False)
+                log("   reconfigure unavailable:", exc)
+            time.sleep(0.1)
+        log(f"   8 forced rebuilds in a burst took {time.time() - t0:.1f} s; replies {replies}")
+        settled = wait_for(lambda: bool(status().get("running")) and all(
+            v.get("state") == "running" for v in (status().get("endpoints") or {}).values()) and bool(status().get("endpoints")), 30, 0.5)
+        st = status()
+        bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
+        check("C10.3b after a burst of rebuilds every device of the engine is open again", settled and not bad,
+              f"{json.dumps(bad)[:300]} {st.get('error')}")
+        check("C10.3c and the engine did not give up (it answered every request and is running)", all(replies) and bool(st.get("running")),
+              f"{replies} {st.get('error')}")
         time.sleep(3.0)
         plain = level(wire, 2.5)
         check("C10.4 without noise cancelling the microphone's sound is passed on (the cable is louder than the noise alone)",
