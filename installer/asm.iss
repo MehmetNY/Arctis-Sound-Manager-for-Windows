@@ -70,6 +70,8 @@ Filename: "{app}\vbcable\VBCABLE_Setup_x64.exe"; Parameters: "-i -h"; WorkingDir
 ; Start with Windows, for the person who is installing (not for the administrator account that may have been used)
 Filename: "{app}\{#AppExe}"; Parameters: "--enable-autostart"; Flags: runasoriginaluser runhidden waituntilterminated; Tasks: autostart
 Filename: "{app}\{#AppExe}"; Parameters: "--show"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; an update started from inside the program (/RELAUNCH=1): open it again, for the person who was using it
+Filename: "{app}\{#AppExe}"; Parameters: "--show"; Flags: nowait runasoriginaluser; Check: Relaunch
 
 [UninstallRun]
 Filename: "{app}\{#AppExe}"; Parameters: "--quit-all"; Flags: runhidden waituntilterminated; RunOnceId: "QuitAll"
@@ -77,6 +79,11 @@ Filename: "{app}\{#AppExe}"; Parameters: "--disable-autostart"; Flags: runhidden
 Filename: "{app}\asm-audiotap.exe"; Parameters: "--restore"; Flags: runhidden waituntilterminated; RunOnceId: "RestoreVolumes"
 
 [Code]
+function Relaunch(): Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;
+
 function CableMissing(): Boolean;
 begin
   { the driver files VB-CABLE puts in System32\drivers (names differ between pack versions) }

@@ -159,6 +159,19 @@ _AUDIO_KEYS = (
     'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
     'external_output_device', 'hrir_id', 'pipewire_quantum',
 )
+# What PipeWire/pactl decide on Linux has no counterpart in the Windows build (it only listed empty menus there):
+# the lists behind these come from the Linux sound server. They stay in _AUDIO_KEYS so they never land in General.
+_LINUX_ONLY_AUDIO_KEYS = (
+    'redirect_audio_on_connect', 'redirect_audio_on_connect_channel',
+    'redirect_audio_on_disconnect', 'redirect_audio_on_disconnect_device',
+    'external_output_device', 'pipewire_quantum',
+)
+
+
+def _audio_keys_shown() -> tuple[str, ...]:
+    return tuple(k for k in _AUDIO_KEYS if not (IS_WINDOWS and k in _LINUX_ONLY_AUDIO_KEYS))
+
+
 _MICRO_KEYS = ('micro_input_source', 'micro_alt_source', 'micro_autoswitch')
 _GENERIC_KEYS = ('generic_device_mode', 'generic_output_device', 'generic_input_device')
 
@@ -280,19 +293,20 @@ class DevicePage(QWidget):
         self._startup_toggle.checkStateChanged.connect(self._on_autostart_toggled)
         self._add_row(general, I18n.translate("ui", "launch_at_startup"), self._startup_toggle)
 
-        from arctis_sound_manager.telemetry import get_consent, set_consent
+        if not IS_WINDOWS:               # the Windows build collects and sends nothing, so there is nothing to switch
+            from arctis_sound_manager.telemetry import get_consent, set_consent
 
-        consent = get_consent()
-        self._telemetry_toggle = QDualState(
-            off_text=I18n.translate("settings_values", "off"),
-            on_text=I18n.translate("settings_values", "on"),
-            init_state="right" if consent is True else "left",
-            accent=True,
-        )
-        self._telemetry_toggle.checkStateChanged.connect(
-            lambda state: set_consent(state == Qt.CheckState.Checked)
-        )
-        self._add_row(general, "Telemetry — share anonymous usage data", self._telemetry_toggle)
+            consent = get_consent()
+            self._telemetry_toggle = QDualState(
+                off_text=I18n.translate("settings_values", "off"),
+                on_text=I18n.translate("settings_values", "on"),
+                init_state="right" if consent is True else "left",
+                accent=True,
+            )
+            self._telemetry_toggle.checkStateChanged.connect(
+                lambda state: set_consent(state == Qt.CheckState.Checked)
+            )
+            self._add_row(general, "Telemetry — share anonymous usage data", self._telemetry_toggle)
 
         # Whatever no other group claims lands here, so a setting added to
         # GeneralSettings shows up even before it is given a group.
@@ -351,7 +365,7 @@ class DevicePage(QWidget):
         # The headset's own settings (sidetone, mic volume, noise cancelling…)
         # live on the Headset page, next to the headset they change. This page
         # keeps what belongs to the app.
-        self._add_settings_group(self._add_card(content_layout, "settings_group_audio"), _AUDIO_KEYS)
+        self._add_settings_group(self._add_card(content_layout, "settings_group_audio"), _audio_keys_shown())
         self._add_settings_group(self._add_card(content_layout, "settings_group_micro"), _MICRO_KEYS)
         self._add_settings_group(self._add_card(content_layout, "settings_group_generic"), _GENERIC_KEYS)
 
@@ -614,7 +628,19 @@ class DevicePage(QWidget):
 
         self._update_worker = UpdateCheckWorker(project_version(), force=True)
         self._update_worker.result.connect(self._on_check_update_result)
+        self._update_worker.failed.connect(self._on_check_update_failed)
         self._update_worker.start()
+
+    @Slot(str)
+    def _on_check_update_failed(self, error: str) -> None:
+        """GitHub could not be asked: say so instead of claiming the program is up to date."""
+        self._check_update_btn.setEnabled(True)
+        self._check_update_btn.setText(I18n.translate("ui", "check_for_updates"))
+        self._update_status_lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 10pt; background: transparent;"
+        )
+        self._update_status_lbl.setText(I18n.translate("ui", "win_update_unreachable"))
+        self._update_status_lbl.setToolTip(error)
 
     @Slot(str, str, str)
     def _on_check_update_result(self, version: str, url: str, wheel_url: str) -> None:
@@ -628,7 +654,10 @@ class DevicePage(QWidget):
             self._update_status_lbl.setStyleSheet(
                 f"color: {ACCENT}; font-size: 10pt; background: transparent; text-decoration: underline;"
             )
-            self._update_status_lbl.setText(f"v{version} available — click to install")
+            self._update_status_lbl.setToolTip("")
+            self._update_status_lbl.setText(
+                I18n.translate("ui", "win_update_click").replace("{version}", version) if IS_WINDOWS
+                else f"v{version} available — click to install")
             self._update_status_lbl.mousePressEvent = lambda _: self._do_install_update()
             self._update_status_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         else:
@@ -640,6 +669,10 @@ class DevicePage(QWidget):
         self.sig_update_result.emit(version, url, wheel_url)
 
     def _do_install_update(self) -> None:
+        if IS_WINDOWS:
+            from arctis_sound_manager.gui.win_update import run_windows_update
+            run_windows_update(self, getattr(self, "_update_version", ""))
+            return
         from arctis_sound_manager.update_checker import (
             InstallMethod, UpdateInstallWorker, build_terminal_cmd,
             detect_all_install_methods, package_manager_command,

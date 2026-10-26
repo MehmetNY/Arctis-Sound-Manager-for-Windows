@@ -510,7 +510,7 @@ def main():
 
     # ── Telemetry consent (first launch only) ─────────────────────────────────
     from arctis_sound_manager.telemetry import get_consent, set_consent
-    if get_consent() is None:
+    if not IS_WINDOWS and get_consent() is None:         # the Windows build has no telemetry, so nothing to ask
         from arctis_sound_manager.gui.telemetry_dialog import TelemetryConsentDialog
         def _ask_telemetry():
             set_consent(_exec_foreground(TelemetryConsentDialog()) == QDialog.Accepted)

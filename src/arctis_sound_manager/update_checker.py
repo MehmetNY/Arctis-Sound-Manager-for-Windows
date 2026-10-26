@@ -17,6 +17,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from arctis_sound_manager.constants import IS_WINDOWS
+
 
 class InstallMethod(Enum):
     RPM = auto()    # dnf / COPR / rpm
@@ -496,6 +498,9 @@ class UpdateCheckWorker(QThread):
     """Emit (version, url, wheel_url) if a newer release exists, else ("", "", "")."""
 
     result = Signal(str, str, str)
+    #: Windows only: GitHub could not be asked (the result signal then stays silent, so "up to date" is never
+    #: claimed on the strength of a failed request).
+    failed = Signal(str)
 
     def __init__(self, current_version: str, force: bool = False):
         super().__init__()
@@ -507,9 +512,30 @@ class UpdateCheckWorker(QThread):
             self._check()
         except Exception as exc:
             log.debug("Update check failed: %s", exc)
+            if IS_WINDOWS:
+                self.failed.emit(str(exc))
+            else:
+                self.result.emit("", "", "")
+
+    def _check_windows(self) -> None:
+        """The Windows port is updated from its own repository's published releases (win/updates.py); the
+        third value of the signal is the installer's address."""
+        from arctis_sound_manager.win import updates
+        try:
+            offer = updates.check(self._current)
+        except updates.UpdateError as exc:
+            log.debug("Update check failed: %s", exc)
+            self.failed.emit(str(exc))
+            return
+        if offer is None:
             self.result.emit("", "", "")
+        else:
+            self.result.emit(offer.version, offer.page_url, offer.installer_url)
 
     def _check(self):
+        if IS_WINDOWS:
+            self._check_windows()
+            return
         if _parse_version(self._current) is None:
             self.result.emit("", "", "")
             return
@@ -709,3 +735,35 @@ class UpdateInstallWorker(QThread):
         except Exception as exc:
             log.error("Update install failed: %s", exc)
             self.finished.emit(False, str(exc))
+
+
+class WinUpdateInstallWorker(QThread):
+    """Windows: fetch the installer of the newest published release, verify it, start it. Emits ``done(ok, message)``
+    when the installer has been started (the program must then end) or when something went wrong."""
+
+    progress = Signal(int, int)        # bytes done, bytes in all (0 = unknown)
+    done = Signal(bool, str)
+
+    def __init__(self, current_version: str):
+        super().__init__()
+        self._current = current_version
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self):
+        from arctis_sound_manager.win import updates
+        try:
+            offer = updates.check(self._current)
+            if offer is None:
+                self.done.emit(False, "there is no newer release")
+                return
+            path = updates.download(offer, progress=self.progress.emit, cancelled=lambda: self._cancelled)
+            updates.launch_installer(path)
+            self.done.emit(True, offer.version)
+        except updates.UpdateError as exc:
+            self.done.emit(False, str(exc))
+        except Exception as exc:  # noqa: BLE001 — a failed update must never take the window down
+            log.exception("Windows update failed")
+            self.done.emit(False, f"{type(exc).__name__}: {exc}")

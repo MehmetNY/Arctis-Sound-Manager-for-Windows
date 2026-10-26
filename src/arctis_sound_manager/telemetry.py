@@ -31,6 +31,8 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
+from arctis_sound_manager.constants import IS_WINDOWS
+
 log = logging.getLogger(__name__)
 
 _TELEMETRY_FILE = Path.home() / ".config" / "arctis_manager" / "telemetry.yaml"
@@ -62,7 +64,12 @@ def _save(data: dict) -> None:
 
 
 def get_consent() -> bool | None:
-    """Return True / False / None (never asked)."""
+    """Return True / False / None (never asked).
+
+    The Windows build has no telemetry at all: it never asks (so never None) and never sends (so never True).
+    """
+    if IS_WINDOWS:
+        return False
     data = _load()
     v = data.get("consent")
     if v is None:
@@ -71,6 +78,8 @@ def get_consent() -> bool | None:
 
 
 def set_consent(value: bool) -> None:
+    if IS_WINDOWS:
+        return
     data = _load()
     data["consent"] = value
     _save(data)
@@ -177,7 +186,7 @@ def maybe_send(headset: str, product_id: str = "") -> None:
     - already sent today
     - endpoint unreachable
     """
-    if get_consent() is not True:
+    if IS_WINDOWS or get_consent() is not True:
         return
 
     # Rate-limit: once per day

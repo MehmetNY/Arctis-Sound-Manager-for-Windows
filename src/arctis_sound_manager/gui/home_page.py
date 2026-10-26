@@ -2228,6 +2228,27 @@ class HomePage(QWidget):
             self._update_banner.hide()
             return
 
+        if IS_WINDOWS:
+            # The port is installed by its own setup program and updated by running the next one: no package
+            # manager, no multiple-installation puzzle (win/updates.py, gui/win_update.py).
+            self._update_label.setText(
+                I18n.translate("ui", "update_available").replace("{version}", version)
+            )
+            for button in (self._update_link_btn, self._update_install_btn):
+                try:
+                    button.clicked.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            self._update_link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+            self._update_link_btn.show()
+            self._update_version = version
+            self._update_install_btn.setText(I18n.translate("ui", "install_update"))
+            self._update_install_btn.setEnabled(True)
+            self._update_install_btn.clicked.connect(self._do_install_update)
+            self._update_install_btn.show()
+            self._update_banner.show()
+            return
+
         # Proactive multi-install guard: if ASM is installed by more than one
         # method (e.g. a stale pip --user shadowing an RPM), the "update
         # available" signal itself may be a phantom caused by the older copy
@@ -2296,6 +2317,10 @@ class HomePage(QWidget):
         restart_gui()
 
     def _do_install_update(self):
+        if IS_WINDOWS:
+            from arctis_sound_manager.gui.win_update import run_windows_update
+            run_windows_update(self, getattr(self, "_update_version", ""))
+            return
         from arctis_sound_manager.update_checker import (
             InstallMethod, UpdateInstallWorker, detect_all_install_methods,
             package_manager_command,

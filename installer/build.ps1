@@ -1,11 +1,18 @@
 # Builds the Windows installer end to end (what the windows-installer workflow runs; works on a developer PC too).
-#   ./installer/build.ps1                -> build\ASM-Setup-<version>.exe
+#   ./installer/build.ps1                -> build\ASM-Setup-<version>.exe   (the version of pyproject.toml)
+#   ./installer/build.ps1 -Version 1.7.0 -> the same for that version (pyproject.toml is rewritten to match: release builds)
 # Needs: Python 3.13 with the packages in installer\requirements.txt, MSVC (for the native helper), Inno Setup 6.
 param([string]$Version = "", [switch]$SkipVbCable)
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 if (-not $Version) { $Version = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value }
+else {
+    # a release build: the version of the release is the version the program reports (and the updater compares)
+    $text = [IO.File]::ReadAllText((Join-Path $root "pyproject.toml"))
+    $text = ([regex]'(?m)^version\s*=\s*"[^"]+"').Replace($text, "version = `"$Version`"", 1)
+    [IO.File]::WriteAllText((Join-Path $root "pyproject.toml"), $text, (New-Object Text.UTF8Encoding($false)))
+}
 Write-Host "== ASM $Version"
 
 # 1. the native helper (per-application audio tap)

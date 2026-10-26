@@ -222,6 +222,19 @@ class QSystrayApp(QBaseDesktopApp):
         self._staleness_timer.timeout.connect(self._check_upgraded_under_us)
         self._staleness_timer.start()
 
+        # Windows: a release published on GitHub is announced once with a tray notification (win/updates.py).
+        # The window's Home page then offers the update itself.
+        self._update_worker = None
+        self._update_available = ""
+        self._last_toast_was_update = False
+        if IS_WINDOWS:
+            self.tray_icon.messageClicked.connect(self._on_tray_message_clicked)
+            self._update_timer = QTimer(self)
+            self._update_timer.setInterval(6 * 3600 * 1000)
+            self._update_timer.timeout.connect(self._check_for_release)
+            self._update_timer.start()
+            QTimer.singleShot(90 * 1000, self._check_for_release)
+
         # ChatMix OSD: the tray is the one ASM process that is always running,
         # so it is the one that can show the dial moving mid-game. Settings are
         # cached here and refreshed by the settings watcher above, rather than
@@ -437,6 +450,10 @@ class QSystrayApp(QBaseDesktopApp):
         # Open App
         self._menu_actions['open_app'] = _add(QAction(I18n.translate('ui', 'open_app')))
         self._menu_actions['open_app'].triggered.connect(self.open_main_window)
+        if getattr(self, '_update_available', ''):
+            self._menu_actions['update'] = _add(QAction(
+                I18n.translate('ui', 'win_update_menu').replace('{version}', self._update_available)))
+            self._menu_actions['update'].triggered.connect(self.open_main_window)
 
         # Profiles
         try:
@@ -686,6 +703,7 @@ class QSystrayApp(QBaseDesktopApp):
 
     @Slot(str)
     def _on_game_preset_notify(self, message: str) -> None:
+        self._last_toast_was_update = False
         self.tray_icon.showMessage(
             "Arctis Sound Manager", message, QSystemTrayIcon.MessageIcon.Information, 4000
         )
@@ -883,6 +901,37 @@ class QSystrayApp(QBaseDesktopApp):
 
     def is_stopping(self):
         return hasattr(self, '_stopping') and self._stopping
+
+    def _check_for_release(self) -> None:
+        worker = self._update_worker
+        if worker is not None and worker.isRunning():
+            return
+        from arctis_sound_manager.update_checker import UpdateCheckWorker
+        from arctis_sound_manager.utils import project_version
+        worker = UpdateCheckWorker(project_version())
+        worker.result.connect(self._on_release_found)          # a bound method: runs on the UI thread
+        self._update_worker = worker
+        worker.start()
+
+    @Slot(str, str, str)
+    def _on_release_found(self, version: str, url: str, installer_url: str) -> None:
+        self._update_available = version
+        if not version:
+            return
+        from arctis_sound_manager.win import updates
+        if not updates.should_announce(version):
+            return
+        updates.mark_notified(version)
+        self._last_toast_was_update = True
+        self.tray_icon.showMessage(
+            "Arctis Sound Manager",
+            I18n.translate('ui', 'win_update_toast').replace('{version}', version),
+            QSystemTrayIcon.MessageIcon.Information, 15000,
+        )
+
+    def _on_tray_message_clicked(self) -> None:
+        if self._last_toast_was_update and self._update_available:
+            QTimer.singleShot(0, self.open_main_window)
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         # Trigger = left single-click. Open (or raise) the main GUI window.
