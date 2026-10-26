@@ -55,6 +55,13 @@ def find_library() -> Path | None:
         spec = None
     if spec and spec.submodule_search_locations:
         candidates += [Path(p) for p in spec.submodule_search_locations]
+    if getattr(sys, "frozen", False):
+        # the installed program: build.ps1 puts rnnoise.dll next to the exe, and PyInstaller collects the copy from
+        # the pyrnnoise wheel into its own folder
+        candidates.append(Path(sys.executable).parent)
+        bundle = getattr(sys, "_MEIPASS", None)
+        if bundle:
+            candidates += [Path(bundle), Path(bundle) / "pyrnnoise"]
     candidates.append(Path.home() / ".config" / "arctis_manager" / "native")
     for folder in candidates:
         for name in _NAMES[:3]:

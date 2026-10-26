@@ -2642,10 +2642,12 @@ class _WaveformWidget(QWidget):
         self.setFixedHeight(54)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._phase = 0.0
+        # Runs only while the widget is on screen (showEvent/hideEvent) and never from the constructor: a card on a
+        # page nobody has opened yet is built hidden, gets no hideEvent, and its timer used to tick for the whole life
+        # of the window. 20 frames a second of 520 antialiased segments is the most expensive thing on this page.
         self._timer = QTimer(self)
-        self._timer.setInterval(50)
+        self._timer.setInterval(66)
         self._timer.timeout.connect(self._tick)
-        self._timer.start()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -2656,7 +2658,10 @@ class _WaveformWidget(QWidget):
         self._timer.stop()
 
     def _tick(self):
-        self._phase = (self._phase + 0.12) % (2 * math.pi * 50)
+        if not self.isVisible() or self.window().isMinimized():
+            self._timer.stop()                 # restarted by the next showEvent
+            return
+        self._phase = (self._phase + 0.17) % (2 * math.pi * 50)
         self.update()
 
     def paintEvent(self, event):
@@ -2758,9 +2763,21 @@ class _NoiseCancelingCard(QWidget):
     _ENGINES = (("rnnoise", "RNNoise (ClearCast)"), ("deepfilternet", "DeepFilterNet"))
 
     @classmethod
+    def _engines(cls) -> tuple[tuple[str, str], ...]:
+        """The engines this machine can run. On Windows that is RNNoise, which ships inside the program (the audio
+        engine calls rnnoise.dll itself); DeepFilterNet is a LADSPA plugin for PipeWire and has no Windows build, so
+        offering it only produced a dialog asking for a plugin that cannot be installed."""
+        return cls._ENGINES[:1] if IS_WINDOWS else cls._ENGINES
+
+    @classmethod
     def _check_rnnoise(cls) -> bool:
         if cls._rnnoise_available is None:
-            cls._rnnoise_available = _find_ladspa_plugin("librnnoise*.so") is not None
+            if IS_WINDOWS:
+                # The library the audio engine loads — looked for, not loaded: the window needs no copy of it
+                from arctis_sound_manager.win.audio import rnnoise
+                cls._rnnoise_available = rnnoise.find_library() is not None
+            else:
+                cls._rnnoise_available = _find_ladspa_plugin("librnnoise*.so") is not None
         return cls._rnnoise_available
 
     @classmethod
@@ -2778,6 +2795,9 @@ class _NoiseCancelingCard(QWidget):
         self._state = state
         self._nc = state["noiseCanceling"]
         self._engine = self._nc.get("engine", "rnnoise")
+        if self._engine not in dict(self._engines()):
+            self._engine = "rnnoise"             # a state file written on another system, or by an older build
+            self._nc["engine"] = "rnnoise"
         self._install_worker: _DeepFilterInstallWorker | None = None
         self._pending_enable = False
         self.setObjectName("microCard")
@@ -2798,7 +2818,7 @@ class _NoiseCancelingCard(QWidget):
         eng_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9pt;")
         engine_row.addWidget(eng_lbl)
         self._engine_combo = NoWheelComboBox()
-        for key, label in self._ENGINES:
+        for key, label in self._engines():
             self._engine_combo.addItem(label, key)
         _idx = self._engine_combo.findData(self._engine)
         if _idx >= 0:
@@ -2806,6 +2826,9 @@ class _NoiseCancelingCard(QWidget):
         self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
         engine_row.addWidget(self._engine_combo, 1)
         root.addLayout(engine_row)
+        if len(self._engines()) < 2:             # one engine: nothing to choose
+            eng_lbl.hide()
+            self._engine_combo.hide()
 
         # Status line: missing-plugin hint, or download progress.
         self._status_lbl = QLabel("")
@@ -2849,7 +2872,8 @@ class _NoiseCancelingCard(QWidget):
                 self._toggle.blockSignals(False)
                 self._nc["enabled"] = False
             self._status_lbl.setStyleSheet("color: #e8a000; font-size: 9pt; font-style: italic;")
-            self._status_lbl.setText("" if available else _t("nc_rnnoise_missing"))
+            missing = _t("nc_rnnoise_missing_win") if IS_WINDOWS else _t("nc_rnnoise_missing")
+            self._status_lbl.setText("" if available else missing)
         else:  # deepfilternet — installable on demand, toggle stays usable
             self._toggle.setEnabled(True)
             self._status_lbl.setStyleSheet("color: #e8a000; font-size: 9pt; font-style: italic;")
