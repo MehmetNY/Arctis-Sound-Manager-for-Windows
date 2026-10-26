@@ -57,7 +57,7 @@ jobs:
     # started the way "Start with Windows" starts it, real programs playing, the engine mixing, the uninstaller.
     needs: installer
     runs-on: windows-2025
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,10 +88,12 @@ jobs:
         run: ./ci/publish.sh ci-logs-chain chain.log chain-install.log chain-setup.log
 
   soak:
-    # Does the installed program grow? Every ASM process sampled for a while on a real Windows machine (memory, CPU, handles).
+    # Does the installed program grow? Every ASM process sampled for a while on a real Windows machine (memory, CPU, handles,
+    # GDI objects): phase 1 with the window open and cycling through its pages, phase 2 without a headset and with the window
+    # closed (the tray must replace itself, the engine must not keep probing). See ci/soak.py.
     needs: installer
     runs-on: windows-2025
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -108,8 +110,8 @@ jobs:
         run: ./ci/chain_install.ps1 -Installer (Get-ChildItem installer-exe -Filter "ASM-Setup-*.exe" | Select-Object -First 1).FullName
       - name: Soak
         shell: pwsh
-        timeout-minutes: 25
-        run: python ci/soak.py 14
+        timeout-minutes: 32
+        run: python ci/soak.py 12
         continue-on-error: true
       - name: Annotate
         if: always()
