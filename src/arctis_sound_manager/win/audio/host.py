@@ -97,9 +97,12 @@ class EngineHost:
         with self._lock:
             path = config_path(self.config_dir)
             current = load_config(self.config_dir)
-            if path.exists() and not current.auto:
+            # a file written by a build from before the per-application tap (cables per channel, set up by hand) is
+            # worth nothing to this one: redo it, keeping the old one beside it
+            legacy = path.exists() and current.schema < EngineConfig().schema
+            if path.exists() and not current.auto and not legacy:
                 return False
-            if path.exists() and not current.problems() and not self._missing(current):
+            if path.exists() and not legacy and not current.problems() and not self._missing(current):
                 return False                                          # still fine as it is
             try:
                 backend = self._backend_factory(current)
@@ -114,6 +117,12 @@ class EngineHost:
             guess.auto = True
             if path.exists() and guess.to_dict() == current.to_dict():
                 return False
+            if legacy:
+                try:
+                    path.replace(path.with_name(path.name + ".old-build"))
+                    _log.info("auto-setup: the configuration of an older build is kept as %s.old-build", path.name)
+                except OSError:
+                    pass
             save_config(guess, self.config_dir)
             _log.info("auto-setup: configuration written (headset %r, microphone %r -> %r)", guess.outputs.get("headset"),
                       guess.mic_input, guess.mic_output)

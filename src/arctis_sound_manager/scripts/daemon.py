@@ -268,6 +268,8 @@ async def main_async():
         # The ASM audio engine (virtual cables -> EQ / spatial / ChatMix -> headset) is its own process.
         from arctis_sound_manager.win.audio.service import start_engine_for_daemon
         try:
+            from arctis_sound_manager.win.migrate import run as run_migrations
+            run_migrations(logger)
             start_engine_for_daemon(logger)
         except Exception as exc:  # noqa: BLE001 — the headset controls must come up regardless
             logger.warning('Windows: could not start the audio engine: %r', exc)

@@ -49,7 +49,7 @@ def test_a_missing_file_gives_defaults(tmp_path):
 @pytest.mark.parametrize("junk", ["not json at all", "[]", "42", "null", '{"latency": 7}', '{"inputs": "x"}'])
 def test_junk_never_raises_and_never_changes_the_defaults(tmp_path, junk):
     (tmp_path / "win_audio_engine.json").write_text(junk)
-    assert load_config(tmp_path) == EngineConfig()
+    assert load_config(tmp_path) == EngineConfig(schema=1)                        # no mark: it is an older build's file
 
 
 def test_bad_values_are_dropped_one_by_one():

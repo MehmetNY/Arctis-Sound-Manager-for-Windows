@@ -466,6 +466,20 @@ def test_an_automatic_configuration_that_still_works_is_left_alone(host, tmp_pat
     assert config_path(tmp_path).stat().st_mtime_ns == stamp
 
 
+def test_a_file_of_an_older_build_is_redone_even_though_the_user_saved_it(host, tmp_path):
+    from arctis_sound_manager.win.audio.engine_config import config_path, load_config
+    old = config_path(tmp_path)
+    old.write_text(json.dumps({"latency": "low", "inputs": {"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
+                               "outputs": {"headset": "Arctis Nova Pro"}, "mic": {"input": "Microphone (Arctis", "output": "CABLE-C Input"}}))
+    assert load_config(tmp_path).schema == 1
+    assert host.autoconfigure()
+    cfg = load_config(tmp_path)
+    assert cfg.schema == 2 and cfg.auto and "Arctis" in cfg.outputs["headset"]
+    assert old.with_name(old.name + ".old-build").exists()                       # the old one is kept beside it
+    stamp = old.stat().st_mtime_ns
+    assert not host.autoconfigure() and old.stat().st_mtime_ns == stamp           # and only once
+
+
 def test_with_too_few_devices_nothing_is_written(tmp_path):
     from arctis_sound_manager.win.audio.engine_config import config_path
     h = EngineHost(tmp_path, backend_factory=lambda cfg: FakeBackend([dev(9, "Speakers (Realtek(R) Audio)", outs=2)]), probe=None)

@@ -31,6 +31,7 @@ import json
 import math
 import os
 import re
+import sys
 from pathlib import Path
 
 from arctis_sound_manager import device_state
@@ -1056,6 +1057,16 @@ _SAFE_MODE_MARKER = Path.home() / ".config" / "arctis_manager" / "filter_chain_s
 # Reset explicitly via reset_filter_chain_safe_mode() on a deliberate user action.
 _filter_chain_safe_mode: bool = _SAFE_MODE_MARKER.exists()
 
+if sys.platform == "win32":
+    # There is no PipeWire filter-chain on Windows, so "the filter-chain crashed" cannot be true there. An early
+    # build of the Windows port could leave this marker behind, which showed a "Safe mode is on" banner that no
+    # button could clear: forget it.
+    _filter_chain_safe_mode = False
+    try:
+        _SAFE_MODE_MARKER.unlink(missing_ok=True)
+    except OSError:
+        pass
+
 
 def reset_filter_chain_safe_mode() -> None:
     """Clear the safe-mode flag and remove the disk marker so the next
@@ -1099,6 +1110,8 @@ def is_filter_chain_safe_mode_armed() -> bool:
 
     Cheap file stat the GUI can poll to surface a 'safe mode is on / re-enable
     EQ' banner, even though it runs in a different process from the daemon."""
+    if sys.platform == "win32":
+        return False
     return _SAFE_MODE_MARKER.exists()
 
 

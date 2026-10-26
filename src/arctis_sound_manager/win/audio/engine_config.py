@@ -79,6 +79,7 @@ class EngineConfig:
     mic_input: str = ""
     mic_output: str = ""
     master_limiter: bool = True
+    schema: int = 2                           # 1: a build before the per-application tap (cables per channel); 2: the tap
     tap_cables: bool = True                   # also take programs that play into a virtual cable's Input end (Windows' output picked as "CABLE Input")
     auto: bool = False                        # made by ASM itself (first run): it may be redone when devices appear or go
 
@@ -107,7 +108,7 @@ class EngineConfig:
     # ── (de)serialisation ───────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
-        out = {"latency": self.latency, "device_latency": self.device_latency,
+        out = {"schema": self.schema, "latency": self.latency, "device_latency": self.device_latency,
                "inputs": dict(self.inputs), "outputs": dict(self.outputs), "routing": dict(self.routing),
                "mic": {"input": self.mic_input, "output": self.mic_output},
                "master_limiter": self.master_limiter}
@@ -126,6 +127,7 @@ class EngineConfig:
         """Tolerant: anything missing or malformed falls back to the default; nothing raises."""
         cfg = cls()
         if not isinstance(raw, dict):
+            cfg.schema = 1                                            # junk: not worth keeping, the next auto-setup replaces it
             return cfg
         latency = raw.get("latency")
         if latency in PROFILES:
@@ -162,6 +164,8 @@ class EngineConfig:
             cfg.auto = True
         if raw.get("tap_cables") is False:
             cfg.tap_cables = False
+        schema = raw.get("schema")
+        cfg.schema = schema if isinstance(schema, int) and not isinstance(schema, bool) else 1     # no mark: an older build wrote it
         return cfg
 
     def problems(self) -> list[str]:
@@ -221,7 +225,7 @@ def load_config(config_dir: Path | None = None) -> EngineConfig:
         return EngineConfig()
     except (OSError, ValueError) as exc:
         _log.warning("cannot read %s: %s; using defaults", path, exc)
-        return EngineConfig()
+        return EngineConfig(schema=1)
 
 
 def save_config(cfg: EngineConfig, config_dir: Path | None = None) -> Path:
