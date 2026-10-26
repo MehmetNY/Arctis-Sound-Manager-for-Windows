@@ -45,7 +45,6 @@ from arctis_sound_manager.constants import IS_WINDOWS
 logger = logging.getLogger(__name__)
 
 _CALL_TIMEOUT_S = 2.0
-_DESKTOP_SWITCHDESKTOP = 0x0100   # access right OpenInputDesktop needs (Windows)
 # After a bus refused to connect, how long before trying again. The daemon
 # can start before the graphical session exists; retrying on every refresh
 # tick would log the same failure every five seconds.
@@ -86,32 +85,10 @@ def _unpack(value: Any) -> Any:
     return value
 
 
-def _workstation_locked() -> bool:
-    """Windows: True while the lock screen (or a UAC prompt) owns the input desktop.
-
-    ``OpenInputDesktop`` is refused for a normal process as soon as the secure desktop is
-    showing, and succeeds on the user's own desktop. Any other failure counts as "not locked":
-    the screen then behaves as it did before this feature existed.
-    """
-    try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        user32.OpenInputDesktop.restype = ctypes.c_void_p
-        user32.CloseDesktop.argtypes = [ctypes.c_void_p]
-        desktop = user32.OpenInputDesktop(0, False, _DESKTOP_SWITCHDESKTOP)
-        if not desktop:
-            return True
-        user32.CloseDesktop(desktop)
-        return False
-    except Exception as e:  # noqa: BLE001
-        logger.debug("Desktop session: lock state unavailable: %r", e)
-        return False
-
-
 class DesktopSession:
     """On Windows the D-Bus questions below have no counterpart (no MPRIS, no logind): ``now_playing`` asks
-    the system media controls instead (win/media.py) and ``user_away`` means "the workstation is locked"."""
+    the system media controls instead (win/media.py) and ``user_away`` means "the workstation is locked, or
+    nobody touched the keyboard or mouse for a while" (win/presence.py)."""
 
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -133,7 +110,8 @@ class DesktopSession:
     def user_away(self) -> bool:
         """True when the session is locked or reported idle."""
         if IS_WINDOWS:
-            return _workstation_locked()
+            from arctis_sound_manager.win import presence
+            return presence.user_away()
         return self._run(self._user_away(), default=False)
 
     def close(self) -> None:

@@ -1,7 +1,6 @@
-"""DesktopSession on Windows: no D-Bus round trips (they timed out every refresh), lock state via user32."""
+"""DesktopSession on Windows: no D-Bus round trips (they timed out every refresh), presence via win/presence.py."""
 from __future__ import annotations
 
-import ctypes
 import importlib
 import sys
 from types import SimpleNamespace
@@ -43,21 +42,6 @@ def on_windows(monkeypatch, desktop_session):
     monkeypatch.setattr(desktop_session, "IS_WINDOWS", True)
 
 
-def _fake_user32(monkeypatch, open_result=None, open_raises=None):
-    calls = SimpleNamespace(open=[], closed=[])
-
-    def open_input_desktop(flags, inherit, access):
-        calls.open.append((flags, inherit, access))
-        if open_raises:
-            raise open_raises
-        return open_result
-
-    user32 = SimpleNamespace(OpenInputDesktop=open_input_desktop,
-                             CloseDesktop=lambda handle: calls.closed.append(handle))
-    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32), raising=False)
-    return calls
-
-
 def test_now_playing_comes_from_the_media_controls_and_never_touches_the_bus_on_windows(
         on_windows, desktop_session, monkeypatch):
     from arctis_sound_manager.win import media
@@ -91,33 +75,34 @@ def test_now_playing_is_empty_when_the_media_controls_fail_on_windows(on_windows
         session.close()
 
 
+def _presence(monkeypatch, locked=False, idle=0.0):
+    from arctis_sound_manager.win import presence
+    monkeypatch.setattr(presence, "session_locked", lambda: locked)
+    monkeypatch.setattr(presence, "idle_seconds", lambda: idle)
+
+
 def test_user_away_does_not_use_the_bus_on_windows(on_windows, desktop_session, monkeypatch):
     session = desktop_session.DesktopSession()
     monkeypatch.setattr(session, "_run", lambda *a, **k: pytest.fail("a D-Bus query was attempted"))
-    _fake_user32(monkeypatch, open_result=0x1234)
+    _presence(monkeypatch)
     assert session.user_away() is False
     assert session._loop is None
 
 
 def test_locked_workstation_counts_as_away(on_windows, desktop_session, monkeypatch):
-    calls = _fake_user32(monkeypatch, open_result=0)           # NULL: the secure desktop owns input
+    _presence(monkeypatch, locked=True)
     assert desktop_session.DesktopSession().user_away() is True
-    assert calls.open == [(0, False, 0x0100)] and calls.closed == []
 
 
-def test_unlocked_workstation_is_not_away_and_the_handle_is_closed(on_windows, desktop_session, monkeypatch):
-    calls = _fake_user32(monkeypatch, open_result=0xBEEF)
-    assert desktop_session.DesktopSession().user_away() is False
-    assert calls.closed == [0xBEEF]
+def test_idle_keyboard_and_mouse_count_as_away(on_windows, desktop_session, monkeypatch):
+    from arctis_sound_manager.win import presence
+    _presence(monkeypatch, idle=presence.IDLE_AWAY_S + 1)
+    assert desktop_session.DesktopSession().user_away() is True
 
 
-def test_an_unexpected_user32_failure_means_not_away(on_windows, desktop_session, monkeypatch):
-    _fake_user32(monkeypatch, open_raises=OSError("boom"))
-    assert desktop_session.DesktopSession().user_away() is False
-
-
-def test_without_windll_the_answer_is_not_away(on_windows, desktop_session, monkeypatch):
-    monkeypatch.delattr(ctypes, "windll", raising=False)
+def test_recent_input_on_an_unlocked_desktop_is_present(on_windows, desktop_session, monkeypatch):
+    from arctis_sound_manager.win import presence
+    _presence(monkeypatch, idle=presence.IDLE_AWAY_S - 1)
     assert desktop_session.DesktopSession().user_away() is False
 
 

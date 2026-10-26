@@ -628,9 +628,9 @@ class OledManager:
             self._suspend_until = 0.0
 
     def _send_current_frame(self) -> None:
-        if self._off_for_away:
-            # Dark on purpose: the marquee threads keep ticking, the panel
-            # does not need their frames.
+        if self._off_for_away or self._screen_off:
+            # Dark on purpose (timeout or nobody there): the marquee threads keep
+            # ticking, the panel does not need their frames.
             return
         self._check_usb_device_reattached()
 
@@ -808,7 +808,10 @@ class OledManager:
                 if self._apply_away(gs):
                     continue
                 timeout = gs.oled_screen_timeout
-                if timeout > 0 and not self._screen_off and not gs.oled_custom_display:
+                # The timeout counts from the last wheel turn or settings change and applies to our own display
+                # as well as to the DAC's: it used to be skipped while Custom Display was on, so the slider
+                # looked dead to anybody who draws their own screen. 0 = never.
+                if timeout > 0 and not self._screen_off:
                     elapsed = datetime.now().timestamp() - self._last_update_time
                     if elapsed >= timeout:
                         self._screen_off = True
@@ -831,11 +834,11 @@ class OledManager:
     def _apply_away(self, gs) -> bool:
         """Dark panel while nobody is at the desktop. True = skip this tick.
 
-        The fixed timeout only ever counts from the last settings change, so
-        with Custom Display on — where it does not apply at all — the panel
-        drew the same header all night, and burn-in on this base station is
-        the complaint owners raise first. A locked or idle session is a far
-        better answer to "is anyone looking" than any timer.
+        The fixed timeout only ever counts from the last wheel turn or settings
+        change, so a panel left on a static header all night would burn in,
+        and burn-in on this base station is the complaint owners raise first.
+        A locked or idle session is a far better answer to "is anyone looking"
+        than any timer.
         """
         away = gs.oled_off_when_away and self._session.user_away()
         if not away:

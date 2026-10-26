@@ -242,3 +242,52 @@ def test_a_wheel_turn_while_away_keeps_the_panel_lit_for_the_grace_period(monkey
 
     assert manager._apply_away(manager._core.general_settings) is False
     assert not manager._screen_off
+
+
+# ── screen timeout ──────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("custom", [True, False])
+def test_the_screen_timeout_applies_with_and_without_custom_display(monkeypatch, custom):
+    """The slider used to be skipped while Custom Display was on - the setting looked dead."""
+    manager, _ = _manager(monkeypatch)
+    gs = manager._core.general_settings
+    gs.oled_screen_timeout = 10
+    gs.oled_custom_display = custom
+    manager._last_update_time = oled_mod.datetime.now().timestamp() - 60
+    dark: list[int] = []
+    monkeypatch.setattr(manager, "_go_dark", lambda: dark.append(1))
+    monkeypatch.setattr(manager, "_hand_back_screen", lambda: None)
+    monkeypatch.setattr(manager, "update_display", lambda activity=True: None)
+    monkeypatch.setattr(manager, "_advance_burn_in", lambda: None)
+    monkeypatch.setattr(oled_mod, "_REFRESH_INTERVAL_S", 0.0)
+    manager._stop_event.clear()
+    ticks = iter([False, False, True])
+    monkeypatch.setattr(manager._stop_event, "is_set", lambda: next(ticks, True))
+    manager._refresh_loop()
+    assert dark == [1] and manager._screen_off
+
+
+def test_a_zero_timeout_never_darkens_the_panel(monkeypatch):
+    manager, _ = _manager(monkeypatch)
+    gs = manager._core.general_settings
+    gs.oled_screen_timeout = 0
+    gs.oled_custom_display = True
+    manager._last_update_time = 0.0
+    dark: list[int] = []
+    monkeypatch.setattr(manager, "_go_dark", lambda: dark.append(1))
+    monkeypatch.setattr(manager, "update_display", lambda activity=True: None)
+    monkeypatch.setattr(manager, "_advance_burn_in", lambda: None)
+    monkeypatch.setattr(oled_mod, "_REFRESH_INTERVAL_S", 0.0)
+    manager._stop_event.clear()
+    ticks = iter([False, False, True])
+    monkeypatch.setattr(manager._stop_event, "is_set", lambda: next(ticks, True))
+    manager._refresh_loop()
+    assert dark == [] and not manager._screen_off
+
+
+def test_no_frames_are_sent_while_dark_for_the_timeout(monkeypatch):
+    manager, _ = _manager(monkeypatch)
+    manager._screen_off = True
+    manager._current_image = object()  # would crash crop_frame if reached
+    manager._send_current_frame()
+    assert manager._sent == []
