@@ -143,6 +143,8 @@ class SidebarButton(QPushButton):
         self._color_active = icon_color_active
         self._label_text = label
         self._active = False
+        self._applied: bool | None = None      # the state the style sheets were last set for (None: never)
+        self._icons: dict[str, QPixmap] = {}
 
         self._bg_hover = _theme.c("BG_BUTTON_HOVER")
         self._bg_active = _theme.c("BG_SIDEBAR_ACTIVE")
@@ -189,52 +191,53 @@ class SidebarButton(QPushButton):
         self._bg_active = theme["BG_SIDEBAR_ACTIVE"]
         self._text_primary = theme["TEXT_PRIMARY"]
         self._text_secondary = theme["TEXT_SECONDARY"]
-        self.set_active(self._active)
+        self._icons.clear()                                   # the colours changed: tint the icons again
+        self._apply_state(self._active)
+
+    def _tinted_icon(self, color: str) -> QPixmap:
+        """The icon in *color*, drawn once per colour. Redrawing it on every click read the SVG from disk and built
+        a renderer and a pixmap for each of the seven buttons, whether or not its state had changed."""
+        pix = self._icons.get(color)
+        if pix is None:
+            pix = QPixmap(self._icon_size, self._icon_size)
+            pix.fill(QColor(0, 0, 0, 0))
+            try:
+                with open(self._svg_path, encoding="utf-8") as f:
+                    svg_data = f.read()
+                svg_data = re.sub(r'(fill|stroke)="(?!none)[^"]*"', f'fill="{color}"', svg_data)
+                svg_data = re.sub(r'(fill|stroke):\s*(?!none)[^;}"]+', f'fill:{color}', svg_data)
+                renderer = QSvgRenderer(svg_data.encode("utf-8"))
+                if renderer.isValid():
+                    painter = QPainter(pix)
+                    renderer.render(painter)
+                    painter.end()
+            except Exception:
+                pass
+            self._icons[color] = pix
+        return pix
 
     def set_active(self, active: bool):
+        """Light the button up or not. A button that is already in that state is left alone: every page change
+        calls this for all of them, and re-applying a style sheet makes Qt parse and re-polish it again."""
+        if self._applied is active:
+            return
+        self._apply_state(active)
+
+    def _apply_state(self, active: bool) -> None:
         self._active = active
+        self._applied = active
         if active:
             self.setStyleSheet(self._get_active_qss())
             self._label_widget.setStyleSheet(
                 f"color: {self._text_primary}; font-size: 10pt; background: transparent;"
             )
-            # Reload icon with active color
-            pix = QPixmap(self._icon_size, self._icon_size)
-            pix.fill(QColor(0, 0, 0, 0))
-            try:
-                with open(self._svg_path, encoding="utf-8") as f:
-                    svg_data = f.read()
-                svg_data = re.sub(r'(fill|stroke)="(?!none)[^"]*"', f'fill="{self._color_active}"', svg_data)
-                svg_data = re.sub(r'(fill|stroke):\s*(?!none)[^;}"]+', f'fill:{self._color_active}', svg_data)
-                renderer = QSvgRenderer(svg_data.encode("utf-8"))
-                if renderer.isValid():
-                    painter = QPainter(pix)
-                    renderer.render(painter)
-                    painter.end()
-            except Exception:
-                pass
-            self._icon_widget.setPixmap(pix)
+            self._icon_widget.setPixmap(self._tinted_icon(self._color_active))
         else:
             self.setStyleSheet(self._get_base_qss())
             self._label_widget.setStyleSheet(
                 f"color: {self._text_secondary}; font-size: 10pt; background: transparent;"
             )
-            # Reload icon with inactive color
-            pix = QPixmap(self._icon_size, self._icon_size)
-            pix.fill(QColor(0, 0, 0, 0))
-            try:
-                with open(self._svg_path, encoding="utf-8") as f:
-                    svg_data = f.read()
-                svg_data = re.sub(r'(fill|stroke)="(?!none)[^"]*"', f'fill="{self._color_inactive}"', svg_data)
-                svg_data = re.sub(r'(fill|stroke):\s*(?!none)[^;}"]+', f'fill:{self._color_inactive}', svg_data)
-                renderer = QSvgRenderer(svg_data.encode("utf-8"))
-                if renderer.isValid():
-                    painter = QPainter(pix)
-                    renderer.render(painter)
-                    painter.end()
-            except Exception:
-                pass
-            self._icon_widget.setPixmap(pix)
+            self._icon_widget.setPixmap(self._tinted_icon(self._color_inactive))
 
 
 # ── SectionTitle ───────────────────────────────────────────────────────────────

@@ -59,10 +59,21 @@ class DbusWrapper(QObject):
     _setting_queued: dict = {}     # name -> newest value that has not been sent yet
     _setting_senders: set = set()  # names that have a sender running
 
+    # The two polling loops (GetStatus, GetSettings) run for as long as the window is visible and each holds a pool
+    # thread. They get a pool of their own: commands (setting changes, option lists) wait in line behind a loop that
+    # never ends when they share one, and the pool has four threads.
+    _poll_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='asm-poll')
+
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent)
         self._consecutive_failures = 0
         self._last_alive_state: bool | None = None
+        # One number per loop kind, raised on every start and every stop. A loop belongs to the number it was
+        # started with and ends when that is no longer the current one — so a window that is hidden and shown again
+        # within a second can never leave two loops of the same kind running (the old flag was cleared by the new
+        # start before the old loop looked at it).
+        self._poll_generation = {'status': 0, 'settings': 0}
+        self._poll_lock = threading.Lock()
 
     def _record_success(self):
         self._consecutive_failures = 0
@@ -79,16 +90,32 @@ class DbusWrapper(QObject):
     def stop(self):
         self.logger.info("Stopping D-Bus wrapper...")
         self._stopping = True
+        with self._poll_lock:
+            for kind in self._poll_generation:
+                self._poll_generation[kind] += 1
+
+    def _begin_poll(self, kind: str):
+        """Start a new loop of *kind*: ends every older one and returns the test the new loop asks each round."""
+        if hasattr(self, '_stopping'):
+            del self._stopping
+        with self._poll_lock:
+            self._poll_generation[kind] += 1
+            mine = self._poll_generation[kind]
+        return lambda: self._poll_generation[kind] == mine and not hasattr(self, '_stopping')
 
     def request_status(self, one_time = False, frequency_seconds: int = 1) -> None:
-        if hasattr(self, '_stopping'):
-            del self._stopping
-        self._executor.submit(self.request_status_thread, frequency_seconds=0 if one_time else frequency_seconds)
+        if one_time:                                           # one answer; a running loop is not disturbed
+            self._executor.submit(self.request_status_thread, frequency_seconds=0, keep_going=lambda: True)
+            return
+        self._poll_executor.submit(self.request_status_thread, frequency_seconds=frequency_seconds,
+                                   keep_going=self._begin_poll('status'))
 
     def request_settings(self, one_time = False, frequency_seconds: int = 1) -> None:
-        if hasattr(self, '_stopping'):
-            del self._stopping
-        self._executor.submit(self.request_settings_thread, frequency_seconds=0 if one_time else frequency_seconds)
+        if one_time:
+            self._executor.submit(self.request_settings_thread, frequency_seconds=0, keep_going=lambda: True)
+            return
+        self._poll_executor.submit(self.request_settings_thread, frequency_seconds=frequency_seconds,
+                                   keep_going=self._begin_poll('settings'))
 
     @staticmethod
     def request_list_options(list_name: str, qt_signal: SignalInstance):
@@ -156,16 +183,54 @@ class DbusWrapper(QObject):
             if dbus_bus is not None:
                 dbus_bus.disconnect()
 
+    # One equaliser read at a time. The Equalizer page asks every couple of seconds while it is open, and each
+    # ask used to be a job of its own on the shared pool (a new event loop and a new bus connection each): with
+    # the daemon slow or gone they piled up faster than they finished, and they held the pool threads that carry
+    # setting changes. Now a request that arrives while one is running just joins it.
+    _eq_lock = threading.Lock()
+    _eq_waiters: list = []
+    _eq_running = False
+    _EQ_MAX_WAITERS = 16
+
     @staticmethod
     def get_eq_bands(qt_signal: SignalInstance) -> None:
-        DbusWrapper._executor.submit(DbusWrapper.get_eq_bands_thread, qt_signal=qt_signal)
+        with DbusWrapper._eq_lock:
+            DbusWrapper._eq_waiters.append(qt_signal)
+            del DbusWrapper._eq_waiters[:-DbusWrapper._EQ_MAX_WAITERS]
+            if DbusWrapper._eq_running:
+                return
+            DbusWrapper._eq_running = True
+        try:
+            DbusWrapper._executor.submit(DbusWrapper.get_eq_bands_thread)
+        except Exception:
+            with DbusWrapper._eq_lock:
+                DbusWrapper._eq_running = False
+            raise
 
     @staticmethod
-    def get_eq_bands_thread(qt_signal: SignalInstance):
-        asyncio.run(DbusWrapper.get_eq_bands_async(qt_signal))
+    def get_eq_bands_thread(qt_signal: SignalInstance | None = None):
+        if qt_signal is not None:                       # the old call shape: one reader, answered directly
+            asyncio.run(DbusWrapper.get_eq_bands_async(qt_signal))
+            return
+        try:
+            while True:
+                with DbusWrapper._eq_lock:
+                    waiters, DbusWrapper._eq_waiters = DbusWrapper._eq_waiters, []
+                if not waiters:
+                    return
+                bands = asyncio.run(DbusWrapper._read_eq_bands())
+                if bands is not None:
+                    for signal in waiters:
+                        try:
+                            signal.emit(bands)
+                        except RuntimeError:            # its page is gone
+                            pass
+        finally:
+            with DbusWrapper._eq_lock:
+                DbusWrapper._eq_running = False
 
     @staticmethod
-    async def get_eq_bands_async(qt_signal: SignalInstance):
+    async def _read_eq_bands():
         dbus_bus = None
         try:
             dbus_bus = await MessageBus().connect()
@@ -177,12 +242,29 @@ class DbusWrapper(QObject):
                 message_type=MessageType.METHOD_CALL,
             ))
             if reply and reply.message_type == MessageType.METHOD_RETURN:
-                qt_signal.emit(json.loads(reply.body[0]))
+                return json.loads(reply.body[0])
         except Exception as e:
-            DbusWrapper.logger.error('Error in get_eq_bands: %s', e)
+            DbusWrapper._log_eq_failure(e)
         finally:
             if dbus_bus is not None:
                 dbus_bus.disconnect()
+        return None
+
+    _eq_last_failure = 0.0
+
+    @staticmethod
+    def _log_eq_failure(exc: Exception) -> None:
+        """At most one line a minute: with the daemon away this fails on every ask."""
+        now = time.monotonic()
+        if now - DbusWrapper._eq_last_failure >= 60.0:
+            DbusWrapper._eq_last_failure = now
+            DbusWrapper.logger.error('Error in get_eq_bands: %s', exc)
+
+    @staticmethod
+    async def get_eq_bands_async(qt_signal: SignalInstance):
+        bands = await DbusWrapper._read_eq_bands()
+        if bands is not None:
+            qt_signal.emit(bands)
 
     @staticmethod
     def show_splash() -> None:
@@ -343,7 +425,7 @@ class DbusWrapper(QObject):
             if dbus_bus is not None:
                 dbus_bus.disconnect()
 
-    def request_status_thread(self, frequency_seconds: int):
+    def request_status_thread(self, frequency_seconds: int, keep_going=None):
         asyncio.run(self.dbus_request_async(
             self.sig_status,
             frequency_seconds,
@@ -351,9 +433,10 @@ class DbusWrapper(QObject):
             DBUS_STATUS_OBJECT_PATH,
             DBUS_STATUS_INTERFACE_NAME,
             'GetStatus',
+            keep_going=keep_going,
         ))
 
-    def request_settings_thread(self, frequency_seconds: int):
+    def request_settings_thread(self, frequency_seconds: int, keep_going=None):
         asyncio.run(self.dbus_request_async(
             self.sig_settings,
             frequency_seconds,
@@ -362,10 +445,27 @@ class DbusWrapper(QObject):
             DBUS_SETTINGS_INTERFACE_NAME,
             'GetSettings',
             transform=self._overlay_held_settings,
+            keep_going=keep_going,
         ))
 
-    async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str, member: str, transform=None):
-        while not hasattr(self, '_stopping'):
+    # A poll that fails again and again (the daemon is not running) is repeated ever less often, up to this long.
+    _FAILING_POLL_MAX_SECONDS = 10.0
+
+    def _poll_nap(self, seconds: float, keep_going) -> None:
+        """Sleep, but wake up as soon as this loop is told to end."""
+        end = time.monotonic() + seconds
+        while keep_going():
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            sleep(min(0.1, left))
+
+    async def dbus_request_async(self, sig: SignalInstance, freq: int, destination: str, path: str, interface: str,
+                                 member: str, transform=None, keep_going=None):
+        if keep_going is None:
+            keep_going = lambda: not hasattr(self, '_stopping')   # noqa: E731 — the original single-flag behaviour
+        failing = 0
+        while keep_going():
             dbus_bus = None
             try:
                 # connect() can hang indefinitely when the session bus address
@@ -386,24 +486,29 @@ class DbusWrapper(QObject):
                 )
 
                 if reply is None:
-                    self.logger.error('Error getting settings: no reply')
+                    self._log_poll_failure(failing, 'Error getting settings: no reply')
+                    failing += 1
                     self._record_failure()
                 elif reply.message_type == MessageType.ERROR:
-                    self.logger.error('Error getting settings: %s', reply.body)
+                    self._log_poll_failure(failing, 'Error getting settings: %s' % (reply.body,))
+                    failing += 1
                     self._record_failure()
                 else:
                     payload = json.loads(reply.body[0]) or {}
                     if transform is not None:
                         payload = transform(payload)
+                    failing = 0
                     sig.emit(payload)
                     self._record_success()
             except asyncio.TimeoutError:
-                self.logger.warning(
-                    f'D-Bus {member} timed out after {self._CALL_TIMEOUT_SECONDS}s — daemon unresponsive?'
+                self._log_poll_failure(
+                    failing, f'D-Bus {member} timed out after {self._CALL_TIMEOUT_SECONDS}s — daemon unresponsive?'
                 )
+                failing += 1
                 self._record_failure()
             except Exception as e:
-                self.logger.error('Error in dbus_request: %s', e)
+                self._log_poll_failure(failing, 'Error in dbus_request: %s' % (e,))
+                failing += 1
                 self._record_failure()
             finally:
                 if dbus_bus is not None:
@@ -415,7 +520,17 @@ class DbusWrapper(QObject):
             if freq == 0:
                 return
 
-            sleep(freq)
+            # While the daemon does not answer, asking once a second only fills the log and burns a connection
+            # attempt each time: ask less and less often, and say so once.
+            wait = freq if not failing else min(self._FAILING_POLL_MAX_SECONDS, freq * (2 ** min(failing, 4)))
+            self._poll_nap(wait, keep_going)
+
+    def _log_poll_failure(self, failing: int, message: str) -> None:
+        """The first failure of a streak is reported; the ones that follow are not repeated."""
+        if failing == 0:
+            self.logger.error('%s (further failures are not logged until the daemon answers again)', message)
+        else:
+            self.logger.debug(message)
 
     @staticmethod
     def reload_configs() -> None:

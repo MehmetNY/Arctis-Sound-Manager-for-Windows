@@ -813,7 +813,7 @@ class EqualizerPage(QWidget):
         self._refresh()
 
         self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(500)
+        self._poll_timer.setInterval(2000)       # the headset's own equaliser can change; twice a second was far more than that needs
         self._poll_timer.timeout.connect(lambda: DbusWrapper.get_eq_bands(self._sig_eq_bands))
 
         # Apply the currently-active theme so a saved non-default theme renders
@@ -863,7 +863,11 @@ class EqualizerPage(QWidget):
 
     @Slot(list)
     def _on_eq_bands_received(self, bands: list):
-        self._band_values = list(bands)
+        bands = list(bands)
+        if bands == getattr(self, "_band_values", None) and getattr(self, "_bands_shown", False):
+            return                                # nothing changed since the last answer: leave the sliders alone
+        self._band_values = bands
+        self._bands_shown = True
         for i, slider in enumerate(self._sliders):
             slider.set_raw_value(bands[i])
 
