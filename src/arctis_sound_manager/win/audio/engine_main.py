@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import logging.handlers
+import os
 import signal
 import sys
 import time
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from arctis_sound_manager.win import health
 from arctis_sound_manager.win.audio import fast
 from arctis_sound_manager.win.audio.backend import (BackendError, SoundDeviceBackend, device_to_dict, find_device)
 from arctis_sound_manager.win.audio.control import ControlServer, EngineClient
@@ -228,7 +230,33 @@ def _render_end_of(capture, devices):
 
 # ── entry point ──────────────────────────────────────────────────────────────
 
+ENGINE_MEMORY_LIMIT_MB = 1500.0          # far above anything the engine holds in normal use (tens of MB, ~170 MB while compiling)
+
+
+def _engine_memory_limit() -> float | None:
+    try:
+        value = float(os.environ.get("ASM_ENGINE_MEMORY_LIMIT_MB", ENGINE_MEMORY_LIMIT_MB))
+    except ValueError:
+        value = ENGINE_MEMORY_LIMIT_MB
+    return value if value > 0 else None
+
+
+def replace_engine(config_dir: Path, host, log: logging.Logger, stats: dict) -> None:
+    """A last resort for a leak nobody has found yet: start a fresh engine that waits for this one to end, and end it.
+
+    Sound stops for the few seconds the new one needs; a process that has swollen past ``ENGINE_MEMORY_LIMIT_MB`` is
+    a worse thing to keep listening to."""
+    from arctis_sound_manager.win import selfrestart
+    from arctis_sound_manager.win.audio.launcher import engine_command
+    log.warning("the engine holds %.0f MB (limit %.0f MB): replacing it by a fresh one", stats.get("private_mb", 0.0),
+                _engine_memory_limit() or 0.0)
+    if selfrestart.respawn(command=engine_command() + ["--config-dir", str(config_dir)], log_name=None):
+        host.shutdown_requested.set()
+
+
 def run_engine(config_dir: Path, verbose: bool = False, force: bool = False) -> int:
+    from arctis_sound_manager.win import selfrestart
+    selfrestart.wait_for_predecessor()                                   # a replacement engine waits for the one it replaces
     client = EngineClient(config_dir, timeout=1.0)
     if not force and client.available():
         print("The audio engine is already running.")
@@ -247,15 +275,36 @@ def run_engine(config_dir: Path, verbose: bool = False, force: bool = False) -> 
             except (ValueError, OSError):
                 pass
     log.info("ASM audio engine starting (config folder %s)", config_dir)
+    monitor = health.start_for("engine", logging.getLogger("health"), extra=lambda: _helper_health(host),
+                               limit_mb=_engine_memory_limit(),
+                               on_limit=lambda stats: replace_engine(config_dir, host, log, stats))
     try:
         with TimerResolution(1):
             host.start()
             host.wait()
     finally:
         log.info("ASM audio engine stopping")
+        if monitor is not None:
+            monitor.stop()
         host.stop()
         server.stop()
     return 0
+
+
+def _helper_health(host) -> dict:
+    """Memory and handles of the per-application audio helper, for the engine's health line."""
+    engine = getattr(host, "engine", None)
+    tap = getattr(engine, "tap", None) if engine is not None else None
+    pid = getattr(tap, "pid", None)
+    if not pid:
+        return {}
+    stats = health.process_stats(pid)
+    out: dict = {}
+    if "private_mb" in stats:
+        out["helper_private_mb"] = round(stats["private_mb"], 1)
+    if "handles" in stats:
+        out["helper_handles"] = stats["handles"]
+    return out
 
 
 def open_test(config_dir: Path, query: str, kind: str = "output") -> int:

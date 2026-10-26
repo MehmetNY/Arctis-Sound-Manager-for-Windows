@@ -176,9 +176,24 @@ def restart_gui() -> None:
     orphaned parent, and no chance of two GUIs briefly fighting over the tray
     icon and the D-Bus name.
     """
+    if sys.platform == "win32":
+        _restart_gui_windows()
+        return
     try:
         os.execv(sys.executable, [sys.executable, *sys.argv])
     except OSError as exc:
         # Never leave the caller believing the restart happened.
         log.error("Could not restart the GUI in place: %s", exc)
         raise
+
+
+def _restart_gui_windows() -> None:
+    """Windows has no exec: start a replacement that waits for this process to end, then end it.
+
+    ``os.execv`` there starts a new process with this one's arguments (``--systray``, which the single installed
+    ``ArctisSoundManager.exe`` does not take) while the old tray still holds the single-instance pipe."""
+    from arctis_sound_manager.win import selfrestart
+    if not selfrestart.respawn():
+        raise OSError("could not start the replacement tray")        # never leave the caller believing it happened
+    logging.shutdown()
+    os._exit(0)

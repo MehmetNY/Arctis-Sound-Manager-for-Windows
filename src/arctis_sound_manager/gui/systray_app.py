@@ -6,6 +6,7 @@ import asyncio
 import json
 import locale
 import logging
+import os
 import subprocess
 from logging import Logger
 from pathlib import Path
@@ -130,8 +131,27 @@ class _ServiceActionWorker(QThread):
         self.done.emit(ok, self._done_key, self._failed_key)
 
 
+def _tray_idle_release_seconds() -> float | None:
+    """How long the closed window is kept before the tray is replaced (``ASM_TRAY_IDLE_RELEASE_S``; ``0`` = never)."""
+    try:
+        value = float(os.environ.get("ASM_TRAY_IDLE_RELEASE_S", "600"))
+    except ValueError:
+        value = 600.0
+    return value if value > 0 else None
+
+
+def _tray_memory_limit_mb() -> float | None:
+    """Private memory (MB) above which an idle tray replaces itself; ``ASM_TRAY_MEMORY_LIMIT_MB=0`` turns it off."""
+    try:
+        value = float(os.environ.get("ASM_TRAY_MEMORY_LIMIT_MB", "1200"))
+    except ValueError:
+        value = 1200.0
+    return value if value > 0 else None
+
+
 class QSystrayApp(QBaseDesktopApp):
     new_status = Signal(object)
+    memory_limit_hit = Signal(float)          # from the health monitor's thread; handled on the UI thread
 
     logger: Logger
 
@@ -254,6 +274,96 @@ class QSystrayApp(QBaseDesktopApp):
         self.new_status.connect(self.on_new_status)
         self.dbus_poll_thread = Thread(target=self.poll_dbus_thread, daemon=True)
         self.dbus_poll_thread.start()
+
+        if IS_WINDOWS:
+            self._start_health_monitor()
+
+    # ── what this process costs (Windows) ────────────────────────────────────
+    #
+    # The tray process is also the window's process: Qt, every page, the pollers. It runs for days, so it writes one
+    # "health:" line to tray.log every few minutes (private memory, handles, GDI/USER objects, threads, Python
+    # objects, Qt widgets, CPU) and, should it ever hold more than a very generous amount of memory while the window
+    # is closed, replaces itself with a fresh tray (win/selfrestart.py). The daemon and the audio engine keep running.
+
+    def _start_health_monitor(self) -> None:
+        from arctis_sound_manager.win import health
+        self._health_extra: dict = {}
+        self._memory_restart_due = False
+        self.memory_limit_hit.connect(self._on_memory_limit)
+        self._refresh_health_extra()
+        self._health = health.start_for(
+            "tray", logging.getLogger("health"), limit_mb=_tray_memory_limit_mb(),
+            on_limit=lambda stats: self.memory_limit_hit.emit(float(stats.get("private_mb", 0.0))),
+            extra=lambda: dict(self._health_extra))
+        if self._health is not None:
+            self._health_timer = QTimer(self)               # gathers what only the UI thread may ask Qt
+            self._health_timer.setInterval(int(self._health.interval * 1000))
+            self._health_timer.timeout.connect(self._refresh_health_extra)
+            self._health_timer.start()
+
+    def _window_visible(self) -> bool:
+        main_app = getattr(self, '_main_app', None)
+        window = getattr(main_app, 'main_window', None) if main_app is not None else None
+        try:
+            return bool(window is not None and window.isVisible())
+        except RuntimeError:                                # the C++ window is already gone
+            return False
+
+    def _refresh_health_extra(self) -> None:
+        try:
+            self._health_extra = {"qt_widgets": len(QApplication.allWidgets()),
+                                  "window": "open" if self._window_visible() else "closed"}
+        except Exception:  # noqa: BLE001 — a statistic must never disturb the UI
+            self.logger.debug("could not count the widgets", exc_info=True)
+
+    @Slot(float)
+    def _on_memory_limit(self, megabytes: float) -> None:
+        logging.getLogger("health").warning(
+            "the tray holds %.0f MB; it will be replaced by a fresh one as soon as the window is closed", megabytes)
+        self._memory_restart_due = True
+        self._restart_for_memory_if_idle()
+
+    def _restart_for_memory_if_idle(self) -> None:
+        if not getattr(self, '_memory_restart_due', False) or self._window_visible():
+            return
+        self._memory_restart_due = False
+        self._replace_tray("it holds too much memory")
+
+    def _release_idle_window(self) -> None:
+        """Once a minute: a window that was opened and has been closed for a while is given back to the system.
+
+        The window is built the first time it is opened and then kept (hidden) so that opening it again is instant.
+        Hidden, it is a few hundred MB of Qt widgets and pages doing nothing for anyone. After ``ASM_TRAY_IDLE_RELEASE_S``
+        (default ten minutes) the tray is replaced by a fresh one without it: ~40 MB instead of several hundred, and the
+        next opening is a cold start of a couple of seconds. ``0`` keeps the window for good.
+        """
+        if self._window_visible():
+            self._window_hidden_since = None
+            return
+        if getattr(self, '_main_app', None) is None or getattr(self, '_building_main_app', False):
+            return                                          # no window was ever built: nothing to give back
+        now = monotonic()
+        since = getattr(self, '_window_hidden_since', None)
+        if since is None:
+            self._window_hidden_since = now
+            return
+        limit = _tray_idle_release_seconds()
+        if limit is not None and now - since >= limit:
+            self._replace_tray(f"the window has been closed for {int((now - since) // 60)} minutes")
+
+    def _replace_tray(self, why: str) -> None:
+        """Start a fresh tray and leave: the daemon and the audio engine are not touched (see win/selfrestart.py)."""
+        from arctis_sound_manager.win import selfrestart
+        if not selfrestart.respawn():
+            return                                          # keep running; the next check tries again
+        logging.getLogger("health").warning(
+            "replacing the tray by a fresh one (%s); the daemon and the audio engine keep running", why)
+        try:
+            self.tray_icon.hide()                           # no ghost icon until the mouse passes over it
+        except Exception:  # noqa: BLE001
+            pass
+        logging.shutdown()
+        os._exit(0)
 
     def start_polling(self):
         # Rebuild the menu NOW, before the popup window is created by Qt.
@@ -972,6 +1082,9 @@ class QSystrayApp(QBaseDesktopApp):
             self._main_app = QMainApp(self.app, self.logger.level)
         finally:
             self._building_main_app = False
+        if os.environ.get("ASM_SOAK_CYCLE_S"):                 # CI soak test only (gui/soak_hook.py)
+            from arctis_sound_manager.gui import soak_hook
+            self._soak_timer = soak_hook.install(self._main_app)
         return self._main_app
 
     def arm_background_pages(self) -> None:
@@ -1004,6 +1117,9 @@ class QSystrayApp(QBaseDesktopApp):
 
     def _check_upgraded_under_us(self) -> None:
         """Restart on an upgrade that landed while this process was running."""
+        if IS_WINDOWS:
+            self._restart_for_memory_if_idle()              # a restart that waited for the window to be closed
+            self._release_idle_window()
         from arctis_sound_manager.runtime_staleness import upgraded_under_us
         new_version = upgraded_under_us()
         if not new_version:

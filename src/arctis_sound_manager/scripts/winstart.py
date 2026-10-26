@@ -152,6 +152,10 @@ def main(argv: list[str] | None = None) -> int:
     attach_output()
     logging.basicConfig(level=logging.INFO, format="%(name)20s %(levelname)8s | %(message)s")
 
+    if os.name == "nt":
+        from arctis_sound_manager.win import selfrestart
+        selfrestart.wait_for_predecessor()               # a tray that replaces another one waits until that one has left
+
     if not args.no_daemon:
         start_daemon()
     if args.no_tray:

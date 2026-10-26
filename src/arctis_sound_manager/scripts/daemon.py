@@ -214,6 +214,11 @@ async def main_async():
     logger.info(f'-{"v " + project_version():>27}  -')
     logger.info('-------------------------------')
 
+    if IS_WINDOWS:
+        # What this process costs, one line every few minutes (see win/health.py): memory, handles, threads, CPU.
+        from arctis_sound_manager.win import health
+        health.start_for('daemon', logging.getLogger('health'))
+
     # Before anything that touches the audio graph, the USB device or the
     # session's PipeWire metadata (CHA-4).
     _instance_lock = _single_instance_lock(logger)  # noqa: F841 — held by scope
