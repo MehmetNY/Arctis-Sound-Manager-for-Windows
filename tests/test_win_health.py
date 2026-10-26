@@ -246,6 +246,89 @@ def test_diag_2_shows_where_memory_was_allocated(caplog):
 
 # ── the thread and start_for ─────────────────────────────────────────────────
 
+def test_the_busiest_threads_are_named_with_their_share_of_a_core():
+    before = {1: 10.0, 2: 5.0, 3: 1.0}
+    after = {1: 16.0, 2: 5.4, 3: 1.01, 4: 2.0}            # thread 4 appeared during the interval
+    names = {1: "asm-playback", 2: "asm-monitor"}
+    rows = health.busiest_threads(before, after, 60.0, names)
+    assert [name for name, _ in rows] == ["asm-playback", "native-4"]      # asm-monitor: 0.7 %, not worth a name
+    assert rows[0][1] == pytest.approx(10.0)
+    assert rows[1][1] == pytest.approx(2.0 / 60.0 * 100.0)
+    assert health.busiest_threads(before, after, 0.0, names) == []
+    assert health.busiest_threads(before, before, 60.0, names) == []
+
+
+def test_a_quiet_process_does_not_list_threads(caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="health-test")
+    cpu = {"t": 0.0}
+    monkeypatch.setattr(health.time, "process_time", lambda: cpu["t"])
+    readings = iter([{1: 0.0}, {1: 0.5}])
+    clock = Clock()
+    monitor, _ = make(lambda: {"private_mb": 50.0}, clock=clock, thread_cpu=lambda: next(readings),
+                      names=lambda: {1: "asm-playback"})
+    clock.advance(100)
+    cpu["t"] = 0.5                                          # 0.5 % of a core
+    monitor.sample()
+    assert "busiest threads" not in caplog.text
+
+
+def test_a_busy_process_says_which_thread_it_is(caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="health-test")
+    cpu = {"t": 0.0}
+    monkeypatch.setattr(health.time, "process_time", lambda: cpu["t"])
+    readings = iter([{1: 0.0, 2: 0.0}, {1: 20.0, 2: 0.5}])
+    clock = Clock()
+    monitor, _ = make(lambda: {"private_mb": 50.0}, clock=clock, thread_cpu=lambda: next(readings),
+                      names=lambda: {1: "asm-playback"})
+    clock.advance(100)
+    cpu["t"] = 25.0                                         # 25 % of a core over the 100 s
+    monitor.sample()
+    assert "busiest threads: asm-playback 20%" in caplog.text
+    assert "native-2" not in caplog.text                   # 1 % is not worth a name
+
+
+def test_thread_times_of_this_process_are_readable_and_grow_with_work():
+    if sys.platform != "win32" and not os.path.isdir("/proc/self/task"):
+        pytest.skip("no per-thread times on this platform")
+    before = health.thread_cpu_seconds()
+    assert before
+    end = time.process_time() + 0.2
+    while time.process_time() < end:
+        pass
+    after = health.thread_cpu_seconds()
+    me = __import__("threading").get_native_id()
+    assert after[me] - before.get(me, 0.0) > 0.05
+    assert me in health.thread_names()
+
+
+def test_a_channel_strip_reports_when_it_has_gone_idle():
+    import numpy as np
+    from arctis_sound_manager.win.audio import graph
+    strip = graph.ChannelStrip("game", 48000, 480)
+    silence = np.zeros((2, 480))
+    assert strip.idle is False
+    for _ in range(int(graph.IDLE_SECONDS * 48000 / 480) + 2):
+        strip.process(silence)
+    assert strip.idle is True
+    strip.process(np.full((2, 480), 0.1))
+    assert strip.idle is False
+
+
+def test_the_engine_line_says_how_busy_the_pipelines_are_and_how_many_strips_are_idle():
+    import types
+    from arctis_sound_manager.win.audio import engine_main
+    strips = {"game": types.SimpleNamespace(idle=True), "chat": types.SimpleNamespace(idle=False),
+              "media": types.SimpleNamespace(idle=True), "aux": types.SimpleNamespace(idle=True)}
+    engine = types.SimpleNamespace(
+        graph=types.SimpleNamespace(strips=strips),
+        playback=types.SimpleNamespace(stats=types.SimpleNamespace(load=0.134)),
+        mic=types.SimpleNamespace(stats=types.SimpleNamespace(load=0.004)))
+    got = engine_main._load_health(types.SimpleNamespace(engine=engine))
+    assert got == {"strips_idle": "3/4", "playback_load": "13%", "mic_load": "0%"}
+    assert engine_main._load_health(types.SimpleNamespace(engine=None)) == {}
+    assert engine_main._load_health(types.SimpleNamespace(engine=types.SimpleNamespace())) == {}
+
+
 def test_the_thread_samples_until_stopped():
     monitor = health.HealthMonitor("thread", logging.getLogger("health-test"), diag="")
     monitor.interval = 0.05

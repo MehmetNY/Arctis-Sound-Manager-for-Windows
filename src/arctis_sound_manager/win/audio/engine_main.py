@@ -275,7 +275,8 @@ def run_engine(config_dir: Path, verbose: bool = False, force: bool = False) -> 
             except (ValueError, OSError):
                 pass
     log.info("ASM audio engine starting (config folder %s)", config_dir)
-    monitor = health.start_for("engine", logging.getLogger("health"), extra=lambda: _helper_health(host),
+    monitor = health.start_for("engine", logging.getLogger("health"),
+                               extra=lambda: {**_helper_health(host), **_load_health(host)},
                                limit_mb=_engine_memory_limit(),
                                on_limit=lambda stats: replace_engine(config_dir, host, log, stats))
     try:
@@ -289,6 +290,22 @@ def run_engine(config_dir: Path, verbose: bool = False, force: bool = False) -> 
         host.stop()
         server.stop()
     return 0
+
+
+def _load_health(host) -> dict:
+    """How busy the audio pipelines are and how many channel strips have gone idle (silent long enough to cost nothing)."""
+    engine = getattr(host, "engine", None)
+    if engine is None:
+        return {}
+    out: dict = {}
+    try:
+        strips = list(engine.graph.strips.values())
+        out["strips_idle"] = f"{sum(1 for s in strips if s.idle)}/{len(strips)}"
+        out["playback_load"] = f"{engine.playback.stats.load * 100:.0f}%"
+        out["mic_load"] = f"{engine.mic.stats.load * 100:.0f}%"
+    except Exception:                                            # noqa: BLE001 — only a diagnostic
+        return {}
+    return out
 
 
 def _helper_health(host) -> dict:

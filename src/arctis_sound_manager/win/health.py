@@ -37,6 +37,7 @@ GROWTH_WARN_MB_PER_H = 150.0             # ... and reported above this slope ...
 GROWTH_WARN_MIN_MB = 250.0               # ... once the process is at least this big
 GROWTH_WARN_EVERY_S = 1800.0
 LIMIT_SAMPLES = 2                        # samples in a row over the limit before on_limit is called
+HOT_THREADS_FROM_PCT = 3.0               # name the busiest threads in the line once the process uses this much of a core
 
 
 # ── measuring ────────────────────────────────────────────────────────────────
@@ -100,6 +101,98 @@ def _linux_stats() -> dict:
     except (OSError, ValueError):
         pass
     return out
+
+
+def _windows_thread_cpu() -> dict[int, float]:
+    import ctypes
+    from ctypes import wintypes
+
+    class ThreadEntry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ThreadID", wintypes.DWORD),
+                    ("th32OwnerProcessID", wintypes.DWORD), ("tpBasePri", wintypes.LONG),
+                    ("tpDeltaPri", wintypes.LONG), ("dwFlags", wintypes.DWORD)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    kernel.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    kernel.OpenThread.restype = wintypes.HANDLE
+    kernel.OpenThread.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.GetThreadTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    def seconds(ft) -> float:
+        return ((ft.dwHighDateTime << 32) | ft.dwLowDateTime) / 1e7
+
+    out: dict[int, float] = {}
+    snapshot = kernel.CreateToolhelp32Snapshot(0x4, 0)               # TH32CS_SNAPTHREAD
+    if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+        return out
+    try:
+        entry = ThreadEntry()
+        entry.dwSize = ctypes.sizeof(ThreadEntry)
+        own = os.getpid()
+        ok = kernel.Thread32First(snapshot, ctypes.byref(entry))
+        while ok:
+            if entry.th32OwnerProcessID == own:
+                handle = kernel.OpenThread(0x0800, False, entry.th32ThreadID)   # THREAD_QUERY_LIMITED_INFORMATION
+                if handle:
+                    created, exited, kernel_time, user_time = (wintypes.FILETIME() for _ in range(4))
+                    if kernel.GetThreadTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                             ctypes.byref(kernel_time), ctypes.byref(user_time)):
+                        out[int(entry.th32ThreadID)] = seconds(kernel_time) + seconds(user_time)
+                    kernel.CloseHandle(handle)
+            entry.dwSize = ctypes.sizeof(ThreadEntry)
+            ok = kernel.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(snapshot)
+    return out
+
+
+def _linux_thread_cpu() -> dict[int, float]:
+    out: dict[int, float] = {}
+    try:
+        ticks = os.sysconf("SC_CLK_TCK")
+        for name in os.listdir("/proc/self/task"):
+            try:
+                with open(f"/proc/self/task/{name}/stat", encoding="ascii", errors="replace") as fh:
+                    fields = fh.read().rsplit(")", 1)[1].split()
+                out[int(name)] = (int(fields[11]) + int(fields[12])) / ticks      # utime + stime
+            except (OSError, ValueError, IndexError):
+                continue
+    except (OSError, ValueError, AttributeError):
+        pass
+    return out
+
+
+def thread_cpu_seconds() -> dict[int, float]:
+    """CPU seconds (user + kernel) used so far by every thread of this process, by native thread id. Never raises."""
+    try:
+        return _windows_thread_cpu() if sys.platform == "win32" else _linux_thread_cpu()
+    except Exception:                                           # noqa: BLE001 — a measurement must never hurt the process
+        _log.debug("could not read the thread times", exc_info=True)
+        return {}
+
+
+def thread_names() -> dict[int, str]:
+    """Native thread id -> the name of the Python thread (threads Python does not know - PortAudio's, COM's, Qt's - are absent)."""
+    return {t.native_id: t.name for t in threading.enumerate() if getattr(t, "native_id", None)}
+
+
+def busiest_threads(before: dict[int, float], after: dict[int, float], elapsed: float, names: dict[int, str],
+                    top: int = 3, minimum_pct: float = 1.0) -> list[tuple[str, float]]:
+    """``[(thread name, percent of one core)]`` over *elapsed* seconds, busiest first. Threads Python did not start are
+    called ``native-<id>``; a thread that did not exist at the first reading is counted from zero."""
+    if elapsed <= 0:
+        return []
+    rows = []
+    for tid, now in after.items():
+        pct = (now - before.get(tid, 0.0)) / elapsed * 100.0
+        if pct >= minimum_pct:
+            rows.append((names.get(tid) or f"native-{tid}", pct))
+    rows.sort(key=lambda row: -row[1])
+    return rows[:top]
 
 
 def process_stats(pid: int | None = None) -> dict:
@@ -176,7 +269,8 @@ class HealthMonitor:
     def __init__(self, role: str, logger: logging.Logger | None = None, interval: float | None = None,
                  limit_mb: float | None = None, on_limit: Callable[[dict], None] | None = None,
                  extra: Callable[[], dict] | None = None, stats: Callable[[], dict] = process_stats,
-                 clock: Callable[[], float] = time.monotonic, diag: str | None = None):
+                 clock: Callable[[], float] = time.monotonic, diag: str | None = None,
+                 thread_cpu: Callable[[], dict] = thread_cpu_seconds, names: Callable[[], dict] = thread_names):
         self.role = role
         self._log = logger or _log
         if self._log.getEffectiveLevel() > logging.INFO:         # the lines are the point: never lose them to a quiet root
@@ -195,6 +289,9 @@ class HealthMonitor:
         self.diag = (os.environ.get("ASM_DIAG") or diag_from_file()) if diag is None else diag
         self._started = clock()
         self._cpu0 = (time.process_time(), self._started)
+        self._thread_cpu = thread_cpu
+        self._names = names
+        self._threads0 = (self._thread_cpu(), self._started)
         self._history: deque = deque(maxlen=max(GROWTH_MIN_SAMPLES * 2, int(GROWTH_WINDOW_S / self.interval) + 2))
         self._over = 0
         self._limit_called_at = -1e18
@@ -243,6 +340,13 @@ class HealthMonitor:
         cpu0, t0 = self._cpu0
         stats["cpu_pct"] = (cpu_now - cpu0) / max(1e-6, now - t0) * 100.0 if now > t0 else 0.0
         self._cpu0 = (cpu_now, now)
+        threads_now = self._thread_cpu()
+        before, t_before = self._threads0
+        self._threads0 = (threads_now, now)
+        if stats["cpu_pct"] >= HOT_THREADS_FROM_PCT or self.diag:
+            hot = busiest_threads(before, threads_now, now - t_before, self._names())
+            if hot:
+                stats["hot_threads"] = ", ".join(f"{name} {pct:.0f}%" for name, pct in hot)
         stats["objects"] = python_objects()
         stats["uptime_s"] = now - self._started
         extra: dict = {}
@@ -274,6 +378,8 @@ class HealthMonitor:
             if key in stats:
                 parts.append(f"{label} {stats[key]}")
         parts.append(f"cpu {stats.get('cpu_pct', 0.0):.1f}%")
+        if stats.get("hot_threads"):
+            parts.append(f"busiest threads: {stats['hot_threads']}")
         parts.append(f"up {_fmt_duration(stats.get('uptime_s', 0.0))}")
         for key, value in (extra or {}).items():
             parts.append(f"{key} {value:.1f}" if isinstance(value, float) else f"{key} {value}")

@@ -194,6 +194,11 @@ class ChannelStrip:
             self.configure_eq(self._eq_state)
         return x
 
+    @property
+    def idle(self) -> bool:
+        """Silent for so long that the effect tails are gone: blocks of this strip cost next to nothing."""
+        return self._silent_blocks > IDLE_SECONDS * self.rate / self.block
+
     def process(self, x: np.ndarray) -> np.ndarray:
         """``(channels, block)`` -> ``(2, block)``."""
         x = self._fit(x)
