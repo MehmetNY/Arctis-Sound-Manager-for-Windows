@@ -34,6 +34,11 @@ jobs:
         timeout-minutes: 4
         run: python ci/portaudio_probe.py
         continue-on-error: true
+      - name: PortAudio - which thread may open and start a stream
+        shell: pwsh
+        timeout-minutes: 8
+        run: python ci/portaudio_threads.py
+        continue-on-error: true
       - name: asm-audiotap end to end
         shell: pwsh
         timeout-minutes: 12
@@ -42,12 +47,12 @@ jobs:
       - name: Annotate
         if: always()
         shell: pwsh
-        run: ./ci/annotate.ps1 -Files e2e.log,probe.log,portaudio.log
+        run: ./ci/annotate.ps1 -Files e2e.log,probe.log,portaudio.log,threads.log
       - name: Publish
         if: always()
         shell: bash
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: ./ci/publish.sh ci-logs-e2e e2e.log setup.log probe.log portaudio.log
+        run: ./ci/publish.sh ci-logs-e2e e2e.log setup.log probe.log portaudio.log threads.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
