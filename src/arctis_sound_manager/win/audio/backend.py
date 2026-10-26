@@ -19,6 +19,8 @@ and puts everything PortAudio-specific in one place:
 from __future__ import annotations
 
 import logging
+import sys
+import threading
 from dataclasses import dataclass
 from typing import Callable
 
@@ -27,6 +29,42 @@ import numpy as np
 _log = logging.getLogger(__name__)
 
 RATE = 48000
+
+# ── COM on the calling thread ────────────────────────────────────────────────
+#
+# PortAudio's WASAPI code talks to Windows through COM, and COM is initialised per thread. PortAudio does that for the
+# thread that initialised it (the main thread, when sounddevice is imported); a stream may be *opened* from any thread, but
+# *starting* one from a thread that never initialised COM fails with "Error starting stream ... [PaErrorCode -9999]" (the
+# text names a WDM-KS category: PortAudio keeps the last host error it saw, which has nothing to do with this one).
+# Measured on a real Windows runner (ci/portaudio_threads.py): started from the main thread -> fine; from any other thread
+# -> always fails; from another thread after CoInitializeEx -> fine. The engine rebuilds from the control-channel thread and
+# the supervisor thread, so every thread that touches a stream makes sure COM is there first.
+
+_IS_WINDOWS = sys.platform == "win32"
+_RPC_E_CHANGED_MODE = -2147417850                                   # 0x80010106: the thread is already initialised (the other way)
+_com_state = threading.local()
+
+
+def _load_ole32():
+    import ctypes                                                   # noqa: PLC0415 — Windows only
+    return ctypes.windll.ole32
+
+
+def ensure_com() -> None:
+    """Initialise COM (multi-threaded) on the calling thread, once. A no-op off Windows; never raises."""
+    if not _IS_WINDOWS or getattr(_com_state, "ready", False):
+        return
+    try:
+        result = int(_load_ole32().CoInitializeEx(None, 0))         # COINIT_MULTITHREADED
+    except Exception as exc:                                        # noqa: BLE001 — no ole32, no ctypes.windll: nothing to do
+        _log.debug("could not initialise COM on this thread: %r", exc)
+        return
+    # S_OK / S_FALSE: initialised now (or already). RPC_E_CHANGED_MODE: this thread already has COM, as a single-threaded
+    # apartment: that works for PortAudio too. Anything else is tried again on the next call.
+    if result >= 0 or result == _RPC_E_CHANGED_MODE:
+        _com_state.ready = True
+    else:
+        _log.debug("CoInitializeEx answered 0x%08X on %s", result & 0xFFFFFFFF, threading.current_thread().name)
 
 
 class BackendError(RuntimeError):
@@ -112,10 +150,12 @@ class OpenedStream:
 
     def start(self) -> None:
         if self._stream is not None:
+            ensure_com()
             self._stream.start()
 
     def stop(self) -> None:
         if self._stream is not None:
+            ensure_com()
             try:
                 self._stream.stop()
             except Exception as exc:                          # noqa: BLE001 — a device that vanished
@@ -123,6 +163,7 @@ class OpenedStream:
 
     def close(self) -> None:
         if self._stream is not None:
+            ensure_com()
             try:
                 self._stream.close()
             except Exception as exc:                          # noqa: BLE001
@@ -154,6 +195,7 @@ class SoundDeviceBackend:
     # devices
     def devices(self) -> list[DeviceInfo]:
         sd = self._sd
+        ensure_com()
         try:
             hostapis = sd.query_hostapis()
             raw = sd.query_devices()
@@ -176,6 +218,7 @@ class SoundDeviceBackend:
         headset switched on later (or a cable installed since) only shows up after a re-initialisation.
         Every stream must be closed first."""
         sd = self._sd
+        ensure_com()
         try:
             sd._terminate()
             sd._initialize()
@@ -216,6 +259,7 @@ class SoundDeviceBackend:
 
     def _open(self, kind: str, device: DeviceInfo, wanted: int, callback, status) -> OpenedStream:
         sd = self._sd
+        ensure_com()
         last_error: Exception | None = None
         for channels in self._channel_options(wanted, device.channels(kind)):
             for note, extra in self._extras(device):

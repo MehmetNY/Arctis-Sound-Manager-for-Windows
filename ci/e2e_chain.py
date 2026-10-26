@@ -413,12 +413,15 @@ def main() -> int:
         chat.kill()
 
     log("== can the installed program open the headset device? (the engine's own code path, on two threads)")
-    for device in ("CABLE Input", "CABLE In 16ch"):
+    for n, device in enumerate(("CABLE Input", "CABLE In 16ch"), 1):
         probe = subprocess.run([str(EXE), "--engine", "--open-test", device], capture_output=True, text=True, timeout=240)
         log(f"   --- {device}")
         for line in (probe.stdout + probe.stderr).splitlines()[-40:]:
             log("    " + line[:300])
-    log(f"   (informational; the second, worker-thread attempt starts a second stream right after the first closed)")
+        # a real runner showed that a stream started from any thread but the main one failed (COM was not initialised there):
+        # the engine rebuilds from other threads, so both attempts have to work
+        check(f"C6.7{'ab'[n - 1]} the engine's code opens and starts {device} on the main thread and on another one",
+              probe.returncode == 0, f"exit code {probe.returncode}")
 
     microphone_phase(client)
 
