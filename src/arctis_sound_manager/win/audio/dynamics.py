@@ -316,6 +316,90 @@ def _limiter_segments(begins, lengths, seg_peaks, chunks, denominators, limit, r
 _LIMITER_KERNEL = fast.compile(_limiter_segments)
 
 
+def _limiter_block(x, hist, chunks, denominators, limit, release_samples, trim, chunk_size,
+                   atten, delta, peak, number, chunk_pos, lp_z):
+    """A whole block of ``Limiter.process`` in one compiled call (the numpy code there is the fallback and the
+    reference the tests compare this with): the input is trimmed, cut into pieces at the 0.5 ms chunk boundaries, the
+    attenuation recursion runs over the pieces, the ramp is smoothed by the one-pole filter, the delayed signal is
+    multiplied by it and clipped.
+
+    Returns ``(out, new_history, atten, delta, peak, chunk_number, chunk_pos, filter_state)``; ``chunks`` is updated in place.
+    """
+    channels, n = x.shape
+    delay = hist.shape[1]
+    period = chunk_size + 1
+    first = chunk_size - chunk_pos
+    sig = np.empty(n)
+    for i in range(n):
+        m = 0.0
+        for c in range(channels):
+            v = abs(x[c, i] * trim)
+            if v > m:
+                m = v
+        sig[i] = m + 1e-30
+    ramp = np.empty(n)
+    pos = 0
+    trigger = first
+    last_trigger = -1
+    while pos < n:
+        begins = pos > 0 or first == 0
+        if begins:
+            last_trigger = pos
+        while trigger <= pos:
+            trigger += period
+        end = trigger if trigger < n else n
+        seg_peak = 0.0
+        for i in range(pos, end):
+            if sig[i] > seg_peak:
+                seg_peak = sig[i]
+        if begins:
+            d = (1.0 - atten) / release_samples
+            if abs(d) < 1e-20:
+                d = 0.0
+            for i in range(10):
+                c = chunks[(number - 9 + i) & 15]
+                if c > 0.0:
+                    this_delta = (limit / c - atten) / denominators[i]
+                    if this_delta < d:
+                        d = this_delta
+            chunks[number & 15] = peak
+            number += 1
+            delta = d
+            peak = 0.0
+        if seg_peak > peak:
+            peak = seg_peak
+        for i in range(pos, end):
+            r = atten + delta * (i - pos + 1)
+            if delta > 0.0 and r > 1.0:
+                r = 1.0
+            ramp[i] = r
+        atten += delta * (end - pos)
+        if delta > 0.0 and atten >= 1.0:
+            atten = 1.0
+            delta = 0.0
+        pos = end
+    if last_trigger >= 0:
+        chunk_pos = n - 1 - last_trigger
+    else:
+        chunk_pos += n
+    out = np.empty((channels, n))
+    new_hist = np.empty((channels, delay))
+    for i in range(n):
+        y = lp_z + 0.1 * ramp[i]
+        lp_z = 0.9 * y
+        for c in range(channels):
+            v = (hist[c, i] if i < delay else x[c, i - delay] * trim) * y
+            out[c, i] = -limit if v < -limit else (limit if v > limit else v)
+    for j in range(delay):
+        idx = n + j
+        for c in range(channels):
+            new_hist[c, j] = hist[c, idx] if idx < delay else x[c, idx - delay] * trim
+    return out, new_hist, atten, delta, peak, number, chunk_pos, lp_z
+
+
+_LIMITER_BLOCK = fast.compile(_limiter_block)
+
+
 class Limiter:
     """swh Fast Lookahead limiter: 5 ms attack, no sample above ``limit_db`` (a brick wall at the end).
 
@@ -368,7 +452,27 @@ class Limiter:
         self._chunk_num = number + 1
         return delta
 
+    def _process_compiled(self, x: np.ndarray) -> np.ndarray | None:
+        """The whole block in one compiled call; ``None`` when that is not available (the numpy code then runs)."""
+        if _LIMITER_BLOCK is None or x.ndim != 2 or x.shape[1] == 0 or not np.isfinite(self.trim):
+            return None
+        try:
+            (out, self._hist, self._atten, self._delta, self._peak, self._chunk_num, self._chunk_pos,
+             lp_z) = _LIMITER_BLOCK(np.ascontiguousarray(x, dtype=np.float64), np.ascontiguousarray(self._hist),
+                                    self._chunks, self._denominators, self.limit, self.rate * self.release_s,
+                                    self.trim, self.chunk_size, self._atten, self._delta, self._peak, self._chunk_num,
+                                    self._chunk_pos, float(self._lp_zi[0]))
+            self._lp_zi = np.array([lp_z])
+            return out
+        except Exception as exc:                              # noqa: BLE001 — e.g. a compile problem: stay on numpy
+            globals()["_LIMITER_BLOCK"] = None
+            fast.disable(f"limiter block: {exc!r}")
+            return None
+
     def process(self, x: np.ndarray) -> np.ndarray:
+        compiled = self._process_compiled(np.asarray(x, dtype=np.float64))
+        if compiled is not None:
+            return compiled
         x = np.asarray(x, dtype=np.float64) * self.trim
         n = x.shape[-1]
         sig = np.abs(x).max(axis=0) + _TINY

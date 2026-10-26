@@ -44,7 +44,9 @@ MAX_CATCHUP = 12                        # blocks per wake-up, however late the t
 STALE_POLLS = 2                         # supervisor polls without a callback before a device counts as dead
 RETRY_SECONDS = 2.0
 START_RETRY_SECONDS = 0.6                                           # a stream that would not start (AUDCLNT_E_DEVICE_IN_USE ...): look again soon
-REFRESH_SECONDS = 15.0
+REFRESH_SECONDS = 15.0                  # first look for a missing wanted device after this long ...
+REFRESH_MAX_SECONDS = 120.0             # ... then ever less often (doubling) while the looks find nothing
+REFRESH_MIN_GAP = 4.0                   # a device change reported by the helper brings the next look forward, but not closer than this
 SETTINGS_FILES = ("sonar_micro_state.json", "general_settings.yaml", "channel_volumes.json", "stream_mix.json")
 VOLUME_KEYS = {"Arctis_Game": "game", "Arctis_Chat": "chat", "Arctis_Media": "media", "Arctis_Master": "master"}
 
@@ -371,13 +373,15 @@ class Engine:
 
     def __init__(self, config: EngineConfig, backend, config_dir: Path | None = None, native=None,
                  hrir_id: str | None = None, probe: Callable[[], list[DeviceInfo]] | None = None,
-                 clock: Callable[[], float] = time.monotonic, port_clock: Callable[[], float] = time.perf_counter):
+                 clock: Callable[[], float] = time.monotonic, port_clock: Callable[[], float] = time.perf_counter,
+                 quick_probe: Callable[[], list[DeviceInfo] | None] | None = None):
         self.config = config
         self.backend = backend
         self.config_dir = config_dir or default_config_dir()
         self._clock = clock
         self._port_clock = port_clock                                # what the ports stamp device callbacks with (tests: simulated time)
-        self._probe = probe                                          # a fresh device listing from another process
+        self._probe = probe                                          # a fresh device listing from another process (slow: starts Python)
+        self._quick_probe = quick_probe                              # ... or from the native helper (a few milliseconds)
         self.box = SnapshotBox()
         self.mic_tap: InputPort | None = None
         self.profile = config.profile
@@ -401,6 +405,11 @@ class Engine:
         self._threads: list[threading.Thread] = []
         self._lock = threading.RLock()
         self._last_refresh = -1e9
+        self._refresh_misses = 0                                     # looks in a row that brought nothing (drives the back-off)
+        self._hint_seen: int | None = None                           # the helper's device-change counter at the last look
+        self.probes = 0                                              # full device listings taken in another process (diagnostics)
+        self.quick_probes = 0                                        # device listings taken from the native helper
+        self.refreshes = 0                                           # sound-system rebuilds done to find a device
         self.notes: list[str] = []
         self.running = False
         # live controls
@@ -625,6 +634,8 @@ class Engine:
                             self._after_reopen(ep)
             if failing:
                 self._maybe_refresh(now)
+            else:
+                self._refresh_misses = 0                             # everything wanted is there: the next absence starts at the short interval
             self._sync_tap()
 
     def _sync_tap(self) -> None:
@@ -657,28 +668,72 @@ class Engine:
                 master.reset()
                 pipeline.prefill()
 
+    def _refresh_interval(self) -> float:
+        return min(REFRESH_MAX_SECONDS, REFRESH_SECONDS * (2.0 ** min(self._refresh_misses, 8)))
+
+    def _device_hint(self) -> int | None:
+        """The native helper's count of device changes (``None`` when there is no helper)."""
+        try:
+            return self.tap.devices_generation() if self.tap is not None else None
+        except Exception:                                            # noqa: BLE001 — a hint, never a reason to fail
+            return None
+
+    def _fresh_listing(self, wanted: list) -> list[DeviceInfo]:
+        """A listing of the devices Windows has now: from the helper when it can answer, else from another process."""
+        if self._quick_probe is not None and not any(ep.query.strip().lower().startswith("index:") for ep in wanted):
+            try:
+                listing = self._quick_probe()
+            except Exception as exc:                                 # noqa: BLE001
+                _log.debug("quick device probe failed: %r", exc)
+                listing = None
+            if listing is not None:
+                self.quick_probes += 1
+                return listing
+        if self._probe is None:
+            raise RuntimeError("no way to list the devices")
+        self.probes += 1
+        return self._probe()
+
     def _maybe_refresh(self, now: float) -> None:
         """PortAudio only lists the devices that existed when it started; a rebuild re-reads them.
 
-        It interrupts every stream, so it is rationed, and when a *probe* (a fresh listing from another
-        process) is available it only happens if the probe shows that a wanted device really is there now.
-        Without a probe it only happens while no output is running (nothing audible to interrupt).
+        It interrupts every stream, so it is rationed, and when a *probe* (a fresh listing of the devices) is
+        available it only happens if the probe shows that a wanted device really is there now. Without a probe it
+        only happens while no output is running (nothing audible to interrupt).
+
+        Looks that find nothing become ever rarer (15 s, 30 s, 60 s, then every two minutes): a wanted device that
+        stays missing for hours (the headset's base station unplugged, a cable removed) used to cost a probe every
+        fifteen seconds for as long as that lasted. The native helper's device-change counter cuts the wait short
+        the moment Windows reports a change.
         """
-        if now - self._last_refresh < REFRESH_SECONDS or not hasattr(self.backend, "refresh"):
+        if not hasattr(self.backend, "refresh"):
+            return
+        hint = self._device_hint()
+        if hint is not None and self._hint_seen is None:
+            self._hint_seen = hint                                   # first sight: the baseline, not a change
+        changed = hint is not None and hint != self._hint_seen
+        if now - self._last_refresh < (REFRESH_MIN_GAP if changed else self._refresh_interval()):
             return
         audible = any(ep.state == "running" for key, ep in self.endpoints.items() if key in ("out:headset", "mic:out"))
-        if self._probe is None and audible:
+        have_probe = self._probe is not None or self._quick_probe is not None
+        if not have_probe and audible:
             return                                                    # a blind rebuild would interrupt sound someone hears
         self._last_refresh = now
-        if self._probe is not None:
+        if changed:
+            self._hint_seen, self._refresh_misses = hint, 0          # Windows says something changed: start again from the short interval
+        if have_probe:
+            wanted = [ep for ep in self.endpoints.values() if ep.state != "running"]
             try:
-                fresh = self._probe()
+                fresh = self._fresh_listing(wanted)
             except Exception as exc:                                  # noqa: BLE001
                 _log.debug("device probe failed: %r", exc)
+                self._refresh_misses += 1
                 return
-            wanted = [ep for ep in self.endpoints.values() if ep.state != "running"]
             if not any(find_device(fresh, ep.query, ep.kind) is not None for ep in wanted):
+                self._refresh_misses += 1
                 return
+        self._refresh_misses += 1                                     # reset by supervise() once every wanted device runs
+        self.refreshes += 1
         _log.info("a wanted device appeared; rebuilding the sound system")
         for ep in self.endpoints.values():
             self._close(ep)
@@ -807,6 +862,8 @@ class Engine:
             "notes": notes,
             "problems": self.config.problems(),
             "tap": self.tap.info() if self.tap is not None else None,
+            "device_looks": {"probes": self.probes, "quick_probes": self.quick_probes, "rebuilds": self.refreshes,
+                             "next_look_s": round(self._refresh_interval(), 1)},
         }
 
     def handle(self, request: dict) -> dict:

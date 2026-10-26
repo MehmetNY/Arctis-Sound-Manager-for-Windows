@@ -403,8 +403,147 @@ def test_a_device_plugged_in_after_start_needs_a_refresh_and_a_probe_decides_whe
     assert len(probes) == 1                                                   # rationed: not again so soon
     shown["probe"] = [headset]
     e.supervise(120.0)
+    assert len(probes) == 1                                                   # a look that found nothing makes the next one wait longer (30 s)
+    e.supervise(131.0)
     assert rig.backend.refreshes == 1 and e.endpoints["out:headset"].state == "running"
     assert e.endpoints["in:game"].state == "running"                          # everything was reopened
+
+
+# ── how often a missing device is looked for ────────────────────────────────
+
+class FakeHelper:
+    """Stands in for the tap helper: a device-change counter Windows raises."""
+
+    def __init__(self):
+        self.generation = 7
+
+    def devices_generation(self):
+        return self.generation
+
+    def info(self):
+        return {"available": True, "running": True, "devgen": self.generation}
+
+    def configure(self, **kwargs):
+        pass
+
+    def engage(self, on):
+        pass
+
+
+def _absent_headset_rig(tmp_path, cfg=None, **kw):
+    spatial_off(tmp_path)
+    headset = dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2)
+    rig = Rig(tmp_path, cfg, devices=[d for d in DEVICES if "Arctis" not in d.name], hotplugged=[headset], **kw)
+    return rig, headset
+
+
+def test_looks_for_a_missing_device_get_rarer_and_stop_at_two_minutes(tmp_path):
+    probes = []
+    rig, _ = _absent_headset_rig(tmp_path, probe=lambda: probes.append(1) or [])
+    rig.start()
+    e = rig.engine
+    times = []
+    t = 100.0
+    while t < 100.0 + 3600:
+        before = len(probes)
+        e.supervise(t)
+        if len(probes) != before:
+            times.append(t)
+        t += 1.0
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert gaps[:3] == [30.0, 60.0, 120.0] and set(gaps[3:]) == {120.0}
+    assert len(probes) < 35                                                   # an hour: about thirty looks, not 240
+    assert rig.backend.refreshes == 0
+    assert e.status()["device_looks"]["probes"] == len(probes)
+
+
+def test_the_back_off_starts_over_once_everything_runs(tmp_path):
+    shown = {"probe": []}
+    probes = []
+    rig, headset = _absent_headset_rig(tmp_path, config(mic_input="", mic_output=""),
+                                       probe=lambda: probes.append(1) or shown["probe"])
+    rig.start()
+    e = rig.engine
+    for t in (100.0, 131.0, 200.0):
+        e.supervise(t)
+    assert e._refresh_misses >= 2
+    shown["probe"] = [headset]
+    e.supervise(330.0)                                                        # the headset is there: rebuilt, running
+    assert e.endpoints["out:headset"].state == "running"
+    e.supervise(331.0)
+    assert e._refresh_misses == 0
+    assert e._refresh_interval() == 15.0
+
+
+def test_a_device_change_reported_by_the_helper_brings_the_next_look_forward(tmp_path):
+    shown = {"probe": []}
+    probes = []
+    rig, headset = _absent_headset_rig(tmp_path, probe=lambda: probes.append(1) or shown["probe"])
+    helper = FakeHelper()
+    rig.engine.tap = helper
+    rig.start()
+    e = rig.engine
+    e.supervise(100.0)                                                        # baseline sight of the counter + the first look
+    e.supervise(131.0)
+    e.supervise(200.0)
+    looks = len(probes)
+    e.supervise(210.0)
+    assert len(probes) == looks                                               # nothing changed: still waiting for the long interval
+    shown["probe"] = [headset]
+    helper.generation += 1                                                    # Windows says a device was added
+    e.supervise(211.0)
+    assert len(probes) == looks + 1 and e.endpoints["out:headset"].state == "running"
+
+
+def test_a_device_change_is_not_looked_at_closer_than_the_minimum_gap(tmp_path):
+    probes = []
+    rig, _ = _absent_headset_rig(tmp_path, probe=lambda: probes.append(1) or [])
+    helper = FakeHelper()
+    rig.engine.tap = helper
+    rig.start()
+    e = rig.engine
+    e.supervise(100.0)
+    helper.generation += 1
+    e.supervise(101.0)
+    assert len(probes) == 1                                                   # 1 s after the last look: too soon
+    e.supervise(104.5)
+    assert len(probes) == 2
+
+
+def test_the_quick_probe_answers_first_and_the_slow_one_is_left_alone(tmp_path):
+    slow, quick = [], []
+    headset = dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2)
+    spatial_off(tmp_path)
+    rig = Rig(tmp_path, devices=[d for d in DEVICES if "Arctis" not in d.name], hotplugged=[headset],
+              probe=lambda: slow.append(1) or [])
+    rig.engine._quick_probe = lambda: quick.append(1) or [headset]
+    rig.start()
+    rig.engine.supervise(100.0)
+    assert quick == [1] and slow == [] and rig.backend.refreshes == 1
+    assert rig.engine.status()["device_looks"]["quick_probes"] == 1
+
+
+def test_a_quick_probe_that_cannot_answer_falls_back_to_the_slow_one(tmp_path):
+    slow = []
+    rig, _ = _absent_headset_rig(tmp_path, probe=lambda: slow.append(1) or [])
+    rig.engine._quick_probe = lambda: None
+    rig.start()
+    rig.engine.supervise(100.0)
+    assert slow == [1]
+    rig.engine._quick_probe = lambda: (_ for _ in ()).throw(OSError("helper gone"))
+    rig.engine.supervise(140.0)
+    assert slow == [1, 1]
+
+
+def test_an_index_query_is_never_answered_by_the_name_listing(tmp_path):
+    slow, quick = [], []
+    spatial_off(tmp_path)
+    rig = Rig(tmp_path, config(outputs={"headset": "index:7"}), devices=[d for d in DEVICES if "Arctis" not in d.name],
+              probe=lambda: slow.append(1) or [])
+    rig.engine._quick_probe = lambda: quick.append(1) or []
+    rig.start()
+    rig.engine.supervise(100.0)
+    assert slow == [1] and quick == []
 
 
 def test_without_a_probe_a_blind_rebuild_never_interrupts_sound_someone_hears(tmp_path):

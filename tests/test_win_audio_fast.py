@@ -60,15 +60,21 @@ def test_the_warmup_compiles_every_signature_the_engine_will_use():
         pytest.skip("numba is not installed")
     script = textwrap.dedent("""
         import numpy as np
-        from arctis_sound_manager.win.audio import fast, reverb, dynamics
+        from arctis_sound_manager.win.audio import fast, reverb, dynamics, eq
         assert fast.warmup() > 0
-        count = lambda: (len(reverb._KERNEL.signatures), len(dynamics._LIMITER_KERNEL.signatures))
+        count = lambda: (len(reverb._KERNEL.signatures), len(dynamics._LIMITER_KERNEL.signatures),
+                         len(dynamics._LIMITER_BLOCK.signatures), len(eq._SOSFILT_KERNEL.signatures))
         before = count()
         rng = np.random.default_rng(1)
         r = reverb.PlateReverb(2.5, 0.5, 0.5, instances=8)
         lim = dynamics.Limiter(48000.0, 8, limit_db=-3.0)
         lim2 = dynamics.Limiter(48000.0, 2)
+        sos = np.array([[1.0, 0.2, 0.1, 1.0, -0.3, 0.05], [0.9, 0.1, 0.0, 1.0, -0.1, 0.0]])
+        filters = [eq.BiquadCascade(1, sos), eq.BiquadCascade(2, sos), eq.BiquadCascade(8, sos)]
         for n in (960, 480, 1920, 7):
+            for f in filters:
+                f.process(rng.standard_normal((f.channels, n)))
+                f.process(rng.standard_normal((f.channels, 2 * n))[:, ::2])          # a strided view, as slices of a block are
             r.process(rng.standard_normal((8, n)) * 0.3)
             lim.process(rng.standard_normal((8, n)) * 2.0)
             lim2.process(rng.standard_normal((2, n)) * 2.0)

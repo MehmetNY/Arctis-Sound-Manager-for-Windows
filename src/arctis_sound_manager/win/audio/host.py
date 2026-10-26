@@ -31,7 +31,8 @@ from arctis_sound_manager.win.audio.engine_config import (EngineConfig, config_p
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.runtime import Engine
-from arctis_sound_manager.win.audio.tap import TapBackend, load_rules, restore_volumes, save_rules, shared_helper
+from arctis_sound_manager.win.audio.tap import (TapBackend, list_endpoints, load_rules, restore_volumes, save_rules,
+                                                 shared_helper)
 
 _log = logging.getLogger(__name__)
 
@@ -63,12 +64,21 @@ def subprocess_probe(timeout: float = 15.0) -> list[DeviceInfo]:
     return [device_from_dict(d) for d in json.loads(result.stdout)]
 
 
+def helper_probe() -> list[DeviceInfo] | None:
+    """The same question asked of the native helper: a few milliseconds instead of a new Python process.
+    ``None`` when the helper cannot answer (the caller then uses :func:`subprocess_probe`)."""
+    return list_endpoints()
+
+
+_DEFAULT = object()
+
+
 class EngineHost:
     def __init__(self, config_dir: Path | None = None,
                  backend_factory: Callable[[EngineConfig], object] = default_backend,
                  probe: Callable[[], list[DeviceInfo]] | None = subprocess_probe,
                  native=None, hrir_id: str | None = None, sleep: Callable[[float], None] = time.sleep,
-                 monotonic: Callable[[], float] = time.monotonic):
+                 monotonic: Callable[[], float] = time.monotonic, quick_probe=_DEFAULT):
         self.config_dir = config_dir or default_config_dir()
         self._sleep = sleep
         self._monotonic = monotonic
@@ -76,6 +86,8 @@ class EngineHost:
         self._retry_at = 0.0
         self._backend_factory = backend_factory
         self._probe = probe
+        # with no probe at all (tests, or a caller that wants none) there is no quick one either
+        self._quick_probe = (helper_probe if probe is not None else None) if quick_probe is _DEFAULT else quick_probe
         self._native = native
         self._hrir_id = hrir_id
         self.engine: Engine | None = None
@@ -182,7 +194,7 @@ class EngineHost:
                 try:
                     backend = self._backend_factory(self.config)
                     engine = Engine(self.config, backend, config_dir=self.config_dir, native=self._native,
-                                    hrir_id=self._hrir_id, probe=self._probe)
+                                    hrir_id=self._hrir_id, probe=self._probe, quick_probe=self._quick_probe)
                     engine.preset = {"volumes": dict(self._volumes), "muted": dict(self._muted), "mix": self._mix,
                                      "mix_channels": self._mix_channels}
                     engine.start(threaded=True)

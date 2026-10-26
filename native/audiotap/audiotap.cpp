@@ -25,11 +25,19 @@
 //      programs playing to any of them are taken the same way)
 //   asm-audiotap --restore [--state <file>]
 //   asm-audiotap --list            (what is playing where; for diagnostics)
+//   asm-audiotap --endpoints       (the active audio endpoints, one JSON object per line, then {"end":true}: a few
+//                                   milliseconds, so the engine can ask "is the headset there yet?" without starting
+//                                   a Python process that loads PortAudio)
 //
 // stdin  (tab separated lines):  endpoint<TAB>text[<TAB>text...] | default<TAB>channel|bypass | rule<TAB>exe<TAB>channel|bypass |
 //                                 exclude<TAB>pid | apply | quit
 // stdout (binary, repeated):     "ATP1" u32 frames u32 channels u32 reserved, then frames*channels float32
 // stderr (one JSON per line):    {"t":"status",...}  {"t":"log",...}
+//
+// How often this program looks at the system: the audio service is asked about every program's session, so looking
+// twenty times a second made this program (and the service behind it) one of the busiest things on a quiet PC. Now it
+// looks when something happens (a session appears, changes volume or state, a device comes or goes, a capture hears
+// a program or sees it leak) and otherwise a few times a second as a safety net (kPollMs).
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <initguid.h>
@@ -70,6 +78,12 @@ static const int kChannels = 4;                      // game, chat, media, aux (
 static const char* kChannelNames[kChannels] = {"game", "chat", "media", "aux"};
 static const int kOutChannels = kChannels * 2;
 static float g_eps = 2e-8f;
+static const uint64_t kPollMs = 250;                 // the safety-net look at the sessions when nothing woke the manager
+static const uint64_t kMinWakeGapMs = 20;            // a storm of events is looked at at most this often
+static const uint64_t kResolveMs = 5000;             // endpoints are looked up again at least this often (events usually say sooner)
+static const uint64_t kParentMs = 5000;              // the process tree is read again at least this often
+static const uint64_t kStatusMs = 250;               // four status lines a second are plenty for a level meter and an app list
+static std::atomic<unsigned> g_devgen{0};            // raised whenever Windows adds, removes or switches an audio device
 // A program is turned down only once it has been HEARD playing through its own process loopback (peak above this): a
 // program that merely holds a session open while it records (OBS, recorders, game-bar) never plays anything, and
 // turning its session down would silence the recording.
@@ -257,6 +271,7 @@ struct Capture {
     std::atomic<bool> observe{false};                 // the program is not turned down yet: only listen, hand nothing on
     std::atomic<bool> heard{false};                   // ... and it played something
     std::function<void()> onHeard;                    // wakes the manager at once
+    std::function<void()> onAttention;                // ... also when the capture saw a leak or died (the manager must act)
     double level = 0.0;                               // smoothed output level (RMS) for the status line
     uint64_t startedAt = 0;
 
@@ -307,7 +322,7 @@ struct Capture {
         while (SUCCEEDED(cap->GetNextPacketSize(&n)) && n > 0) {
             BYTE* data = nullptr; UINT32 frames = 0; DWORD fl = 0;
             HRESULT h = cap->GetBuffer(&data, &frames, &fl, nullptr, nullptr);
-            if (FAILED(h)) { if (h != AUDCLNT_S_BUFFER_EMPTY) dead = true; return; }
+            if (FAILED(h)) { if (h != AUDCLNT_S_BUFFER_EMPTY && !dead.exchange(true) && onAttention) onAttention(); return; }
             packets++;
             if (observe.load()) {
                 if (!(fl & AUDCLNT_BUFFERFLAGS_SILENT)) {
@@ -329,7 +344,8 @@ struct Capture {
                 for (UINT32 i = 0; i < frames * 2; i++) peak = std::max(peak, std::fabs(in[i]));
                 if (!(peak <= leakLimit)) {                       // also catches NaN
                     std::fill(fifo.begin() + at, fifo.end(), 0.0f);
-                    leaks++; leaked = true;
+                    leaks++;
+                    if (!leaked.exchange(true) && onAttention) onAttention();
                 } else {
                     float g = gain.load();
                     for (UINT32 i = 0; i < frames * 2; i++) fifo[at + i] = in[i] * g;
@@ -392,6 +408,28 @@ public:
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE OnSessionDisconnected(AudioSessionDisconnectReason) override { restoreNow(); if (wake) wake(); return S_OK; }
+};
+
+// Windows tells us when an audio device is added, removed, switched on or off, or becomes the default. Nothing is done
+// here but counting (the manager looks at the system when it wakes up, and the engine asks for the count): these calls
+// come from a system thread.
+class DeviceEvents : public IMMNotificationClient {
+    LONG ref_ = 1;
+public:
+    std::function<void()> wake;
+    virtual ~DeviceEvents() {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID r, void** o) override {
+        if (IsEqualIID(r, IID_IUnknown) || IsEqualIID(r, __uuidof(IMMNotificationClient))) { *o = static_cast<IMMNotificationClient*>(this); AddRef(); return S_OK; }
+        *o = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
+    ULONG STDMETHODCALLTYPE Release() override { LONG n = InterlockedDecrement(&ref_); if (!n) delete this; return n; }
+    void changed() { g_devgen.fetch_add(1); if (wake) wake(); }
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { changed(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { changed(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { changed(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow, ERole, LPCWSTR) override { changed(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }   // fires constantly; not a change of the device list
 };
 
 struct Session {
@@ -490,12 +528,21 @@ private:
     std::set<std::wstring> known;                     // exe paths heard playing (lower case); kept in <state>.known
     std::mutex capMutex;
     std::vector<std::shared_ptr<Capture>> captures;
+    std::atomic<unsigned> capGen{0};                  // raised under capMutex whenever `captures` changes (the audio thread keeps its own copy)
     std::map<DWORD, uint64_t> captureRetry;
     // output
     std::mutex outMutex; std::condition_variable outCv; std::deque<std::vector<float>> outQueue;
     std::atomic<bool> audioRun{false};
     uint64_t lastStatus = 0;
     std::string lastAppsJson;
+    // when the system was last looked at (see kResolveMs / kParentMs)
+    DeviceEvents* deviceEvents = nullptr;
+    std::atomic<bool> resolveDirty{true};             // a command changed what to watch: look the endpoints up again
+    unsigned seenGen = ~0u;                           // g_devgen at the last lookup
+    uint64_t lastResolve = 0;
+    std::map<DWORD, DWORD> parentCache;
+    std::set<DWORD> parentFor;
+    uint64_t parentAt = 0;
 
     bool resolveEndpoints();
     void releaseEndpoint();
@@ -724,13 +771,26 @@ void Tap::restoreAll() {
     sessions.clear();
     std::lock_guard<std::mutex> l(capMutex);
     captures.clear();
+    capGen++;
 }
 
 void Tap::refresh() {
     std::map<std::wstring, int> rl; int def; std::set<DWORD> excl;
     { std::lock_guard<std::mutex> l(cfgMutex); rl = rules; def = defaultChannel; excl = excludePids; }
     if (!engaged) { if (!eps.empty() || !sessions.empty()) releaseEndpoint(); return; }   // volumes back at once
-    if (!resolveEndpoints()) return;
+    {
+        // the endpoints (which device is "CABLE Input"?) change when a command says so, when Windows reports a device
+        // change, or never: look them up then, and every few seconds as a safety net (every second while none is found)
+        uint64_t t = nowMs();
+        unsigned gen = g_devgen.load();
+        bool due = resolveDirty.exchange(false) || gen != seenGen || t - lastResolve >= (eps.empty() ? 1000 : kResolveMs);
+        if (due) {
+            seenGen = gen; lastResolve = t;
+            if (!resolveEndpoints()) return;
+        } else if (eps.empty()) {
+            return;
+        }
+    }
     for (auto& kv : sessions) kv.second->seen = false;
     for (auto& ep : eps) {
     Ptr<IAudioSessionEnumerator> en;
@@ -806,7 +866,16 @@ void Tap::reconcileCaptures() {
     // is proven to be a player and is turned down (prove), after which the capture carries its sound.
     std::map<DWORD, Session*> managed;
     for (auto& kv : sessions) if (kv.second->channel != -1) managed[kv.second->pid] = kv.second.get();
-    std::map<DWORD, DWORD> parents = managed.size() > 1 ? parentMap() : std::map<DWORD, DWORD>();
+    // the process tree only matters for finding which managed program is a child of another; a living process keeps its
+    // parent, so it is read again when the set of programs changes (and every few seconds for the pids Windows reuses)
+    if (managed.size() > 1) {
+        std::set<DWORD> pids;
+        for (auto& kv : managed) pids.insert(kv.first);
+        uint64_t t = nowMs();
+        if (pids != parentFor || t - parentAt >= kParentMs) { parentCache = parentMap(); parentFor = pids; parentAt = t; }
+    }
+    const std::map<DWORD, DWORD> noParents;
+    const std::map<DWORD, DWORD>& parents = managed.size() > 1 ? parentCache : noParents;
     std::map<DWORD, Session*> roots;
     std::map<DWORD, DWORD> rootOf;
     for (auto& kv : managed) {
@@ -842,7 +911,7 @@ void Tap::reconcileCaptures() {
     std::lock_guard<std::mutex> l(capMutex);
     for (auto it = captures.begin(); it != captures.end();) {
         auto r = roots.find((*it)->pid);
-        if ((*it)->dead || r == roots.end()) { it = captures.erase(it); continue; }
+        if ((*it)->dead || r == roots.end()) { it = captures.erase(it); capGen++; continue; }
         (*it)->channel = r->second->channel;
         // gain = volume the program wanted / eps; several sessions of one pid: the loudest wanted volume
         float v0 = 0.0f; bool low = false;
@@ -866,8 +935,10 @@ void Tap::reconcileCaptures() {
         c->gain = v0 / g_eps;
         c->observe = !low;
         c->onHeard = [this] { requestWake(); };
+        c->onAttention = [this] { requestWake(); };
         if (c->start(kv.first, err)) {
             captures.push_back(c);
+            capGen++;
             captureRetry.erase(kv.first);
             logMsg(std::string(low ? "tapping " : "listening to ") + U(kv.second->exe) + " (pid " + std::to_string(kv.first) + ") -> " + kChannelNames[kv.second->channel]);
         } else {
@@ -878,6 +949,7 @@ void Tap::reconcileCaptures() {
 }
 
 void Tap::status() {
+    if (nowMs() - lastStatus < kStatusMs) return;      // the app list asks every session for its state: only when it is going to be sent
     std::string apps = "[";
     bool first = true;
     {
@@ -899,12 +971,10 @@ void Tap::status() {
         }
     }
     apps += "]";
-    if (nowMs() - lastStatus >= 250) {                  // four a second is plenty for a level meter and an app list
-        lastAppsJson = apps;
-        lastStatus = nowMs();
-        emit(std::string("{\"t\":\"status\",\"engaged\":") + (engaged ? "true" : "false") + ",\"endpoint\":\"" + jesc(U(endpointNames())) +
-             "\",\"eps\":" + std::to_string((double)g_eps) + ",\"apps\":" + apps + "}");
-    }
+    lastAppsJson = apps;
+    lastStatus = nowMs();
+    emit(std::string("{\"t\":\"status\",\"engaged\":") + (engaged ? "true" : "false") + ",\"endpoint\":\"" + jesc(U(endpointNames())) +
+         "\",\"eps\":" + std::to_string((double)g_eps) + ",\"devgen\":" + std::to_string(g_devgen.load()) + ",\"apps\":" + apps + "}");
 }
 
 // ------------------------------------------------------------------------------------------ audio + output threads
@@ -914,16 +984,27 @@ void Tap::audioThread() {
     auto start = clk::now();
     uint64_t produced = 0;
     std::vector<float> bus((size_t)kChannels * kChunk * 2);
+    std::vector<float> tmp((size_t)kChunk * 2);
+    // A 3 ms pause that is really 3 ms. Sleep(3) is 15 ms unless the whole system's timer is sped up (timeBeginPeriod),
+    // which makes every program on the PC wake a thousand times a second; a high-resolution waitable timer (Windows 10
+    // 1803+) gives the same pause to this thread alone. Older systems fall back to the global setting.
+    HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, 0x00000002 /* CREATE_WAITABLE_TIMER_HIGH_RESOLUTION */, TIMER_ALL_ACCESS);
+    if (!timer) timeBeginPeriod(1);
+    auto pause = [&] {
+        LARGE_INTEGER due; due.QuadPart = -30000LL;        // 3 ms, relative, in 100 ns units
+        if (timer && SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(timer, 20);
+        else Sleep(3);
+    };
+    std::vector<std::shared_ptr<Capture>> snap;
+    unsigned seen = ~0u;
     while (audioRun) {
-        std::vector<std::shared_ptr<Capture>> snap;
-        { std::lock_guard<std::mutex> l(capMutex); snap = captures; }
+        if (capGen.load() != seen) { std::lock_guard<std::mutex> l(capMutex); snap = captures; seen = capGen.load(); }
         float limit = g_eps * 16.0f;
         for (auto& c : snap) c->drain(limit);
         uint64_t due = (uint64_t)(std::chrono::duration<double>(clk::now() - start).count() * kRate / kChunk);
         int made = 0;
         while (produced < due && made < 20) {
             std::fill(bus.begin(), bus.end(), 0.0f);
-            std::vector<float> tmp((size_t)kChunk * 2);
             for (auto& c : snap) {
                 int ch = c->channel.load();
                 if (ch < 0 || ch >= kChannels) continue;
@@ -944,8 +1025,9 @@ void Tap::audioThread() {
             produced++; made++;
         }
         if (produced + 100 < due) produced = due;          // asleep for a second or more (suspend): do not catch up
-        Sleep(3);
+        pause();
     }
+    if (timer) CloseHandle(timer); else timeEndPeriod(1);
 }
 
 void Tap::writerThread() {
@@ -976,6 +1058,9 @@ int Tap::run() {
         logMsg("no MMDevice enumerator");
         return 2;
     }
+    deviceEvents = new DeviceEvents();
+    deviceEvents->wake = [this] { requestWake(); };
+    if (FAILED(enumerator->RegisterEndpointNotificationCallback(deviceEvents))) { deviceEvents->Release(); deviceEvents = nullptr; }
     remembered = state.read();                            // programs whose volume an earlier run (or crash) left turned down
     loadKnown();
     audioRun = true;
@@ -1004,6 +1089,7 @@ int Tap::run() {
             else if (t[0] == "exclude" && t.size() > 1) { excludePids.insert((DWORD)strtoul(t[1].c_str(), nullptr, 10)); configDirty = true; }
             else if (t[0] == "apply") { configDirty = true; }
             else if (t[0] == "engage" && t.size() > 1) { engaged = t[1] == "1"; configDirty = true; }
+            resolveDirty = true;
             requestWake();
             if (quit) break;
         }
@@ -1011,19 +1097,30 @@ int Tap::run() {
         requestWake();
     });
     uint64_t lastRefresh = 0;
+    bool pendingWake = false;                             // woken, but looked at less than kMinWakeGapMs ago: look as soon as the gap is over
     while (!quit) {
         {
             std::unique_lock<std::mutex> l(wakeMutex);
-            wakeCv.wait_for(l, std::chrono::milliseconds(50), [this] { return wakeFlag || quit.load(); });
+            wakeCv.wait_for(l, std::chrono::milliseconds(pendingWake ? kMinWakeGapMs : 100), [this] { return wakeFlag || quit.load(); });
+            pendingWake = pendingWake || wakeFlag;
             wakeFlag = false;
         }
         if (quit) break;
         uint64_t now = nowMs();
-        if (configDirty.exchange(false) || now - lastRefresh >= 50) {
+        // look at the sessions when told to, when something woke us (not more than every kMinWakeGapMs), and every
+        // kPollMs as a safety net; the status line is built only when it is going to be sent
+        if (configDirty.exchange(false) || (pendingWake && now - lastRefresh >= kMinWakeGapMs) || now - lastRefresh >= kPollMs) {
             lastRefresh = now;
+            pendingWake = false;
             refresh();
-            status();
         }
+        status();
+    }
+    if (deviceEvents) {
+        enumerator->UnregisterEndpointNotificationCallback(deviceEvents);
+        deviceEvents->wake = nullptr;
+        deviceEvents->Release();
+        deviceEvents = nullptr;
     }
     releaseEndpoint();                                    // puts every volume back
     audioRun = false;
@@ -1081,15 +1178,37 @@ static int listMode() {
     return 0;
 }
 
+// The active endpoints, one JSON object per line, then {"end":true} (so that a cut-off answer is not mistaken for a complete one).
+static int endpointsMode() {
+    Ptr<IMMDeviceEnumerator> en;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&en))) return 2;
+    const struct { EDataFlow flow; const char* name; } flows[] = {{eRender, "render"}, {eCapture, "capture"}};
+    for (auto& f : flows) {
+        Ptr<IMMDeviceCollection> col;
+        if (FAILED(en->EnumAudioEndpoints(f.flow, DEVICE_STATE_ACTIVE, &col))) return 2;
+        UINT n = 0; col->GetCount(&n);
+        Ptr<IMMDevice> def; std::wstring defId;
+        if (SUCCEEDED(en->GetDefaultAudioEndpoint(f.flow, eConsole, &def))) defId = deviceId(def.p);
+        for (UINT i = 0; i < n; i++) {
+            Ptr<IMMDevice> d;
+            if (FAILED(col->Item(i, &d))) continue;
+            printf("{\"flow\":\"%s\",\"name\":\"%s\",\"default\":%s}\n", f.name, jesc(U(friendlyName(d.p))).c_str(),
+                   (!defId.empty() && deviceId(d.p) == defId) ? "true" : "false");
+        }
+    }
+    printf("{\"end\":true}\n");
+    fflush(stdout);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stdin), _O_BINARY);
     setvbuf(stdout, nullptr, _IOFBF, 1 << 16);
-    timeBeginPeriod(1);                                    // Sleep(3) must mean 3 ms, not 15
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     Tap tap;
-    bool doRestore = false, doList = false, endpointGiven = false;
+    bool doRestore = false, doList = false, doEndpoints = false, endpointGiven = false;
     std::wstring statePath;
     {
         wchar_t la[MAX_PATH];
@@ -1101,6 +1220,7 @@ int main(int argc, char** argv) {
         auto next = [&](void) -> std::string { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
         if (a == "--restore") doRestore = true;
         else if (a == "--list") doList = true;
+        else if (a == "--endpoints") doEndpoints = true;
         else if (a == "--endpoint") { if (!endpointGiven) { tap.endpointQueries.clear(); endpointGiven = true; } tap.endpointQueries.push_back(W(next())); }
         else if (a == "--exclude-pid") tap.excludePids.insert((DWORD)strtoul(next().c_str(), nullptr, 10));
         else if (a == "--state") statePath = W(next());
@@ -1119,6 +1239,7 @@ int main(int argc, char** argv) {
     }
     int rc;
     if (doList) rc = listMode();
+    else if (doEndpoints) rc = endpointsMode();
     else if (doRestore) rc = restoreMode(tap.state);
     else {
         g_tap = &tap;
@@ -1128,6 +1249,5 @@ int main(int argc, char** argv) {
     }
     fflush(stdout);
     CoUninitialize();
-    timeEndPeriod(1);
     return rc;
 }

@@ -266,3 +266,89 @@ def test_response_db_helper_matches_freqz():
     w, h = sosfreqz(sos, worN=2 * np.pi * f / RATE)
     assert np.allclose(biquad.response_db(sos, f, RATE), 20 * np.log10(np.abs(h)))
     assert np.all(biquad.response_db(np.zeros((0, 6)), f, RATE) == 0)
+
+
+# ── the compiled kernel against scipy ────────────────────────────────────────
+
+def _cascade_sos(rng, sections):
+    from scipy.signal import butter
+    rows = [butter(2, float(rng.uniform(0.05, 0.6)), btype=str(rng.choice(["low", "high"])), output="sos")[0]
+            for _ in range(sections)]
+    return np.array(rows)
+
+
+@pytest.mark.parametrize("channels,sections", [(1, 1), (2, 5), (8, 3), (2, 12)])
+def test_the_compiled_biquad_matches_scipy(channels, sections):
+    from arctis_sound_manager.win.audio import eq
+    from scipy.signal import sosfilt
+    if eq._SOSFILT_KERNEL is None:
+        pytest.skip("numba is not installed")
+    rng = np.random.default_rng(channels * 100 + sections)
+    sos = _cascade_sos(rng, sections)
+    x = rng.standard_normal((channels, 4801)) * 0.4
+    cascade = BiquadCascade(channels, sos)
+    got = np.concatenate([cascade.process(x[:, lo:hi]) for lo, hi in ((0, 480), (480, 481), (481, 2000), (2000, 4801))], axis=1)
+    want = sosfilt(sos, x, axis=-1)
+    assert np.allclose(got, want, rtol=1e-11, atol=1e-12)
+
+
+def test_the_filter_memory_carries_over_between_blocks_with_the_kernel():
+    from arctis_sound_manager.win.audio import eq
+    if eq._SOSFILT_KERNEL is None:
+        pytest.skip("numba is not installed")
+    rng = np.random.default_rng(5)
+    sos = _cascade_sos(rng, 4)
+    x = rng.standard_normal((2, 2400))
+    whole = BiquadCascade(2, sos).process(x)
+    parts = BiquadCascade(2, sos)
+    split = np.concatenate([parts.process(x[:, i:i + 480]) for i in range(0, 2400, 480)], axis=1)
+    assert np.allclose(whole, split, rtol=1e-12, atol=1e-13)
+
+
+def test_without_the_kernel_scipy_gives_the_same_result(monkeypatch):
+    from arctis_sound_manager.win.audio import eq
+    rng = np.random.default_rng(9)
+    sos = _cascade_sos(rng, 6)
+    x = rng.standard_normal((2, 1920))
+    with_kernel = BiquadCascade(2, sos).process(x)
+    monkeypatch.setattr(eq, "_SOSFILT_KERNEL", None)
+    without = BiquadCascade(2, sos).process(x)
+    assert np.allclose(with_kernel, without, rtol=1e-11, atol=1e-12)
+
+
+def test_a_kernel_that_fails_is_switched_off_and_scipy_carries_on(monkeypatch):
+    from arctis_sound_manager.win.audio import eq
+
+    def broken(*args):
+        raise RuntimeError("compile problem")
+
+    monkeypatch.setattr(eq, "_SOSFILT_KERNEL", broken)
+    rng = np.random.default_rng(11)
+    sos = _cascade_sos(rng, 3)
+    x = rng.standard_normal((2, 480))
+    got = BiquadCascade(2, sos).process(x)
+    from scipy.signal import sosfilt
+    assert np.allclose(got, sosfilt(sos, x, axis=-1))
+    assert eq._SOSFILT_KERNEL is None                                          # and it is not tried again
+
+
+def test_a_cascade_that_changes_keeps_working_with_the_kernel_crossfade():
+    from arctis_sound_manager.win.audio import eq
+    if eq._SOSFILT_KERNEL is None:
+        pytest.skip("numba is not installed")
+    rng = np.random.default_rng(13)
+    a, b = _cascade_sos(rng, 3), _cascade_sos(rng, 3)
+    x = rng.standard_normal((2, 960))
+    fast_c, slow_c = BiquadCascade(2, a), BiquadCascade(2, a)
+    fast_c.process(x[:, :480])
+    slow_c.process(x[:, :480])
+    fast_c.set_sos(b)
+    slow_c.set_sos(b)
+    import arctis_sound_manager.win.audio.eq as eqmod
+    got = fast_c.process(x[:, 480:])
+    saved, eqmod._SOSFILT_KERNEL = eqmod._SOSFILT_KERNEL, None
+    try:
+        want = slow_c.process(x[:, 480:])
+    finally:
+        eqmod._SOSFILT_KERNEL = saved
+    assert np.allclose(got, want, rtol=1e-10, atol=1e-12)

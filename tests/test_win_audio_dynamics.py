@@ -13,13 +13,17 @@ RATE = 48000
 BLOCK = 480
 
 
-@pytest.fixture(params=["numpy", "compiled"])
+@pytest.fixture(params=["numpy", "compiled", "fused"])
 def limiter_path(request, monkeypatch):
-    """The limiter tests run on the numpy path and, where numba is installed, on the compiled one."""
+    """The limiter tests run on the numpy path and, where numba is installed, on the compiled ones: the recursion
+    alone ("compiled") and the whole block in one call ("fused")."""
     if request.param == "numpy":
         monkeypatch.setattr(dynamics, "_LIMITER_KERNEL", None)
-    elif dynamics._LIMITER_KERNEL is None:
+        monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", None)
+    elif dynamics._LIMITER_KERNEL is None or dynamics._LIMITER_BLOCK is None:
         pytest.skip("numba is not installed")
+    elif request.param == "compiled":
+        monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", None)
     return request.param
 
 
@@ -411,26 +415,77 @@ def test_limiter_matches_the_c_code_sample_for_sample(limit_db, release, ingain)
     assert np.allclose(got, want, atol=tol, rtol=tol), np.max(np.abs(got - want))
 
 
+def _run_limiter_in_odd_blocks(monkeypatch, kernel, block, x, **kw):
+    monkeypatch.setattr(dynamics, "_LIMITER_KERNEL", kernel)
+    monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", block)
+    lim = Limiter(RATE, kw.pop("channels", 2), limit_db=kw.pop("limit_db", -3.0), release_s=kw.pop("release_s", 0.05), **kw)
+    # blocks that are not a multiple of the 25-sample chunk, so chunk phase is carried across calls
+    sizes = [960, 777, 1, 480, 1919, 25, 26, 3000, 7, 240, 241, 239]
+    parts, pos = [], 0
+    while pos + max(sizes) < x.shape[1]:
+        for n in sizes:
+            parts.append(lim.process(x[:, pos:pos + n]))
+            pos += n
+    return (np.concatenate(parts, axis=1), lim._atten, lim._delta, lim._peak, lim._chunk_num, lim._chunk_pos,
+            lim._chunks.copy(), lim._hist.copy(), lim._lp_zi.copy())
+
+
 def test_limiter_compiled_and_numpy_paths_are_bit_identical(monkeypatch):
-    if dynamics._LIMITER_KERNEL is None:
+    if dynamics._LIMITER_KERNEL is None or dynamics._LIMITER_BLOCK is None:
         pytest.skip("numba is not installed")
     x = _limiter_programme()
-    outs = []
-    for kernel in (None, dynamics._LIMITER_KERNEL):
-        monkeypatch.setattr(dynamics, "_LIMITER_KERNEL", kernel)
-        lim = Limiter(RATE, 2, limit_db=-3.0, release_s=0.05)
-        # blocks that are not a multiple of the 25-sample chunk, so chunk phase is carried across calls
-        sizes = [960, 777, 1, 480, 1919, 25, 26, 3000]
-        parts, pos = [], 0
-        while pos + max(sizes) < x.shape[1]:
-            for n in sizes:
-                parts.append(lim.process(x[:, pos:pos + n]))
-                pos += n
-        outs.append((np.concatenate(parts, axis=1), lim._atten, lim._delta, lim._peak, lim._chunk_num,
-                     lim._chunks.copy()))
-    assert np.array_equal(outs[0][0], outs[1][0])
-    assert outs[0][1:5] == outs[1][1:5]
-    assert np.array_equal(outs[0][5], outs[1][5])
+    kernel, block = dynamics._LIMITER_KERNEL, dynamics._LIMITER_BLOCK
+    numpy_path = _run_limiter_in_odd_blocks(monkeypatch, None, None, x)
+    segments = _run_limiter_in_odd_blocks(monkeypatch, kernel, None, x)
+    fused = _run_limiter_in_odd_blocks(monkeypatch, kernel, block, x)
+    for other in (segments, fused):
+        assert np.array_equal(numpy_path[0], other[0])
+        assert numpy_path[1:6] == other[1:6]
+        for a, b in zip(numpy_path[6:], other[6:]):
+            assert np.array_equal(a, b)
+
+
+@pytest.mark.parametrize("channels,limit_db,release,gain", [(1, -1.0, 0.1, 0.0), (2, -3.0, 0.02, 6.0), (8, -6.0, 0.3, 0.0),
+                                                            (2, -90.0, 0.1, 0.0), (2, -1.0, 0.1, -12.0)])
+def test_the_fused_limiter_follows_the_numpy_one(monkeypatch, channels, limit_db, release, gain):
+    if dynamics._LIMITER_KERNEL is None or dynamics._LIMITER_BLOCK is None:
+        pytest.skip("numba is not installed")
+    rng = np.random.default_rng(channels)
+    base = _limiter_programme()
+    x = np.vstack([np.roll(base[i % base.shape[0]], 977 * i) for i in range(channels)]) * 1.0
+    x = x + rng.standard_normal(x.shape) * 0.01
+    numpy_path = _run_limiter_in_odd_blocks(monkeypatch, None, None, x, channels=channels, limit_db=limit_db,
+                                            release_s=release, input_gain_db=gain)
+    fused = _run_limiter_in_odd_blocks(monkeypatch, dynamics._LIMITER_KERNEL, dynamics._LIMITER_BLOCK, x,
+                                       channels=channels, limit_db=limit_db, release_s=release, input_gain_db=gain)
+    assert np.array_equal(numpy_path[0], fused[0])
+    assert numpy_path[1:6] == fused[1:6]
+
+
+def test_a_block_shorter_than_the_delay_and_an_empty_one_are_handled(monkeypatch):
+    if dynamics._LIMITER_BLOCK is None:
+        pytest.skip("numba is not installed")
+    x = _limiter_programme()[:, :5000]
+    a, b = Limiter(RATE, 2), Limiter(RATE, 2)
+    monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", None)
+    ref = [b.process(x[:, i:i + 3]) for i in range(0, 3000, 3)]
+    monkeypatch.undo()
+    got = [a.process(x[:, i:i + 3]) for i in range(0, 3000, 3)]
+    assert np.array_equal(np.concatenate(ref, axis=1), np.concatenate(got, axis=1))
+    assert a.process(np.zeros((2, 0))).shape == (2, 0)
+
+
+def test_a_failing_fused_limiter_falls_back_without_losing_the_block(monkeypatch):
+    calls = []
+
+    def broken(*args):
+        calls.append(1)
+        raise RuntimeError("compile error")
+    monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", broken)
+    x = _limiter_programme()[:, :4800]
+    got = Limiter(RATE, 2).process(x)
+    assert calls == [1] and dynamics._LIMITER_BLOCK is None
+    assert np.array_equal(got, Limiter(RATE, 2).process(x))             # the other paths now
 
 
 def test_limiter_failing_kernel_falls_back_without_losing_the_block(monkeypatch):
@@ -440,6 +495,7 @@ def test_limiter_failing_kernel_falls_back_without_losing_the_block(monkeypatch)
         calls.append(1)
         raise RuntimeError("compile error")
     monkeypatch.setattr(dynamics, "_LIMITER_KERNEL", broken)
+    monkeypatch.setattr(dynamics, "_LIMITER_BLOCK", None)                  # the recursion kernel is only used without the fused one
     x = _limiter_programme()[:, :4800]
     got = Limiter(RATE, 2).process(x)
     assert calls == [1] and dynamics._LIMITER_KERNEL is None

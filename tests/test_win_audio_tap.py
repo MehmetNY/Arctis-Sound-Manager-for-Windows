@@ -580,3 +580,64 @@ def test_a_first_guess_uses_the_tap_for_channels_and_the_cable_for_the_microphon
 def test_a_first_guess_without_the_tap_is_what_it_was():
     cfg = suggest_config(DEVICES)
     assert cfg.inputs["game"].startswith("CABLE Output") and cfg.inputs["chat"] == ""
+
+
+# ── a quick look at the devices (instead of a new Python process) ────────────
+
+def _listing(*lines, code=0):
+    out = ("\n".join(json.dumps(line) for line in lines) + "\n").encode()
+    return lambda cmd, **kw: type("R", (), {"returncode": code, "stdout": out, "stderr": b""})()
+
+
+def test_the_endpoint_listing_becomes_device_infos():
+    run = _listing({"name": "Speakers (Realtek(R) Audio)", "flow": "render", "default": True},
+                   {"name": "Microphone (Arctis Nova Pro Wireless)", "flow": "capture", "default": False},
+                   {"name": "CABLE Input (VB-Audio Virtual Cable)", "flow": "render", "default": False},
+                   {"end": True})
+    devices = tapmod.list_endpoints("helper.exe", run=run)
+    assert [d.name for d in devices] == ["Speakers (Realtek(R) Audio)", "Microphone (Arctis Nova Pro Wireless)",
+                                         "CABLE Input (VB-Audio Virtual Cable)"]
+    assert [d.max_outputs for d in devices] == [2, 0, 2] and [d.max_inputs for d in devices] == [0, 2, 0]
+    assert devices[0].default_output and not devices[1].default_input
+    assert all(d.wasapi for d in devices)
+    from arctis_sound_manager.win.audio.backend import find_device
+    assert find_device(devices, "CABLE Input", "output").name.startswith("CABLE Input")
+    assert find_device(devices, "Arctis", "input").name.startswith("Microphone")
+    assert find_device(devices, "Arctis", "output") is None
+
+
+def test_an_answer_without_the_end_marker_is_not_believed():
+    assert tapmod.list_endpoints("helper.exe", run=_listing({"name": "A", "flow": "render"})) is None
+
+
+def test_a_listing_with_no_devices_but_the_end_marker_is_an_answer():
+    assert tapmod.list_endpoints("helper.exe", run=_listing({"end": True})) == []
+
+
+def test_no_listing_when_the_helper_fails_or_is_missing(monkeypatch):
+    assert tapmod.list_endpoints("helper.exe", run=_listing({"end": True}, code=2)) is None
+
+    def boom(cmd, **kw):
+        raise OSError("not found")
+    assert tapmod.list_endpoints("helper.exe", run=boom) is None
+
+    def slow(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, 5)
+    assert tapmod.list_endpoints("helper.exe", run=slow) is None
+    monkeypatch.setattr(tapmod, "find_helper", lambda: None)
+    assert tapmod.list_endpoints() is None
+
+
+def test_garbage_lines_in_the_listing_are_skipped():
+    out = b'not json\n[1,2]\n{"name":"","flow":"render"}\n{"name":"Headphones","flow":"render"}\n{"end":true}\n'
+    run = lambda cmd, **kw: type("R", (), {"returncode": 0, "stdout": out})()
+    assert [d.name for d in tapmod.list_endpoints("h.exe", run=run)] == ["Headphones"]
+
+
+def test_the_device_change_counter_is_read_from_the_status():
+    helper = TapHelper(exe="x", exists=lambda p: True)
+    assert helper.devices_generation() is None
+    helper._status, helper._status_at = {"t": "status", "devgen": 12}, helper._clock()
+    assert helper.devices_generation() == 12 and helper.info()["devgen"] == 12
+    helper._status = {"t": "status", "devgen": True}                           # not a counter
+    assert helper.devices_generation() is None

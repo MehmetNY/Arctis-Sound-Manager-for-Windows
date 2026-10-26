@@ -237,6 +237,53 @@ def restore_volumes(exe: str | None = None, run=subprocess.run, timeout: float =
     return True
 
 
+def list_endpoints(exe: str | None = None, run=subprocess.run, timeout: float = 5.0) -> list[DeviceInfo] | None:
+    """The audio endpoints Windows has right now, as the native helper sees them.
+
+    A fresh look at the devices is needed when one that is wanted was missing at start (PortAudio only knows the
+    devices that existed when it was initialised). Asking the helper takes a few milliseconds; a new Python process
+    that loads PortAudio (the other way) takes a second or two of CPU and a lot of memory, and was started every
+    fifteen seconds for as long as a wanted device was missing. ``None`` when the helper is not there or did not
+    give a complete answer (the caller then falls back to the slow way).
+    """
+    exe = exe or find_helper()
+    if not exe:
+        return None
+    kwargs: dict = {"capture_output": True, "timeout": timeout}
+    if os.name == "nt":
+        kwargs["creationflags"] = _no_window()
+    try:
+        result = run([exe, "--endpoints"], **kwargs)
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.debug("listing the endpoints with the helper failed: %s", exc)
+        return None
+    if getattr(result, "returncode", 1) != 0:
+        return None
+    text = result.stdout.decode("utf-8", "replace") if isinstance(result.stdout, (bytes, bytearray)) else str(result.stdout or "")
+    found: list[DeviceInfo] = []
+    complete = False
+    for line in text.splitlines():
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("end"):
+            complete = True
+            continue
+        name = str(item.get("name") or "")
+        if not name:
+            continue
+        capture = item.get("flow") == "capture"
+        default = bool(item.get("default"))
+        found.append(DeviceInfo(index=-1 - len(found), name=name, hostapi="Windows WASAPI",
+                                max_inputs=2 if capture else 0, max_outputs=0 if capture else 2,
+                                default_rate=float(RATE), default_input=capture and default,
+                                default_output=(not capture) and default))
+    return found if complete else None
+
+
 class FrameDecoder:
     """Cuts the helper's byte stream into ``(frames, channels)`` float32 blocks; resynchronises after garbage."""
 
@@ -304,6 +351,12 @@ class TapHelper:
     def alive(self) -> bool:
         proc = self._proc
         return proc is not None and proc.poll() is None
+
+    @property
+    def pid(self) -> int | None:
+        """Process id of the running helper, or ``None``."""
+        proc = self._proc
+        return proc.pid if proc is not None and proc.poll() is None else None
 
     # ── configuration (remembered, replayed into every new process) ─────────
 
@@ -517,10 +570,17 @@ class TapHelper:
         apps = self.status().get("apps")
         return [a for a in apps if isinstance(a, dict)] if isinstance(apps, list) else []
 
+    def devices_generation(self) -> int | None:
+        """A number the helper raises whenever Windows adds, removes or switches an audio device (``None``: unknown,
+        e.g. an older helper). A change means a device that was missing may be there now."""
+        value = self.status().get("devgen")
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
     def info(self) -> dict:
         status = self.status()
         return {"available": self.available(), "running": self.alive, "engaged": bool(status.get("engaged", False)),
-                "endpoint": status.get("endpoint", ""), "packets": self.packets, "restarts": self.restarts,
+                "endpoint": status.get("endpoint", ""), "devgen": self.devices_generation(),
+                "packets": self.packets, "restarts": self.restarts,
                 "leaks": sum(int(a.get("leaks", 0) or 0) for a in self.apps()), "error": self.last_error,
                 "apps": self.apps()}
 
