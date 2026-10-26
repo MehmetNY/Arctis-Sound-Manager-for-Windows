@@ -131,6 +131,18 @@ _AWAY_WAKE_S = 30.0
 # on any of them — someone who reaches for the wheel is looking at the screen,
 # even with the PC locked while they play on the console plugged into USB-2.
 _WHEEL_KEYS = frozenset({'station_volume', 'chat_mix', 'media_mix'})
+
+# Turning the wheel makes the DAC's firmware draw its own volume / balance bar, and with it the screen is the
+# firmware's again: our frames are accepted by the transport and not shown, which looked like "the custom display
+# freezes when I change the volume" until Custom Display was switched off and on (that toggle hands the screen back and
+# draws again). The same two steps are taken here by themselves once the wheel has been still for _RETAKE_QUIET_S,
+# the firmware's own bar is gone by then, and a frame goes out _RETAKE_GAP_S after the hand-back.
+_RETAKE_QUIET_S = 1.5
+_RETAKE_GAP_S = 0.3
+
+# A frame that cannot be delivered is reported once, then at most this often, with what the transport said — it used to
+# be a debug line, so a screen that stopped updating left nothing in the log to look at.
+_FAILURE_LOG_EVERY_S = 60.0
 _BURN_IN_POSITIONS: list[tuple[int, int]] = [
     (0, 0), (1, 0), (1, 1), (0, 1), (-1, 1),
     (-1, 0), (-1, -1), (0, -1), (1, -1),
@@ -257,6 +269,11 @@ class OledManager:
         # a hand on the wheel.
         self._wheel_seen: dict[str, object] = {}
         self._wake_pending = threading.Event()
+        self._wheel_last: float = 0.0              # monotonic time of the last wheel report
+        self._retake_lock = threading.Lock()
+        self._retake_running = False
+        self._failure_logged_at: float = 0.0
+        self._failed_frames: int = 0
 
         # When the screen was last taken with the protocol's preamble
         # (Siberia 840: custom write mode + offset); 0 = handed back.
@@ -665,7 +682,16 @@ class OledManager:
 
         if frame_ok:
             self._frame_fail_streak = 0
+            self._failed_frames = 0
             return
+
+        self._failed_frames += 1
+        mono = time.monotonic()
+        if self._failed_frames == 1 or mono - self._failure_logged_at >= _FAILURE_LOG_EVERY_S:
+            self._failure_logged_at = mono
+            # info, not warning: the busy-interface breaker below owns the one warning a failing screen gets
+            logger.info("OLED: a frame could not be delivered (errno %s, %d in a row)",
+                        self._last_send_errno, self._failed_frames)
 
         if self._last_send_errno == errno.EBUSY:
             self._frame_fail_streak += 1
@@ -869,12 +895,55 @@ class OledManager:
         if first:
             return
         self._last_update_time = datetime.now().timestamp()
+        self._wheel_last = time.monotonic()
+        if not self._screen_off and self._core.general_settings.oled_custom_display:
+            self._schedule_retake()
         if not self._screen_off or self._wake_pending.is_set():
             return
         # Waking redraws, which asks MPRIS for the current track: keep that
         # off the listen loop, it must not stall the next wheel report.
         self._wake_pending.set()
         threading.Thread(target=self._wake, name="OledWake", daemon=True).start()
+
+    def _schedule_retake(self) -> None:
+        """Take the screen back from the firmware once the wheel is still (one waiting thread, however many reports)."""
+        with self._retake_lock:
+            if self._retake_running:
+                return
+            self._retake_running = True
+        threading.Thread(target=self._retake_after_wheel, name="OledRetake", daemon=True).start()
+
+    def _retake_after_wheel(self) -> None:
+        try:
+            while not self._stop_event.is_set():
+                while not self._stop_event.is_set():
+                    quiet = _RETAKE_QUIET_S - (time.monotonic() - self._wheel_last)
+                    if quiet <= 0:
+                        break
+                    if self._stop_event.wait(quiet):
+                        return
+                if self._stop_event.is_set():
+                    return
+                seen = self._wheel_last
+                self._retake_screen()
+                if self._wheel_last == seen:           # nobody touched the wheel meanwhile
+                    return
+        except Exception as e:  # noqa: BLE001
+            logger.warning("OLED retake error: %s", e)
+        finally:
+            with self._retake_lock:
+                self._retake_running = False
+
+    def _retake_screen(self) -> None:
+        """What switching Custom Display off and on does: give the screen back, then draw on it again."""
+        gs = self._core.general_settings
+        if self._screen_off or self._off_for_away or not gs.oled_custom_display:
+            return
+        logger.debug("OLED: the wheel was turned — taking the screen back from the DAC's own bar")
+        self._hand_back_screen()
+        if self._stop_event.wait(_RETAKE_GAP_S):
+            return
+        self.update_display(activity=False)
 
     def _wake(self) -> None:
         try:

@@ -47,6 +47,13 @@ from arctis_sound_manager.oled_manager import OledManager
 # event, so without this retry it would never be picked up until a replug or
 # USB autosuspend resume. (issue #76)
 RESCAN_INTERVAL_S: float = 3.0
+# A scan that finds nothing is repeated every RESCAN_INTERVAL_S for the first RESCAN_FAST_COUNT tries (a headset that is
+# just powering up), then every RESCAN_SLOW_INTERVAL_S. A headset that arrives later does not wait for the slow scan:
+# the hot-plug monitor reports it and starts detection at once. The retry only exists for a device that was already
+# there at start-up and whose first detection failed, so a machine that simply has no headset on it (the headset is in
+# its case, the base station is unplugged) must not keep the USB stack busy all day for it.
+RESCAN_FAST_COUNT: int = 20
+RESCAN_SLOW_INTERVAL_S: float = 15.0
 
 # How long a listen task waits before returning when it has nothing to read:
 # no device attached, or an interface the profile declares that this model does
@@ -398,7 +405,9 @@ class CoreEngine:
         self._device_ready: bool = False
         self._detect_lock = threading.Lock()   # serialises detection attempts
         self._rescan_in_flight: bool = False
+        self._rescan_misses: int = 0           # scans in a row that found nothing (drives the back-off)
         self._logged_no_device: bool = False   # throttle the "no device" warning
+        self._logged_preferred_missing: bool = False   # same, for "the preferred unit is not connected"
         self._warned_no_out_endpoint: bool = False  # log once per device attach
         self._last_recreate_loopbacks: float = 0.0  # debounce rapid D-Bus calls
         # Serialises Spatial Audio applies (#169): a filter-chain restart is
@@ -2415,6 +2424,8 @@ class CoreEngine:
         xrun_task: asyncio.Task = asyncio.create_task(self._xrun_watch_loop())
         last_rescan: float = 0.0
         while not self._stopping:
+            if self._device_ready:
+                self._rescan_misses = 0        # a later loss starts the quick scans again
             if not self._device_ready:
                 # Cancel any leftover tasks from a previous connection
                 for task in listen_coroutines:
@@ -2431,7 +2442,7 @@ class CoreEngine:
                 # resume. (issue #76)
                 event_loop = asyncio.get_event_loop()
                 now = event_loop.time()
-                if not self._rescan_in_flight and (now - last_rescan) >= RESCAN_INTERVAL_S:
+                if not self._rescan_in_flight and (now - last_rescan) >= self._rescan_interval():
                     last_rescan = now
                     self._rescan_in_flight = True
                     event_loop.run_in_executor(None, self._rescan_for_device)
@@ -2507,6 +2518,12 @@ class CoreEngine:
             poll_task.cancel()
         xrun_task.cancel()
 
+    def _rescan_interval(self) -> float:
+        """Seconds between two re-scans: quick at first, then relaxed (see RESCAN_FAST_COUNT)."""
+        if getattr(self, '_rescan_misses', 0) < RESCAN_FAST_COUNT:
+            return RESCAN_INTERVAL_S
+        return RESCAN_SLOW_INTERVAL_S
+
     def _rescan_for_device(self) -> None:
         """Re-attempt detection for a device present at boot but not yet ready.
 
@@ -2517,7 +2534,12 @@ class CoreEngine:
         try:
             if not self._device_ready:
                 self.configure_virtual_sinks(only_if_unconfigured=True)
+            if self._device_ready:
+                self._rescan_misses = 0
+            else:
+                self._rescan_misses = getattr(self, '_rescan_misses', 0) + 1
         except Exception as e:
+            self._rescan_misses = getattr(self, '_rescan_misses', 0) + 1
             self.logger.warning("Periodic device re-scan failed: %r", e)
         finally:
             self._rescan_in_flight = False
@@ -2778,7 +2800,11 @@ class CoreEngine:
                 device_config, usb_device = self._find_preferred_device(preferred_id)
                 if usb_device is not None:
                     used_preferred_device = True
-                else:
+                    self._logged_preferred_missing = False
+                elif getattr(self, '_logged_preferred_missing', False) is not True:
+                    # Once per absence, not once per re-scan: this line used to be written every three seconds for
+                    # as long as the headset was away, which is a megabyte of log per day for nothing.
+                    self._logged_preferred_missing = True
                     self.logger.info(
                         "Preferred device %r is not currently connected — "
                         "falling back to the default detection order.",

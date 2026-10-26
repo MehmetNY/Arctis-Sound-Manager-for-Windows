@@ -32,6 +32,7 @@ ENOENT, EIO, EBUSY, ENODEV, ETIMEDOUT = 2, 5, 16, 19, 110
 VENDOR_PAGE_MIN = 0xFF00
 USB_CLASS_HID = 3
 _DEFAULT_REPORT_LEN = 64
+_READ_SLICE_MS = 15   # how long one HID node is waited on before the next one gets its turn
 
 
 class USBError(IOError):
@@ -49,10 +50,22 @@ class USBTimeoutError(USBError):
 # ── hidapi access, injectable for tests ──────────────────────────────────────
 
 class _HidApiBackend:
-    """Thin wrapper over the ``hid`` module (pip package ``hidapi``)."""
+    """Thin wrapper over the ``hid`` module (pip package ``hidapi``).
+
+    ``hid.enumerate`` is not cheap on Windows: it walks every HID interface of the machine and opens each one to read
+    its ids and strings (twenty to sixty CreateFile calls). The daemon asks for a device far more often than that —
+    one question per device profile, once per scan, plus the hot-plug poll — so the answer is taken once per
+    :attr:`ENUMERATE_TTL_S` for a vendor and every question inside that second is answered from it. A headset that
+    shows up is seen at most that much later; one that vanishes is noticed by its failing handle anyway.
+    """
+
+    ENUMERATE_TTL_S = 1.0
 
     def __init__(self) -> None:
         self._hid: Any = None
+        self._lock = threading.Lock()
+        self._snapshots: dict[int, tuple[float, list[dict]]] = {}
+        self.enumerations = 0      # how many real hid.enumerate calls were made (diagnostics, tests)
 
     def _mod(self):
         if self._hid is None:
@@ -65,8 +78,24 @@ class _HidApiBackend:
             self._hid = hid
         return self._hid
 
+    def invalidate(self) -> None:
+        """Forget the cached answers (a device was just opened, closed or re-plugged)."""
+        with self._lock:
+            self._snapshots.clear()
+
     def enumerate(self, vendor_id: int, product_id: int) -> list[dict]:
-        return list(self._mod().enumerate(vendor_id, product_id))
+        with self._lock:
+            now = time.monotonic()
+            hit = self._snapshots.get(vendor_id)
+            if hit is None or now - hit[0] > self.ENUMERATE_TTL_S or now < hit[0]:
+                entries = list(self._mod().enumerate(vendor_id, 0))
+                self.enumerations += 1
+                self._snapshots[vendor_id] = (time.monotonic(), entries)
+            else:
+                entries = hit[1]
+        if product_id:
+            return [e for e in entries if e.get("product_id") == product_id]
+        return list(entries)
 
     def open_path(self, path: bytes):
         dev = self._mod().device()
@@ -361,10 +390,25 @@ class Device:
             with iface.write_lock:
                 result = handle.write(buf) if kind == "output" else handle.send_feature_report(buf)
         except (OSError, ValueError) as exc:
+            self._forget_writer(coll, handle)
             raise USBError(f"HID {kind} report failed: {exc}", errno=EIO) from exc
         if _hid_failed(result):
-            raise USBError(f"HID {kind} report failed: {_error_text(handle)}", errno=EIO)
+            text = _error_text(handle)
+            self._forget_writer(coll, handle)
+            raise USBError(f"HID {kind} report failed: {text}", errno=EIO)
         return len(payload)
+
+    def _forget_writer(self, coll: _Coll, handle: Any) -> None:
+        """A write failed: that handle may be one the system has already given up on (the base station re-enumerated, a
+        sleep and wake in between), and a cached handle that is dead would fail every later write too. Close it so the
+        next write opens a fresh one. The handles the listener reads through are not touched."""
+        with self._open_lock:
+            if coll.writer is handle:
+                coll.writer = None
+        try:
+            handle.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _get_report(self, interface: int, report_type: int, report_id: int, length: int) -> list[int]:
         iface = self._iface(interface)
@@ -420,21 +464,25 @@ class Device:
 
         try:
             if len(readers) == 1:
+                readers[0].set_nonblocking(0)
                 data = readers[0].read(size, max(1, timeout_ms))
             else:
-                # One endpoint, several HID nodes: poll them all until the deadline.
-                for handle in readers:
-                    handle.set_nonblocking(1)
+                # One endpoint, several HID nodes (the Nova Pro DAC has two on its command interface). Wait on one
+                # at a time in short slices: a blocking read costs nothing while it waits. Polling every node
+                # without blocking, 500 times a second, kept a core warm for as long as the daemon ran.
                 deadline = time.monotonic() + timeout_ms / 1000
                 data = []
                 while not data:
                     for handle in readers:
-                        data = handle.read(size)
+                        left = deadline - time.monotonic()
+                        if left <= 0:
+                            break
+                        handle.set_nonblocking(0)
+                        data = handle.read(size, max(1, min(_READ_SLICE_MS, int(left * 1000))))
                         if data:
                             break
                     if data or time.monotonic() >= deadline:
                         break
-                    time.sleep(0.002)
         except (OSError, ValueError) as exc:
             text = str(exc).lower()
             gone = "not connected" in text or "no such device" in text or "removed" in text
