@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from arctis_sound_manager.win.audio import fast
+
 TAPS = 32
 PHASES = 512
 BETA = 9.0
@@ -38,6 +40,39 @@ def _build_table() -> np.ndarray:
 
 _TABLE = _build_table()
 _OFFSETS = np.arange(TAPS) - HISTORY
+
+
+def _fractional_read_py(buf, table, pos0, ratio, n, out):
+    """``out[c, k] = sum_t buf[c, floor(pos_k) - HISTORY + t] * lerp(table, phase_k)[t]`` with ``pos_k = pos0 + k * ratio``:
+    the same arithmetic as the vectorised code in :meth:`StreamResampler._interpolate`, as plain loops for numba.
+
+    The vectorised code builds an ``(n, 32)`` matrix of taps and gathers an ``(channels, n, 32)`` block of samples for
+    every call - a megabyte of memory traffic per input per block, about a millisecond. Doing that for the four
+    channel inputs of the engine was most of its CPU use."""
+    channels = buf.shape[0]
+    taps_n = table.shape[1]
+    phases = table.shape[0] - 1
+    hist = taps_n // 2 - 1
+    taps = np.empty(taps_n)
+    for k in range(n):
+        pos = pos0 + k * ratio
+        base = int(np.floor(pos))
+        phase = (pos - base) * phases
+        p0 = int(phase)
+        if p0 > phases - 1:
+            p0 = phases - 1
+        w = phase - p0
+        for t in range(taps_n):
+            taps[t] = table[p0, t] * (1.0 - w) + table[p0 + 1, t] * w
+        start = base - hist
+        for c in range(channels):
+            acc = 0.0
+            for t in range(taps_n):
+                acc += buf[c, start + t] * taps[t]
+            out[c, k] = acc
+
+
+_READ_KERNEL = fast.compile(_fractional_read_py)
 
 
 class StreamResampler:
@@ -87,19 +122,37 @@ class StreamResampler:
         if ratio == 1.0 and first == np.floor(first):
             i0 = int(first)
             out = self._buf[:, i0:i0 + n].copy()
+        elif not self._buf[:, int(first) - HISTORY:need].any():
+            out = np.zeros((self.channels, n))                    # nothing but silence under the filter: nothing to filter
         else:
-            pos = first + np.arange(n) * ratio
-            base = np.floor(pos)
-            frac = pos - base
-            phase = frac * PHASES
-            p0 = np.minimum(phase.astype(np.int64), PHASES - 1)
-            w = (phase - p0)[:, None]
-            taps = _TABLE[p0] * (1.0 - w) + _TABLE[p0 + 1] * w    # (n, TAPS)
-            idx = base.astype(np.int64)[:, None] + _OFFSETS[None, :]
-            out = np.einsum("cnt,nt->cn", self._buf[:, idx], taps)
+            out = self._interpolate(first, n, ratio)
         self._pos = first + n * ratio
         drop = int(np.floor(self._pos)) - HISTORY
         if drop > 0:
             self._buf = self._buf[:, drop:]
             self._pos -= drop
         return out
+
+    def _interpolate(self, first: float, n: int, ratio: float) -> np.ndarray:
+        global _READ_KERNEL
+        if _READ_KERNEL is not None:
+            buf = self._buf if self._buf.flags.c_contiguous else np.ascontiguousarray(self._buf)
+            out = np.empty((self.channels, n))
+            try:
+                _READ_KERNEL(buf, _TABLE, float(first), float(ratio), int(n), out)
+                return out
+            except Exception as exc:                              # noqa: BLE001 — fall back to numpy, once and for all
+                _READ_KERNEL = None
+                fast.disable(f"resampler: {exc!r}")
+        return self._interpolate_numpy(first, n, ratio)
+
+    def _interpolate_numpy(self, first: float, n: int, ratio: float) -> np.ndarray:
+        pos = first + np.arange(n) * ratio
+        base = np.floor(pos)
+        frac = pos - base
+        phase = frac * PHASES
+        p0 = np.minimum(phase.astype(np.int64), PHASES - 1)
+        w = (phase - p0)[:, None]
+        taps = _TABLE[p0] * (1.0 - w) + _TABLE[p0 + 1] * w        # (n, TAPS)
+        idx = base.astype(np.int64)[:, None] + _OFFSETS[None, :]
+        return np.einsum("cnt,nt->cn", self._buf[:, idx], taps)

@@ -141,3 +141,87 @@ def test_history_is_kept_for_the_next_pull():
     out += [parts.pull(480, 1.0007) for _ in range(6)]
     ref = [whole.pull(480, 1.0007) for _ in range(7)]
     assert np.allclose(np.concatenate(out, axis=1), np.concatenate(ref, axis=1), atol=1e-12)
+
+
+# ── the compiled kernel and the silence shortcut ─────────────────────────────
+
+from arctis_sound_manager.win.audio import fast  # noqa: E402
+from arctis_sound_manager.win.audio import resample as rs  # noqa: E402
+
+
+def _stream(channels=2, length=4000, seed=3):
+    return np.random.default_rng(seed).standard_normal((channels, length)) * 0.2
+
+
+@pytest.mark.skipif(not fast.HAVE_NUMBA, reason="numba is not installed")
+@pytest.mark.parametrize("ratio", [1.0, 1.00003, 0.99991, 1.0004, 0.5, 1.37])
+@pytest.mark.parametrize("channels,n", [(1, 480), (2, 480), (2, 960), (2, 37)])
+def test_the_compiled_kernel_gives_what_the_numpy_code_gives(ratio, channels, n):
+    x = _stream(channels, 6000)
+    fast_r, slow_r = rs.StreamResampler(channels), rs.StreamResampler(channels)
+    fast_r.push(x)
+    slow_r.push(x)
+    assert rs._READ_KERNEL is not None
+    for _ in range(4):
+        a = fast_r.pull(n, ratio)
+        saved, rs._READ_KERNEL = rs._READ_KERNEL, None             # the same pull through the numpy path
+        try:
+            b = slow_r.pull(n, ratio)
+        finally:
+            rs._READ_KERNEL = saved
+        assert a is not None and b is not None
+        assert np.max(np.abs(a - b)) < 1e-12
+    assert fast_r._pos == slow_r._pos
+
+
+def test_a_kernel_that_fails_is_switched_off_and_the_numpy_path_takes_over(monkeypatch):
+    def broken(*args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(rs, "_READ_KERNEL", broken)
+    r = rs.StreamResampler(2)
+    x = _stream(2, 3000)
+    r.push(x)
+    out = r.pull(480, 1.00003)
+    reference = rs.StreamResampler(2)
+    reference.push(x)
+    monkeypatch.setattr(rs, "_READ_KERNEL", None)
+    assert np.allclose(out, reference.pull(480, 1.00003), atol=1e-12)
+    assert rs._READ_KERNEL is None
+
+
+def test_silence_is_returned_as_silence_without_filtering(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rs, "_READ_KERNEL", lambda *a: calls.append(1))
+    monkeypatch.setattr(rs.StreamResampler, "_interpolate_numpy", lambda *a: calls.append(1))
+    r = rs.StreamResampler(2)
+    r.push(np.zeros((2, 3000)))
+    for _ in range(5):
+        out = r.pull(480, 1.00003)
+        assert out.shape == (2, 480) and not out.any()
+    assert calls == []
+    assert r._pos < 600                                            # and the position still advanced and the buffer was trimmed
+
+
+def test_audio_after_silence_is_filtered_again_and_the_filter_sees_the_silence_before_it():
+    r = rs.StreamResampler(1)
+    ref = rs.StreamResampler(1)
+    x = np.concatenate([np.zeros((1, 1500)), _stream(1, 1500)], axis=1)
+    for chunk in (x[:, :700], x[:, 700:1700], x[:, 1700:]):
+        r.push(chunk)
+    ref.push(x)
+    got = np.concatenate([r.pull(240, 1.00005) for _ in range(10)], axis=1)
+    want = np.concatenate([ref.pull(240, 1.00005) for _ in range(10)], axis=1)
+    assert np.allclose(got, want, atol=1e-12)
+    assert not got[:, :1200].any() and got[:, 1500:].any()
+
+
+def test_one_nonzero_sample_inside_the_filter_window_defeats_the_shortcut():
+    r = rs.StreamResampler(1)
+    x = np.zeros((1, 2000))
+    x[0, 520] = 1.0                                               # one click, in the second block's window only
+    r.push(x)
+    first = r.pull(480, 1.00003)
+    second = r.pull(480, 1.00003)
+    assert not first.any() or abs(first).max() < 1e-3             # at most the filter's very first tail
+    assert second.any()

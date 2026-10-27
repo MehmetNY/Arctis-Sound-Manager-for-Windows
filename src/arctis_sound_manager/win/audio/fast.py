@@ -57,13 +57,16 @@ def warmup() -> float:
     if not HAVE_NUMBA:
         return 0.0
     import numpy as np                                          # noqa: PLC0415
-    from arctis_sound_manager.win.audio import dynamics, eq, reverb  # noqa: PLC0415 — they import this module
+    from arctis_sound_manager.win.audio import dynamics, eq, resample, reverb  # noqa: PLC0415 — they import this module
     started = time.perf_counter()
     try:
         reverb.PlateReverb(instances=2).process(np.zeros((2, 64)))
         dynamics.Limiter(48000.0, 2).process(np.zeros((2, 480)))
         sos = np.array([[1.0, 0.1, 0.0, 1.0, -0.2, 0.0]])
         eq.BiquadCascade(2, sos).process(np.zeros((2, 480)))
+        reader = resample.StreamResampler(2)                    # not silence: silence never reaches the kernel
+        reader.push(np.full((2, 256), 0.1))
+        reader.pull(128, 1.00003)
     except Exception as exc:                                    # noqa: BLE001 — the kernels disable themselves
         _log.warning("kernel warm-up failed: %r", exc)
     took = time.perf_counter() - started

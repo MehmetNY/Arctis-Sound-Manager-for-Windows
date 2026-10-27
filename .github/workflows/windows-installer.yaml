@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
-      - run: python -m pip install psutil winrt-runtime winrt-Windows.Foundation winrt-Windows.Foundation.Collections winrt-Windows.Media.Control winrt-Windows.Media.Playback winrt-Windows.Storage.Streams
+      - run: python -m pip install psutil winrt-runtime winrt-Windows.Foundation winrt-Windows.Foundation.Collections winrt-Windows.Media winrt-Windows.Media.Control winrt-Windows.Media.Core winrt-Windows.Media.Playback winrt-Windows.Storage winrt-Windows.Storage.Streams
       - name: Poll the media line
         shell: pwsh
         timeout-minutes: 10
