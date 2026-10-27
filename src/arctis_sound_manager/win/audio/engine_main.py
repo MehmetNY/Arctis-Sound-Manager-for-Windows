@@ -303,6 +303,7 @@ def _load_health(host) -> dict:
         out["strips_idle"] = f"{sum(1 for s in strips if s.idle)}/{len(strips)}"
         out["playback_load"] = f"{engine.playback.stats.load * 100:.0f}%"
         out["mic_load"] = f"{engine.mic.stats.load * 100:.0f}%"
+        out["numba"] = "yes" if fast.HAVE_NUMBA else "no"
     except Exception:                                            # noqa: BLE001 — only a diagnostic
         return {}
     return out

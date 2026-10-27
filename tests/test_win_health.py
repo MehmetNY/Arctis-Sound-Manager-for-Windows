@@ -324,7 +324,8 @@ def test_the_engine_line_says_how_busy_the_pipelines_are_and_how_many_strips_are
         playback=types.SimpleNamespace(stats=types.SimpleNamespace(load=0.134)),
         mic=types.SimpleNamespace(stats=types.SimpleNamespace(load=0.004)))
     got = engine_main._load_health(types.SimpleNamespace(engine=engine))
-    assert got == {"strips_idle": "3/4", "playback_load": "13%", "mic_load": "0%"}
+    assert got == {"strips_idle": "3/4", "playback_load": "13%", "mic_load": "0%",
+                   "numba": "yes" if engine_main.fast.HAVE_NUMBA else "no"}
     assert engine_main._load_health(types.SimpleNamespace(engine=None)) == {}
     assert engine_main._load_health(types.SimpleNamespace(engine=types.SimpleNamespace())) == {}
 

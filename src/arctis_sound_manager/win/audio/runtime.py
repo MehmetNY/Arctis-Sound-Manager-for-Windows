@@ -36,6 +36,7 @@ from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.ports import InputPort, OutputPort
 from arctis_sound_manager.win.audio.realtime import ThreadBoost
 from arctis_sound_manager.win.audio.tap import TapStream, load_rules, save_rules
+from arctis_sound_manager.win.profiling import ProfileTrigger
 
 _log = logging.getLogger(__name__)
 
@@ -170,15 +171,20 @@ class Pipeline:
         return made
 
     def run(self, stop: threading.Event) -> None:
-        with ThreadBoost():
-            while not stop.is_set():
-                master = self.master()
-                if master is None:
-                    stop.wait(0.1)
-                    continue
-                master.wake.wait(0.05)
-                master.wake.clear()
-                self.step()
+        trigger = ProfileTrigger(self.name)                          # a file in the config folder asks for a profile of this thread
+        try:
+            with ThreadBoost():
+                while not stop.is_set():
+                    trigger.poll()
+                    master = self.master()
+                    if master is None:
+                        stop.wait(0.1)
+                        continue
+                    master.wake.wait(0.05)
+                    master.wake.clear()
+                    self.step()
+        finally:
+            trigger.abort()
 
 
 class PlaybackPipeline(Pipeline):
