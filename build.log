@@ -1,0 +1,196 @@
+== ASM 1.6.4
+audiotap.cpp
+native\audiotap\audiotap.cpp(211): warning C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+native\audiotap\audiotap.cpp(219): warning C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+native\audiotap\audiotap.cpp(665): warning C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+native\audiotap\audiotap.cpp(680): warning C4996: '_wfopen': This function or variable may be unsafe. Consider using _wfopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+audioprobe.cpp
+native\audioprobe\audioprobe.cpp(357): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+
+Name             Length
+----             ------
+asm-audiotap.exe 330752
+audioprobe.exe   247296
+
+
+159 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.9
+159 INFO: Python: 3.13.16
+180 INFO: Platform: Windows-2025Server-10.0.26100-SP0
+180 INFO: Python environment: C:\hostedtoolcache\windows\Python\3.13.16\x64
+917 WARNING: collect_dynamic_libs - skipping library collection for module 'sounddevice' as it is not a package.
+918 WARNING: collect_dynamic_libs - skipping library collection for module 'hid' as it is not a package.
+919 WARNING: collect_data_files - skipping data collection for module 'sounddevice' as it is not a package.
+2356 INFO: Module search paths (PYTHONPATH):
+['D:\\a\\Arctis-Sound-Manager-for-Windows\\Arctis-Sound-Manager-for-Windows',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\python313.zip',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\DLLs',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages',
+ 'D:\\a\\Arctis-Sound-Manager-for-Windows\\Arctis-Sound-Manager-for-Windows\\src']
+2600 INFO: Appending 'binaries' from .spec
+2600 INFO: Appending 'datas' from .spec
+2636 INFO: checking Analysis
+2636 INFO: Building Analysis because Analysis-00.toc is non existent
+2637 INFO: Looking for Python shared library...
+2637 INFO: Using Python shared library: C:\hostedtoolcache\windows\Python\3.13.16\x64\python313.dll
+2637 INFO: Running Analysis Analysis-00.toc
+2637 INFO: Target bytecode optimization level: 0
+2637 INFO: Initializing module dependency graph...
+2640 INFO: Initializing module graph hook caches...
+2660 INFO: Analyzing modules for base_library.zip ...
+3649 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+3995 INFO: Processing standard module hook 'hook-math.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+4217 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5332 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6742 INFO: Caching module dependency graph...
+6773 INFO: Analyzing D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\src\arctis_sound_manager\scripts\winmain.py
+6845 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6850 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7028 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7199 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7938 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+8211 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8212 INFO: SetuptoolsInfo: initializing cached setuptools info...
+8959 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+9490 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+10361 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+11265 INFO: Processing standard module hook 'hook-numba.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11281 INFO: Processing standard module hook 'hook-llvmlite.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11964 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+12133 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+12143 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12167 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12167 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+12180 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12180 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+12300 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+12314 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12542 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+12543 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12551 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12551 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+13022 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+13022 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+13562 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+13563 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+17026 INFO: Processing pre-safe-import-module hook 'hook-win32com.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+18596 INFO: Processing standard module hook 'hook-scipy.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+19430 INFO: Processing standard module hook 'hook-scipy.linalg.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+19562 INFO: Processing standard module hook 'hook-scipy.special._ufuncs.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+21394 INFO: Processing standard module hook 'hook-scipy.spatial._ckdtree.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+22176 INFO: Processing standard module hook 'hook-scipy.spatial.transform.rotation.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+23319 INFO: Processing standard module hook 'hook-scipy.stats._stats.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+23853 INFO: Processing standard module hook 'hook-scipy.sparse.csgraph.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+24615 INFO: Processing standard module hook 'hook-scipy.special._ellip_harm_2.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+25280 INFO: Processing standard module hook 'hook-sounddevice.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+25311 INFO: Processing standard module hook 'hook-ruamel.yaml.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+25895 INFO: Processing standard module hook 'hook-scipy.io.matlab.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+26306 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+26435 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+26599 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+32078 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+38495 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+44922 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+95165 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+95374 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+96948 INFO: Processing standard module hook 'hook-babel.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+97640 INFO: Processing standard module hook 'hook-PySide6.QtDBus.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+99128 INFO: Processing standard module hook 'hook-PySide6.QtMultimedia.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+105637 INFO: Processing standard module hook 'hook-PySide6.QtMultimediaWidgets.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+107210 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+107487 INFO: Processing standard module hook 'hook-winrt.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\winrt\\__pyinstaller'
+108077 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+108170 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+108594 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+108953 INFO: Analyzing hidden import 'arctis_sound_manager.channel_control'
+108957 INFO: Analyzing hidden import 'arctis_sound_manager.cli_tools'
+108969 INFO: Analyzing hidden import 'arctis_sound_manager.gui.status_widget'
+108971 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.cli'
+109003 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.clipd'
+109007 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.diag_dinit'
+109024 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.setup'
+109040 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.stream_guard'
+109049 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.video_router'
+109074 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.win_audio_probe'
+109092 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.win_probe'
+109102 INFO: Analyzing hidden import 'arctis_sound_manager.scripts.winmain'
+109106 INFO: Analyzing hidden import 'babel.numbers'
+109139 INFO: Analyzing hidden import 'babel.dates'
+109181 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+109226 INFO: Analyzing hidden import 'winrt.__pyinstaller'
+109226 INFO: Analyzing hidden import 'winrt.__pyinstaller.hook-winrt'
+109229 INFO: Analyzing hidden import 'winrt.system.hresult'
+109230 INFO: Analyzing hidden import 'numba.__main__'
+109264 INFO: Analyzing hidden import 'numba.cloudpickle.cloudpickle_fast'
+109265 INFO: Analyzing hidden import 'numba.core.datamodel.testing'
+109270 INFO: Analyzing hidden import 'numba.core.unsafe.nrt'
+109271 INFO: Analyzing hidden import 'numba.core.unsafe.refcount'
+109274 INFO: Analyzing hidden import 'numba.cuda.cudadrv.ndarray'
+109275 INFO: Analyzing hidden import 'numba.cuda.random'
+109281 INFO: Analyzing hidden import 'numba.cuda.simulator.cudadrv.dummyarray'
+109281 INFO: Analyzing hidden import 'numba.cuda.simulator.cudadrv.libs'
+109282 INFO: Analyzing hidden import 'numba.experimental.structref'
+109290 INFO: Analyzing hidden import 'numba.misc.POST'
+109291 INFO: Analyzing hidden import 'numba.misc.gdb_print_extension'
+109298 INFO: Analyzing hidden import 'numba.misc.help'
+109298 INFO: Analyzing hidden import 'numba.misc.help.inspector'
+109309 INFO: Analyzing hidden import 'numba.misc.timsort'
+109329 INFO: Analyzing hidden import 'numba.np.extensions'
+109330 INFO: Analyzing hidden import 'numba.np.ufunc._num_threads'
+109330 INFO: Analyzing hidden import 'numba.scripts'
+109331 INFO: Analyzing hidden import 'numba.scripts.generate_lower_listing'
+109336 INFO: Analyzing hidden import 'numba.testing.__main__'
+109337 INFO: Analyzing hidden import 'numba.testing.notebook'
+109343 INFO: Processing module hooks (post-graph stage)...
+109351 WARNING: Hidden import "pycparser.lextab" not found!
+109351 WARNING: Hidden import "pycparser.yacctab" not found!
+109351 WARNING: Hidden import "tzdata" not found!
+109617 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+109682 WARNING: Hidden import "scipy.special._cdflib" not found!
+109785 INFO: Performing binary vs. data reclassification (1857 entries)
+109873 INFO: Looking for ctypes DLLs
+110157 INFO: Analyzing run-time hooks ...
+110165 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+110168 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+110170 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+110171 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+110173 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+110174 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+110176 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+110274 INFO: Creating base_library.zip...
+110292 INFO: Looking for dynamic libraries
+111932 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\shiboken6', 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\llvmlite.libs', 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\numpy.libs', 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\scipy.libs']
+111933 INFO: Extra DLL search directories (PATH): ['C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\PySide6']
+114395 WARNING: Library not found: could not resolve 'tbb12.dll', dependency of 'C:\\hostedtoolcache\\windows\\Python\\3.13.16\\x64\\Lib\\site-packages\\numba\\np\\ufunc\\tbbpool.cp313-win_amd64.pyd'.
+114503 INFO: Warnings written to D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\pyi\asm\warn-asm.txt
+114626 INFO: Graph cross-reference written to D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\pyi\asm\xref-asm.html
+114732 INFO: checking PYZ
+114732 INFO: Building PYZ because PYZ-00.toc is non existent
+114732 INFO: Building PYZ (ZlibArchive) D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\pyi\asm\PYZ-00.pyz
+116337 INFO: Building PYZ (ZlibArchive) D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\pyi\asm\PYZ-00.pyz completed successfully.
+116372 INFO: checking PKG
+116372 INFO: Building PKG because PKG-00.toc is non existent
+116372 INFO: Building PKG (CArchive) ArctisSoundManager.pkg
+116394 INFO: Building PKG (CArchive) ArctisSoundManager.pkg completed successfully.
+116395 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+116395 INFO: checking EXE
+116395 INFO: Building EXE because EXE-00.toc is non existent
+116395 INFO: Building EXE from EXE-00.toc
+116395 INFO: Copying bootloader EXE to D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\pyi\asm\ArctisSoundManager.exe
+116397 INFO: Copying icon to EXE
+116399 INFO: Copying 0 resources to EXE
+116399 INFO: Embedding manifest in EXE
+116400 INFO: Appending PKG archive to EXE
+116409 INFO: Fixing EXE headers
+116488 INFO: Building EXE from EXE-00.toc completed successfully.
+116503 INFO: checking COLLECT
+116503 INFO: Building COLLECT because COLLECT-00.toc is non existent
+116504 INFO: Building COLLECT COLLECT-00.toc
+117658 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+117693 INFO: Build complete! The results are available in: D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\dist
+rnnoise: C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\pyrnnoise\rnnoise.dll
+downloaded VBCABLE_Driver_Pack45.zip
+
+
+Preprocessing

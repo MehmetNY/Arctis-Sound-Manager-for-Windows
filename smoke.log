@@ -1,0 +1,157 @@
+
+===== os
+
+Caption     : Microsoft Windows Server 2025 Datacenter
+BuildNumber : 26100
+Version     : 10.0.26100
+
+===== secure boot
+False
+
+===== bcdedit current
+
+Windows Boot Loader
+-------------------
+identifier              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows Server
+locale                  en-US
+inherit                 {bootloadersettings}
+recoverysequence        {3167a661-c6d0-11f1-b839-00224846f572}
+displaymessageoverride  Recovery
+recoveryenabled         No
+testsigning             Yes
+isolatedcontext         Yes
+allowedinmemorysettings 0x15000075
+osdevice                partition=C:
+systemroot              \Windows
+resumeobject            {3167a65d-c6d0-11f1-b839-00224846f572}
+nx                      OptOut
+bootstatuspolicy        IgnoreAllFailures
+hypervisorlaunchtype    Auto
+hypervisorschedulertype Root
+ems                     Yes
+
+===== audio services
+
+Name                  Status StartType
+----                  ------ ---------
+AudioEndpointBuilder Running Automatic
+Audiosrv             Running Automatic
+
+===== folder
+
+Name                    Length
+----                    ------
+_internal               
+vbcable                 
+ArctisSoundManager.exe  16953200
+asm-audiotap.exe        330752
+LICENSE.txt             35969
+rnnoise.dll             14825472
+THIRD-PARTY-NOTICES.txt 1726
+
+
+size MB: 471.9
+
+===== what takes the space (top folders of _internal, biggest files)
+
+    MB Folder
+    -- ------
+116.60 PySide6
+114.80 llvmlite
+ 50.60 scipy
+ 28.90 babel
+ 20.70 arctis_sound_manager
+ 20.20 numpy.libs
+ 19.30 scipy.libs
+ 14.10 pyrnnoise
+ 12.90 PIL
+  6.10 numpy
+  1.90 _sounddevice_data
+  1.40 numba
+  1.20 shiboken6
+  0.70 winrt
+  0.50 llvmlite.libs
+  0.20 arctis_sound_manager-1.6.4.dist-info
+  0.20 numpy-2.5.4.dist-info
+  0.00 setuptools
+
+
+   114.8 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\llvmlite\binding\llvmlite.dll
+    19.7 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\opengl32sw.dll
+    19.6 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\numpy.libs\libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll
+    19.3 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\scipy.libs\libscipy_openblas-197ee2fc9b4d071f7e048078cac74115.dll
+    16.2 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\ArctisSoundManager.exe
+    14.1 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\pyrnnoise\rnnoise.dll
+    14.1 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\rnnoise.dll
+    13.5 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\avcodec-63.dll
+    10.0 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Core.dll
+     9.2 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Gui.dll
+     7.5 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PIL\_avif.cp313-win_amd64.pyd
+     6.8 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\libcrypto-3-x64.dll
+     6.4 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Quick.dll
+     6.4 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\scipy\optimize\_highspy\_core.cp313-win_amd64.pyd
+     6.2 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Widgets.dll
+     5.9 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\python313.dll
+     5.7 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\libcrypto-3.dll
+     5.1 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Qml.dll
+     4.7 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\QtWidgets.pyd
+     4.4 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\Qt6Pdf.dll
+     4.0 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\scipy\sparse\_sparsetools.cp313-win_amd64.pyd
+     3.8 MB  -Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\PySide6\QtGui.pyd
+
+===== version
+exit code: 0   args: --version
+1.6.4
+
+
+===== audio devices as the engine sees them (needs sounddevice / PortAudio inside the bundle)
+exit code: 0   args: --engine --list-devices
+[10000] ASM Tap game (Windows WASAPI (ASM Tap), in 2 / out 0)
+[10001] ASM Tap chat (Windows WASAPI (ASM Tap), in 2 / out 0)
+[10002] ASM Tap media (Windows WASAPI (ASM Tap), in 2 / out 0)
+[10003] ASM Tap aux (Windows WASAPI (ASM Tap), in 2 / out 0)
+
+
+===== engine benchmark (compiled kernels = numba works inside the bundle)
+exit code: 0   args: --engine --bench
+{
+  "block": 960,
+  "compiled": true,
+  "warmup_s": 1.72,
+  "playback_ms_mean": 1.461,
+  "playback_ms_p99": 2.322,
+  "playback_load": 0.073,
+  "playback_worst_load": 0.119,
+  "mic_ms_mean": 0.001,
+  "mic_load": 0.0,
+  "spatial": [
+    "game",
+    "media",
+    "aux"
+  ],
+  "noise_engine": null
+}
+
+
+===== numba cache dir
+none
+
+===== rnnoise
+
+FullName
+--------
+D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\rnnoise.dll
+D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\pyrnnoise
+D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\arctis_s…
+D:\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\dist\ArctisSoundManager\_internal\pyrnnois…
+
+===== helper
+True
+
+===== tray logs
+
+
+SMOKE DONE
