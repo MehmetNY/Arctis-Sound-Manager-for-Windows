@@ -313,13 +313,25 @@ def dump_logs(tail: int = 12) -> None:
 
 
 def dump_profile() -> None:
-    """The ``profile:`` lines (where a thread spent its time) of every log."""
+    """The ``profile:`` lines (where a thread spent its time) of every log, the health lines that name the busiest threads
+    and the last health lines of the daemon (how often it asked Windows for the headset)."""
     for path, text in read_logs().items():
-        lines = [line for line in text.splitlines() if "profile:" in line]
-        if lines:
-            log(f"--- {path.name}: the profile ({len(lines)} lines)")
-            for line in lines:
+        lines = text.splitlines()
+        picked = [line for line in lines if "profile:" in line]
+        if picked:
+            log(f"--- {path.name}: the profile ({len(picked)} lines)")
+            for line in picked:
                 log("    " + line.strip()[:400])
+        busy = [line for line in lines if "busiest threads" in line]
+        if busy:
+            log(f"--- {path.name}: health lines that name the busiest threads ({len(busy)}), the last 30")
+            for line in busy[-30:]:
+                log("    " + line.strip()[:500])
+        asked = [line for line in lines if "hid_questions" in line]
+        if asked:
+            log(f"--- {path.name}: the daemon's last health lines with the device-search counters")
+            for line in asked[-3:]:
+                log("    " + line.strip()[:500])
 
 
 def start_program(env: dict) -> None:
