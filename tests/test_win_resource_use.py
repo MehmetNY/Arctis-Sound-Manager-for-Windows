@@ -499,3 +499,19 @@ def test_a_bluetooth_hid_name_counts_as_the_vendors_device():
     assert hidlist.signature([bluetooth, _MOUSE], 0x1038) == (bluetooth,)
     assert hidlist.signature([bluetooth.replace("vid&02", "vid&01")], 0x1038) != ()
     assert hidlist.signature([bluetooth], 0x046D) == ()
+
+
+def test_hours_of_scans_on_a_pc_without_a_headset_enumerate_nothing(monkeypatch):
+    """What the daemon does with no headset: per scan one question per product id of every profile, plus the poll."""
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names([_MOUSE]), now)
+    monkeypatch.setattr(core, "_backend", backend)
+    pids = list(range(0x1200, 0x1200 + 70))
+    for scan in range(1200):                                 # one scan every three seconds for an hour
+        now[0] += 3.0
+        for pid in pids:
+            assert core.find(idVendor=0x1038, idProduct=pid) is None
+            assert list(core.find(idVendor=0x1038, idProduct=pid, find_all=True)) == []
+        assert list(core.find(find_all=True, idVendor=0x1038)) == []     # the hot-plug poll
+    assert backend.enumerations == 0
+    assert backend._hid.calls == []
