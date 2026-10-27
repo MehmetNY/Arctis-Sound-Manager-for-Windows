@@ -1,0 +1,22 @@
+== the media session: 'Soak Artist - Soak Track 0'
+== a player is playing (title, artist, thumbnail; the track changes every 15 s): 3000 polls, one every 20 ms
+   call     0: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 0'
+   call   250: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 0'
+   call   500: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 0'
+   call   750: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 1'
+   call  1000: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 1'
+   call  1250: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 1'
+   call  1500: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 2'
+   call  1750: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 2'
+   call  2000: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 3'
+   call  2250: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 3'
+   call  2500: private    19.7 MB, threads 2, now playing: 'Soak Artist - Soak Track 3'
+   call  2750: private    19.6 MB, threads 2, now playing: 'Soak Artist - Soak Track 4'
+   a player is playing (title, artist, thumbnail; the track changes every 15 s): 19.7 MB -> 19.6 MB; growth -0.1 KB per call (second half)
+== nothing is playing any more: 1000 polls, one every 20 ms
+   call     0: private    19.6 MB, threads 2, now playing: ''
+   call   250: private    19.6 MB, threads 2, now playing: ''
+   call   500: private    19.6 MB, threads 2, now playing: ''
+   call   750: private    19.6 MB, threads 2, now playing: ''
+   nothing is playing any more: 19.6 MB -> 19.5 MB; growth -0.1 KB per call (second half)
+== no leak in the media line
