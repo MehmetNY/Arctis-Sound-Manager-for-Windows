@@ -105,6 +105,16 @@ If memory use is still too high on your PC, create a text file `%LOCALAPPDATA%\a
 `1` and restart ASM: the same lines then also say which kinds of Python objects grew and which lines of code
 allocated the memory (`diag:` lines). Send those logs with the report. Setting `ASM_NO_HEALTH=1` turns all of this off.
 
+`busiest threads:` at the end of a line says which thread of the process is using the CPU. For the audio engine, a file
+`%LOCALAPPDATA%\arctis_manager\profile-playback.txt` containing a number of seconds (default 20) makes the playback
+thread profile itself once and write the result (`profile:` lines) to the engine log.
+
+**What the program does when no headset is there.** It asks Windows for the *names* of the HID interfaces (one call, nothing
+is opened) and only when a SteelSeries name appears or changes does it enumerate for real; a PC with no headset on it
+enumerates nothing, however long it stays on. (Before, the headset was searched for with a full enumeration of every
+HID interface about 140 times every three seconds, and the two-second hot-plug poll added more; a log from a seven-hour
+session without a headset showed 8365 such rounds.)
+
 ## Building it yourself
 
 ```powershell
