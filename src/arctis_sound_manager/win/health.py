@@ -322,6 +322,11 @@ class HealthMonitor:
 
     def _run(self) -> None:
         try:
+            from arctis_sound_manager.win import buildinfo
+            self._log.info("health: %s pid %d runs build %s", self.role, os.getpid(), buildinfo.build_id())
+        except Exception:                                       # noqa: BLE001
+            pass
+        try:
             self.sample()                                       # a first line at start-up: the baseline
         except Exception:                                       # noqa: BLE001
             self._log.debug("health sample failed", exc_info=True)

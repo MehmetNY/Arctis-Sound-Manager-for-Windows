@@ -14,6 +14,9 @@ SRC = os.path.join(ROOT, "src")
 
 datas = collect_data_files("arctis_sound_manager")               # lang, devices, presets, hrir_assets, images ...
 datas += copy_metadata("arctis-sound-manager")                   # project_version() reads it
+_build_id = os.path.join(ROOT, "build", "build_id.txt")           # which commit this is (written by build.ps1)
+if os.path.exists(_build_id):
+    datas += [(_build_id, "arctis_sound_manager")]
 binaries = []
 hidden = collect_submodules("arctis_sound_manager")              # a lot is imported by name at run time
 hidden += ["sounddevice", "hid", "babel.numbers", "babel.dates", "ruamel.yaml"]

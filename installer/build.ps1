@@ -23,6 +23,13 @@ $ico = Join-Path $PSScriptRoot "asm.ico"
 python -c "from PIL import Image; im = Image.open(r'src/arctis_sound_manager/gui/images/asm_logo.png').convert('RGBA'); im.save(r'$ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 
 # 3. Python side
+# which build is this: the commit and the time (build\build_id.txt, bundled by asm.spec) so that every process can name it in its log
+$sha = $env:GITHUB_SHA
+if (-not $sha) { try { $sha = (git rev-parse HEAD 2>$null) } catch { $sha = "" } }
+$short = if ($sha) { "$sha".Substring(0, [Math]::Min(7, "$sha".Length)) } else { "local" }
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm")
+New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
+[IO.File]::WriteAllText((Join-Path $root "build\build_id.txt"), "$short ($stamp UTC)", (New-Object Text.UTF8Encoding($false)))
 python -m pip install --no-deps . | Out-Host                       # registers the package metadata PyInstaller copies
 python -m PyInstaller --noconfirm --distpath build\dist --workpath build\pyi installer\asm.spec | Out-Host
 $app = "build\dist\ArctisSoundManager"
