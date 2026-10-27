@@ -1,0 +1,114 @@
+== devices
+DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Input (VB-Audio Virtual Cable)
+DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE In 16ch (VB-Audio Virtual Cable)
+DEVICE capture state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Output (VB-Audio Virtual Cable)
+DEFAULT render  CABLE Input (VB-Audio Virtual Cable)
+DEFAULT capture CABLE Output (VB-Audio Virtual Cable)
+== sessions before
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+
+== S1 two programs playing; the helper joins them already running
+    TONE start pid=4572 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440
+    TONE start pid=7180 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.200 freq=880
+   headset before engaging: rms 0.2549 (expect about 0.212+0.141 mixed)
+PASS  S1.0 programs are audible at the headset before the helper takes over   [0.2549]
+PASS  S1.1 the helper starts
+PASS  S1.2 both programs are found and turned down   [[{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 3024, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakechat.exe", "pid": 7180, "channel": "chat", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.09563, "leaks": 4}, {"exe": "fakegame.exe", "pid": 4572, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.13981, "leaks": 5}]]
+PASS  S1.3 game level through the helper is what the program plays   [0.21213 vs 0.21213]
+PASS  S1.4 chat level likewise   [0.14142 vs 0.14142]
+PASS  S1.5 media and aux carry nothing
+PASS  S1.6 the game channel holds only the game   [33681782782201913344.0]
+PASS  S1.7 the chat channel holds only the chat   [58605334631151337472.0]
+PASS  S1.8 left and right keep their level
+   MEASURE start-of-recording transient (first 500 ms of a loopback capture): [(0, 0.263), (1, 0.245), (2, 0.255), (3, 0.26), (4, 0.251), (5, 0.263), (6, 0.245), (7, 0.255), (8, 0.26), (9, 0.251), (10, 0.263), (11, 0.245)]
+PASS  S1.9 nothing reaches the headset any more   [rms 0.00e+00 max10ms after 500 ms 0.00e+00]
+PASS  S1.10 the programs' sessions are at the helper's level   [2e-08 2e-08]
+   apps: [{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 3024, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "audioprobe.exe", "pid": 9028, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": true, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakechat.exe", "pid": 7180, "channel": "chat", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.14145, "leaks": 4}, {"exe": "fakegame.exe", "pid": 4572, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.21203, "leaks": 5}]
+
+== S2 the user moves a program's slider in the Windows volume mixer
+PASS  S2 slider 0.5: the helper follows   [0.10607 vs 0.10607]
+PASS  S2 slider 0.5: the program is turned down again   [2e-08]
+PASS  S2 slider 0.05: the helper follows   [0.01061 vs 0.01061]
+PASS  S2 slider 0.05: the program is turned down again   [2e-08]
+PASS  S2 slider 1.0: the helper follows   [0.21213 vs 0.21213]
+PASS  S2 slider 1.0: the program is turned down again   [2e-08]
+
+== S3 mute in the mixer
+PASS  S3.1 muted program is silent
+PASS  S3.2 unmuted program is back
+
+== S4 a program that goes straight to the headset (bypass)
+PASS  S4.1 bypassed program gives the channel nothing   [0.00000]
+PASS  S4.2 its volume is back   [1.0]
+PASS  S4.3 it is audible at the headset   [0.1414]
+PASS  S4.4 back on its channel   [chat 0.14142 headset 0.00e+00]
+
+== S5 a program that starts while the helper runs (what leaks before it is turned down?)
+   first launch: leak starts at bucket 118, 10 ms levels: ['0.158', '0.178', '0.176', '0.176', '0.177', '0.081', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000']
+   MEASURE first-launch audible leak = 60 ms (peak 0.178)
+PASS  S5.0 the recorder itself hears the program (the measurement is meaningful)
+PASS  S5.1 a first launch of an unknown program leaks for no longer than 150 ms   [60 ms]
+PASS  S5.2 and the program then reaches its channel
+   MEASURE second launch of a known program: audible leak 0 ms, peak at headset 0.00000; levels []
+PASS  S5.3 a second launch of a known program leaks for no longer than 30 ms   [0 ms]
+   known programs file: d:\a\arctis-sound-manager-for-windows\arctis-sound-manager-for-windows\e2e-work\fakechat.exe
+d:\a\arctis-sound-manager-for-windows\arctis-sound-manager-for-windows\e2e-work\fakegame.exe
+d:\a\arctis-sound-manager-for-windows\arctis-sound-manager-for-windows\e2e-work\fakemedia.exe
+PASS  S5.4 the program that was heard is remembered as a player
+
+== S10 programs that only record the speakers must keep their volume (turning it down would silence the recording)
+   apps: [{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 3024, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakechat.exe", "pid": 7180, "channel": "chat", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.14141, "leaks": 0}, {"exe": "fakegame.exe", "pid": 4572, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.21222, "leaks": 8}, {"exe": "fakerec.exe", "pid": 6432, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": true, "active": true, "level": 0.0, "leaks": 0}, {"exe": "obs64.exe", "pid": 8660, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}]
+PASS  S10.1 an unknown recorder keeps its volume   [1.0]
+PASS  S10.2 and is only listened to, not managed   [{"exe": "fakerec.exe", "pid": 6432, "channel": "game", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": true, "active": true, "level": 0.0, "leaks": 0}]
+PASS  S10.3 a well-known recorder (obs64.exe) is left alone altogether   [{"exe": "obs64.exe", "pid": 8660, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}]
+PASS  S10.4 the players are still managed meanwhile
+
+== S6 a program that ends while turned down: what volume does it have the next time?
+   MEASURE program ends by itself: volume of the next session with the helper not running = 1.0
+PASS  S6 program that ends by itself gets its volume back for the next launch   [1.0]
+   state file after: (none)
+   MEASURE program is killed: volume of the next session with the helper not running = 1.0
+PASS  S6 program that is killed gets its volume back for the next launch   [1.0]
+   state file after: (none)
+
+== S7 the helper is killed (crash): programs stay turned down until restore
+PASS  S7.0 helper is managing the game
+   after the crash the game's volume is 2e-08; state file: d:\a\arctis-sound-manager-for-windows\arctis-sound-manager-for-windows\e2e-work\fakechat.exe	1
+d:\a\arctis-sound-manager-for-windows\arctis-sound-manager-for-windows\e2e-work\fakegame.exe	0.400000006
+PASS  S7.1 (expected) a crashed helper leaves the program turned down   [2e-08]
+PASS  S7.2 the restore command finds it and puts the volume back
+PASS  S7.3 the volume it had before is back   [0.4]
+
+== S8 engaged / disengaged (the headset is switched off, the engine stops)
+PASS  S8.0 managing again
+PASS  S8.1 disengaging puts the volume back within 2 s   [1.0]
+PASS  S8.2 engaging turns it down again
+PASS  S8.3 and the sound is back in the helper   [0.20988]
+
+== S9 stopping the helper puts every volume back
+PASS  S9.1 game volume restored   [1.0]
+PASS  S9.2 chat volume restored   [1.0]
+   state file: (none)
+
+== S10 several endpoints: a program that plays to the cable's other end, which is not the default device
+PASS  S10.0 the helper starts with two endpoints
+    TONE start pid=7892 device='CABLE In 16ch (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.250 freq=700
+PASS  S10.1 the program on the second endpoint is found and turned down   [[{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 632, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakeother.exe", "pid": 7892, "channel": "media", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.1134, "leaks": 4}]]
+PASS  S10.2 its sound reaches its channel at the level it plays   [0.17678 vs 0.17678]
+PASS  S10.3 and its session is at the helper's level   [2e-08]
+   status endpoint: CABLE Input (VB-Audio Virtual Cable) + CABLE In 16ch (VB-Audio Virtual Cable) | apps: [{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 632, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakeother.exe", "pid": 7892, "channel": "media", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.17678, "leaks": 4}]
+PASS  S10.4 when it ends nothing is left turned down
+PASS  S10.5 the same program on the first endpoint is taken too   [[{"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 632, "channel": "bypass", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": true, "level": 0.0, "leaks": 0}, {"exe": "fakeother.exe", "pid": 1736, "channel": "media", "device": "CABLE Input (VB-Audio Virtual Cable)", "managed": true, "watching": false, "active": true, "level": 0.10629, "leaks": 0}, {"exe": "", "pid": 0, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}, {"exe": "asm-audiotap.exe", "pid": 632, "channel": "bypass", "device": "CABLE In 16ch (VB-Audio Virtual Cable)", "managed": false, "watching": false, "active": false, "level": 0.0, "leaks": 0}]]
+PASS  S10.6 with its sound   [0.17678]
+PASS  S10.7 stopping puts its volume back   [1.0]
+
+== helper log
+    endpoint: CABLE Input (VB-Audio Virtual Cable)
+    endpoint: CABLE In 16ch (VB-Audio Virtual Cable)
+    listening to fakeother.exe (pid 7892) -> media
+    heard fakeother.exe (pid 7892): turned down from now on
+    tapping fakeother.exe (pid 1736) -> media
+   info: {"available": true, "running": false, "engaged": false, "endpoint": "", "devgen": null, "packets": 723, "restarts": 0, "leaks": 0, "error": ""}
+
+== RESULT: all checks passed

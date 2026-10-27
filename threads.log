@@ -1,0 +1,65 @@
+== main x3
+[main x3] main #1: OK (0.42s)
+  [main x3] main #2: OK (0.42s)
+  [main x3] main #3: OK (0.41s)
+   exit code 0
+== main then workers then main
+[main then workers then main] main: OK (0.42s)
+  [main then workers then main] worker: OK (0.42s)
+  [main then workers then main] worker again: OK (0.42s)
+  [main then workers then main] main again: OK (0.41s)
+   exit code 0
+== workers only (PortAudio initialised on main)
+[workers only (PortAudio initialised on main)] worker #1: OK (0.42s)
+  [workers only (PortAudio initialised on main)] worker #2: OK (0.42s)
+  [workers only (PortAudio initialised on main)] worker #3: OK (0.42s)
+   exit code 0
+== one persistent worker
+[one persistent worker] cycle #1: OK
+  [one persistent worker] cycle #2: OK
+  [one persistent worker] cycle #3: OK
+   exit code 0
+== workers with CoInitialize MTA
+[workers with CoInitialize MTA] worker #1: OK (0.42s)
+  [workers with CoInitialize MTA] worker #2: OK (0.42s)
+  [workers with CoInitialize MTA] worker #3: OK (0.42s)
+   exit code 0
+== workers with CoInitialize STA
+[workers with CoInitialize STA] worker #1: OK (0.42s)
+  [workers with CoInitialize STA] worker #2: OK (0.42s)
+  [workers with CoInitialize STA] worker #3: OK (0.42s)
+   exit code 0
+== open on main, start on worker
+[open on main, start on worker] open on main: OK (0.01s)
+  [open on main, start on worker] start on worker: OK (0.00s)
+  [open on main, start on worker] stop+close on main: OK (0.00s)
+   exit code 0
+== open on worker, start on main
+[open on worker, start on main] open on worker: OK (0.01s)
+  [open on worker, start on main] start on main: OK (0.00s)
+  [open on worker, start on main] stop+close on main: OK (0.00s)
+   exit code 0
+== refresh on a worker, then use it
+[refresh on a worker, then use it] refresh + cycle: OK (0.43s)
+  [refresh on a worker, then use it] again: OK (0.42s)
+  [refresh on a worker, then use it] main: OK (0.41s)
+   exit code 0
+== capture + render together, main
+[capture + render together, main] pair on main #1: OK (0.43s)
+  [capture + render together, main] pair on main #2: OK (0.42s)
+  [capture + render together, main] pair on main #3: OK (0.43s)
+   exit code 0
+== capture + render together, worker
+[capture + render together, worker] pair on worker #1: OK (0.44s)
+  [capture + render together, worker] pair on worker #2: OK (0.43s)
+  [capture + render together, worker] pair on worker #3: OK (0.43s)
+   exit code 0
+== PortAudio initialised on the worker
+[PortAudio initialised on the worker] worker cycle #1: OK
+  [PortAudio initialised on the worker] worker cycle #2: OK
+  [PortAudio initialised on the worker] worker cycle #3: OK
+   exit code 0
+== main thread blocked in a wait, worker streams
+[main thread blocked in a wait, worker streams] ['OK', 'OK', 'OK']
+   exit code 0
+DONE

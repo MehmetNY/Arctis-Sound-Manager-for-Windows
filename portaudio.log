@@ -1,0 +1,246 @@
+sounddevice 0.5.6 | portaudio (1246976, 'PortAudio V19.7.0-devel, revision unknown')
+HOSTAPI 0: MME devices=[0, 1, 2, 3, 4] default_in=1 default_out=3
+HOSTAPI 1: Windows DirectSound devices=[5, 6, 7, 8, 9] default_in=5 default_out=7
+HOSTAPI 2: Windows WASAPI devices=[10, 11, 12] default_in=12 default_out=10
+HOSTAPI 3: Windows WDM-KS devices=[13, 14, 15] default_in=13 default_out=14
+DEVICE 0: 'Microsoft Sound Mapper - Input' api=MME in=2 out=0 rate=44100.0 low_out=0.0900 high_out=0.1800
+DEVICE 1: 'CABLE Output (VB-Audio Virtual ' api=MME in=16 out=0 rate=44100.0 low_out=0.0900 high_out=0.1800
+DEVICE 2: 'Microsoft Sound Mapper - Output' api=MME in=0 out=2 rate=44100.0 low_out=0.0900 high_out=0.1800
+DEVICE 3: 'CABLE Input (VB-Audio Virtual C' api=MME in=0 out=16 rate=44100.0 low_out=0.0900 high_out=0.1800
+DEVICE 4: 'CABLE In 16ch (VB-Audio Virtual' api=MME in=0 out=16 rate=44100.0 low_out=0.0900 high_out=0.1800
+DEVICE 5: 'Primary Sound Capture Driver' api=Windows DirectSound in=2 out=0 rate=44100.0 low_out=0.0000 high_out=0.0000
+DEVICE 6: 'CABLE Output (VB-Audio Virtual Cable)' api=Windows DirectSound in=16 out=0 rate=44100.0 low_out=0.0000 high_out=0.0000
+DEVICE 7: 'Primary Sound Driver' api=Windows DirectSound in=0 out=2 rate=44100.0 low_out=0.1200 high_out=0.2400
+DEVICE 8: 'CABLE Input (VB-Audio Virtual Cable)' api=Windows DirectSound in=0 out=16 rate=44100.0 low_out=0.1200 high_out=0.2400
+DEVICE 9: 'CABLE In 16ch (VB-Audio Virtual Cable)' api=Windows DirectSound in=0 out=16 rate=44100.0 low_out=0.1200 high_out=0.2400
+DEVICE 10: 'CABLE Input (VB-Audio Virtual Cable)' api=Windows WASAPI in=0 out=2 rate=48000.0 low_out=0.0020 high_out=0.0100
+DEVICE 11: 'CABLE In 16ch (VB-Audio Virtual Cable)' api=Windows WASAPI in=0 out=2 rate=48000.0 low_out=0.0020 high_out=0.0100
+DEVICE 12: 'CABLE Output (VB-Audio Virtual Cable)' api=Windows WASAPI in=2 out=0 rate=48000.0 low_out=0.0000 high_out=0.0000
+DEVICE 13: 'CABLE Output (VB-Audio Point)' api=Windows WDM-KS in=16 out=0 rate=44100.0 low_out=0.0100 high_out=0.0400
+DEVICE 14: 'Output (VB-Audio Point)' api=Windows WDM-KS in=0 out=16 rate=44100.0 low_out=0.0100 high_out=0.0400
+DEVICE 15: 'Input (VB-Audio Point)' api=Windows WDM-KS in=16 out=0 rate=44100.0 low_out=0.0100 high_out=0.0400
+WasapiSettings available
+--- input 1 'CABLE Output (VB-Audio Virtual ' (MME, max 16 ch)
+  OK    input dev=1 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.026
+  OK    input dev=1 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.013
+  OK    input dev=1 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.013
+  OK    input dev=1 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.025759637188208617
+  OK    input dev=1 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.013061224489795919
+  OK    input dev=1 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.013061224489795919
+  OK    input dev=1 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.026
+  OK    input dev=1 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.013
+  OK    input dev=1 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.013
+  OK    input dev=1 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.025759637188208617
+  OK    input dev=1 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.013061224489795919
+  OK    input dev=1 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.013061224489795919
+  OK    input dev=1 samplerate=48000 channels=16 -> rate=48000.0 ch=16 latency=0.021333333333333333
+  OK    input dev=1 samplerate=48000 channels=16 latency='low' -> rate=48000.0 ch=16 latency=0.013
+  OK    input dev=1 samplerate=48000 channels=16 latency='low' blocksize=0 -> rate=48000.0 ch=16 latency=0.013
+  OK    input dev=1 samplerate=44100 channels=16 -> rate=44100.0 ch=16 latency=0.023219954648526078
+  OK    input dev=1 samplerate=44100 channels=16 latency='low' -> rate=44100.0 ch=16 latency=0.013061224489795919
+  OK    input dev=1 samplerate=44100 channels=16 latency='low' blocksize=0 -> rate=44100.0 ch=16 latency=0.013061224489795919
+--- output 3 'CABLE Input (VB-Audio Virtual C' (MME, max 16 ch)
+  OK    output dev=3 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.182
+  OK    output dev=3 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.091
+  OK    output dev=3 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.091
+  OK    output dev=3 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.18031746031746032
+  OK    output dev=3 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.09142857142857143
+  OK    output dev=3 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.09142857142857143
+  OK    output dev=3 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.182
+  OK    output dev=3 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.091
+  OK    output dev=3 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.091
+  OK    output dev=3 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.18031746031746032
+  OK    output dev=3 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.09142857142857143
+  OK    output dev=3 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.09142857142857143
+  OK    output dev=3 samplerate=48000 channels=16 -> rate=48000.0 ch=16 latency=0.192
+  OK    output dev=3 samplerate=48000 channels=16 latency='low' -> rate=48000.0 ch=16 latency=0.091
+  OK    output dev=3 samplerate=48000 channels=16 latency='low' blocksize=0 -> rate=48000.0 ch=16 latency=0.091
+  OK    output dev=3 samplerate=44100 channels=16 -> rate=44100.0 ch=16 latency=0.18575963718820862
+  OK    output dev=3 samplerate=44100 channels=16 latency='low' -> rate=44100.0 ch=16 latency=0.09142857142857143
+  OK    output dev=3 samplerate=44100 channels=16 latency='low' blocksize=0 -> rate=44100.0 ch=16 latency=0.09142857142857143
+--- output 4 'CABLE In 16ch (VB-Audio Virtual' (MME, max 16 ch)
+  OK    output dev=4 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.182
+  OK    output dev=4 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.091
+  OK    output dev=4 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.091
+  OK    output dev=4 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.18031746031746032
+  OK    output dev=4 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.09142857142857143
+  OK    output dev=4 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.09142857142857143
+  OK    output dev=4 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.182
+  OK    output dev=4 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.091
+  OK    output dev=4 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.091
+  OK    output dev=4 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.18031746031746032
+  OK    output dev=4 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.09142857142857143
+  OK    output dev=4 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.09142857142857143
+  OK    output dev=4 samplerate=48000 channels=16 -> rate=48000.0 ch=16 latency=0.192
+  OK    output dev=4 samplerate=48000 channels=16 latency='low' -> rate=48000.0 ch=16 latency=0.091
+  OK    output dev=4 samplerate=48000 channels=16 latency='low' blocksize=0 -> rate=48000.0 ch=16 latency=0.091
+  OK    output dev=4 samplerate=44100 channels=16 -> rate=44100.0 ch=16 latency=0.18575963718820862
+  OK    output dev=4 samplerate=44100 channels=16 latency='low' -> rate=44100.0 ch=16 latency=0.09142857142857143
+  OK    output dev=4 samplerate=44100 channels=16 latency='low' blocksize=0 -> rate=44100.0 ch=16 latency=0.09142857142857143
+--- input 6 'CABLE Output (VB-Audio Virtual Cable)' (Windows DirectSound, max 16 ch)
+  OK    input dev=6 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.06
+  OK    input dev=6 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.03
+  OK    input dev=6 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.06
+  OK    input dev=6 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.03
+  OK    input dev=6 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.06
+  OK    input dev=6 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.03
+  OK    input dev=6 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.06
+  OK    input dev=6 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.03
+  OK    input dev=6 samplerate=48000 channels=16 -> rate=48000.0 ch=16 latency=0.06
+  OK    input dev=6 samplerate=48000 channels=16 latency='low' -> rate=48000.0 ch=16 latency=0.03
+  OK    input dev=6 samplerate=48000 channels=16 latency='low' blocksize=0 -> rate=48000.0 ch=16 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=16 -> rate=44100.0 ch=16 latency=0.06
+  OK    input dev=6 samplerate=44100 channels=16 latency='low' -> rate=44100.0 ch=16 latency=0.03
+  OK    input dev=6 samplerate=44100 channels=16 latency='low' blocksize=0 -> rate=44100.0 ch=16 latency=0.03
+--- output 8 'CABLE Input (VB-Audio Virtual Cable)' (Windows DirectSound, max 16 ch)
+  OK    output dev=8 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.24
+  OK    output dev=8 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.12
+  OK    output dev=8 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.12
+  OK    output dev=8 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.24
+  OK    output dev=8 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.12
+  OK    output dev=8 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.12
+  OK    output dev=8 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.24
+  OK    output dev=8 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.12
+  OK    output dev=8 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.12
+  OK    output dev=8 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.24
+  OK    output dev=8 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.12
+  OK    output dev=8 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.12
+  FAIL  output dev=8 samplerate=48000 channels=16 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=8 samplerate=48000 channels=16 latency='low' -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=8 samplerate=48000 channels=16 latency='low' blocksize=0 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=8 samplerate=44100 channels=16 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=8 samplerate=44100 channels=16 latency='low' -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=8 samplerate=44100 channels=16 latency='low' blocksize=0 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+--- output 9 'CABLE In 16ch (VB-Audio Virtual Cable)' (Windows DirectSound, max 16 ch)
+  OK    output dev=9 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.24
+  OK    output dev=9 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.12
+  OK    output dev=9 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.12
+  OK    output dev=9 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.24
+  OK    output dev=9 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.12
+  OK    output dev=9 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.12
+  OK    output dev=9 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.24
+  OK    output dev=9 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.12
+  OK    output dev=9 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.12
+  OK    output dev=9 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.24
+  OK    output dev=9 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.12
+  OK    output dev=9 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.12
+  FAIL  output dev=9 samplerate=48000 channels=16 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=9 samplerate=48000 channels=16 latency='low' -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=9 samplerate=48000 channels=16 latency='low' blocksize=0 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=9 samplerate=44100 channels=16 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=9 samplerate=44100 channels=16 latency='low' -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+  FAIL  output dev=9 samplerate=44100 channels=16 latency='low' blocksize=0 -> PortAudioError Error opening OutputStream: Unanticipated host error [PaErrorCode -9999]: 'DirectSound error' [Windows DirectSound error -2005401500]
+--- output 10 'CABLE Input (VB-Audio Virtual Cable)' (Windows WASAPI, max 2 ch)
+  OK    output dev=10 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF395160> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF2DBB10> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF2DBB10> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF37D350> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF37D350> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF399910> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3479B0> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3479B0> -> rate=48000.0 ch=2 latency=0.022
+--- output 11 'CABLE In 16ch (VB-Audio Virtual Cable)' (Windows WASAPI, max 2 ch)
+  OK    output dev=11 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF30A250> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF30A250> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF31D5E0> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF31D5E0> -> rate=48000.0 ch=1 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3A10F0> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3A10F0> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF373BA0> -> rate=48000.0 ch=2 latency=0.022
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF332390> -> rate=48000.0 ch=2 latency=0.022
+--- input 12 'CABLE Output (VB-Audio Virtual Cable)' (Windows WASAPI, max 2 ch)
+  OK    input dev=12 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF332390> -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3B5020> -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3B4E10> -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=1 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF435130> -> rate=48000.0 ch=1 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF4358B0> -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3D55B0> -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3E97D0> -> rate=48000.0 ch=2 latency=0.022
+  OK    input dev=12 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3E97D0> -> rate=48000.0 ch=2 latency=0.022
+--- input 13 'CABLE Output (VB-Audio Point)' (Windows WDM-KS, max 16 ch)
+  OK    input dev=13 samplerate=48000 channels=1 -> rate=48000.0 ch=1 latency=0.04
+  OK    input dev=13 samplerate=48000 channels=1 latency='low' -> rate=48000.0 ch=1 latency=0.01
+  OK    input dev=13 samplerate=48000 channels=1 latency='low' blocksize=0 -> rate=48000.0 ch=1 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=1 -> rate=44100.0 ch=1 latency=0.04
+  OK    input dev=13 samplerate=44100 channels=1 latency='low' -> rate=44100.0 ch=1 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=1 latency='low' blocksize=0 -> rate=44100.0 ch=1 latency=0.01
+  OK    input dev=13 samplerate=48000 channels=2 -> rate=48000.0 ch=2 latency=0.04
+  OK    input dev=13 samplerate=48000 channels=2 latency='low' -> rate=48000.0 ch=2 latency=0.01
+  OK    input dev=13 samplerate=48000 channels=2 latency='low' blocksize=0 -> rate=48000.0 ch=2 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=2 -> rate=44100.0 ch=2 latency=0.04
+  OK    input dev=13 samplerate=44100 channels=2 latency='low' -> rate=44100.0 ch=2 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=2 latency='low' blocksize=0 -> rate=44100.0 ch=2 latency=0.01
+  OK    input dev=13 samplerate=48000 channels=16 -> rate=48000.0 ch=16 latency=0.04
+  OK    input dev=13 samplerate=48000 channels=16 latency='low' -> rate=48000.0 ch=16 latency=0.01
+  OK    input dev=13 samplerate=48000 channels=16 latency='low' blocksize=0 -> rate=48000.0 ch=16 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=16 -> rate=44100.0 ch=16 latency=0.04
+  OK    input dev=13 samplerate=44100 channels=16 latency='low' -> rate=44100.0 ch=16 latency=0.01
+  OK    input dev=13 samplerate=44100 channels=16 latency='low' blocksize=0 -> rate=44100.0 ch=16 latency=0.01
+== the same after PortAudio is re-initialised (what the engine does when a device appears)
+devices after re-init: 16 (before: 16 )
+DEVICE 1: 'CABLE Output (VB-Audio Virtual ' api=MME in=16 out=0
+DEVICE 3: 'CABLE Input (VB-Audio Virtual C' api=MME in=0 out=16
+  OK    output dev=3 samplerate=48000 channels=2 latency='low' extra_settings=None -> rate=48000.0 ch=2 latency=0.091
+DEVICE 4: 'CABLE In 16ch (VB-Audio Virtual' api=MME in=0 out=16
+  OK    output dev=4 samplerate=48000 channels=2 latency='low' extra_settings=None -> rate=48000.0 ch=2 latency=0.091
+DEVICE 6: 'CABLE Output (VB-Audio Virtual Cable)' api=Windows DirectSound in=16 out=0
+DEVICE 8: 'CABLE Input (VB-Audio Virtual Cable)' api=Windows DirectSound in=0 out=16
+  OK    output dev=8 samplerate=48000 channels=2 latency='low' extra_settings=None -> rate=48000.0 ch=2 latency=0.12
+DEVICE 9: 'CABLE In 16ch (VB-Audio Virtual Cable)' api=Windows DirectSound in=0 out=16
+  OK    output dev=9 samplerate=48000 channels=2 latency='low' extra_settings=None -> rate=48000.0 ch=2 latency=0.12
+DEVICE 10: 'CABLE Input (VB-Audio Virtual Cable)' api=Windows WASAPI in=0 out=2
+  OK    output dev=10 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3FC130> -> rate=48000.0 ch=2 latency=0.022
+DEVICE 11: 'CABLE In 16ch (VB-Audio Virtual Cable)' api=Windows WASAPI in=0 out=2
+  OK    output dev=11 samplerate=48000 channels=2 latency='low' extra_settings=<sounddevice.WasapiSettings object at 0x00000187DF3FC130> -> rate=48000.0 ch=2 latency=0.022
+DEVICE 12: 'CABLE Output (VB-Audio Virtual Cable)' api=Windows WASAPI in=2 out=0
+DEVICE 13: 'CABLE Output (VB-Audio Point)' api=Windows WDM-KS in=16 out=0
+== two streams at once, shared mode, as the engine opens them: which cable endpoints can be open together?
+  out Input -> out 16ch   =>   out Input: OK | out 16ch: FAIL PortAudioError Error opening OutputStream: Invalid device [PaErrorCode -9996]
+  out 16ch -> out Input   =>   out 16ch: OK | out Input: FAIL PortAudioError Error opening OutputStream: Invalid device [PaErrorCode -9996]
+  in Output -> out Input   =>   in Output: OK | out Input: OK
+  in Output -> out 16ch   =>   in Output: OK | out 16ch: OK
+  out Input -> in Output   =>   out Input: OK | in Output: OK
+  out 16ch -> in Output   =>   out 16ch: OK | in Output: OK
+  out Input -> in Output -> out 16ch   =>   out Input: OK | in Output: OK | out 16ch: FAIL PortAudioError Error opening OutputStream: Invalid device [PaErrorCode -9996]
+  out 16ch -> in Output -> out Input   =>   out 16ch: OK | in Output: OK | out Input: FAIL PortAudioError Error opening OutputStream: Invalid device [PaErrorCode -9996]
+DONE
