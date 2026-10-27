@@ -146,4 +146,4 @@ jobs:
         if: always()
         shell: bash
         env: { GITHUB_TOKEN: "${{ github.token }}" }
-        run: ./ci/publish.sh ci-logs-media media.log
+        run: ./ci/publish.sh ci-logs-media media.log media_publisher.log

@@ -42,6 +42,7 @@ APP = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Arctis Sound 
 EXE = APP / "ArctisSoundManager.exe"
 CONFIG_DIR = Path.home() / ".config" / "arctis_manager"
 LOG_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "arctis_manager" / "logs"
+CONFIG_LOCAL = Path(os.environ.get("LOCALAPPDATA", "")) / "arctis_manager"        # where diag.txt and profile-*.txt live
 ENDPOINT = "CABLE Input"
 MISSING = "No Such Headset 123"
 SAMPLE = 10.0
@@ -308,7 +309,17 @@ def dump_logs(tail: int = 12) -> None:
         lines = text.splitlines()
         log(f"--- {path} ({len(lines)} lines), last {tail}")
         for line in lines[-tail:]:
-            log("    " + line[:260])
+            log("    " + line[:700])
+
+
+def dump_profile() -> None:
+    """The ``profile:`` lines (where a thread spent its time) of every log."""
+    for path, text in read_logs().items():
+        lines = [line for line in text.splitlines() if "profile:" in line]
+        if lines:
+            log(f"--- {path.name}: the profile ({len(lines)} lines)")
+            for line in lines:
+                log("    " + line.strip()[:400])
 
 
 def start_program(env: dict) -> None:
@@ -352,7 +363,11 @@ def phase_one(minutes: float, cpu_limits: dict) -> None:
     for role, limit in {"engine": 15.0, "helper": 8.0, "tray": 5.0, "daemon": 4.0}.items():
         if cpu_quiet.get(role, 0.0) > limit:
             fail(f"phase 1: the {role} used {cpu_quiet[role]:.1f}% of a core on average while nothing played (limit {limit}%)")
+    # where does the engine's playback thread spend its time? (a few seconds of cProfile, asked for with a file)
+    (CONFIG_LOCAL / "profile-playback.txt").write_text("20", encoding="ascii")
+    time.sleep(32)
     dump_logs()
+    dump_profile()
 
 
 # ── phase 2 ──────────────────────────────────────────────────────────────────

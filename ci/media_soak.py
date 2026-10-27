@@ -150,20 +150,50 @@ def phase(title: str, poller: Poller, calls: int) -> tuple[float, str]:
     return slope, last
 
 
+async def list_sessions() -> str:
+    """Every session Windows reports, playing or not (for the case where nothing is found)."""
+    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
+    manager = await Manager.request_async()
+    out = []
+    for session in manager.get_sessions():
+        info = session.get_playback_info()
+        out.append(f"{session.source_app_user_model_id!r} status={int(info.playback_status)}")
+    return "[" + ", ".join(out) + "]"
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "publish":
-        return publish()
+        try:
+            return publish()
+        except BaseException as exc:                          # noqa: BLE001 - the consumer prints this file
+            import traceback
+            traceback.print_exc()
+            log("publisher failed:", repr(exc))
+            return 3
     media = load_media()
-    publisher = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "publish"])
+    out_file = open("media_publisher.log", "w", encoding="utf-8")
+    publisher = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "publish"], stdout=out_file,
+                                 stderr=subprocess.STDOUT)
     poller = Poller(media)
     try:
         deadline = time.time() + 90
         text = ""
+        tick = 0
         while time.time() < deadline and not text.startswith("Soak"):
             text = poller.now_playing()
             time.sleep(1)
+            tick += 1
+            if tick % 15 == 0:
+                try:
+                    seen = asyncio.run_coroutine_threadsafe(list_sessions(), poller.loop).result(timeout=10)
+                except Exception as exc:                      # noqa: BLE001
+                    seen = repr(exc)
+                log(f"   after {tick} s: now_playing={text!r}, sessions={seen}, publisher exit code {publisher.poll()}")
         log(f"== the media session: {text!r}")
         if not text.startswith("Soak"):
+            out_file.flush()
+            log("--- what the publisher printed:")
+            log(Path("media_publisher.log").read_text(encoding="utf-8", errors="replace")[-3000:] or "(nothing)")
             log("SKIP no media session could be created on this machine; nothing measured")
             return 0
         problems = []
