@@ -492,3 +492,10 @@ def test_the_multi_string_list_windows_returns_is_split_and_the_vendor_signature
 
 def test_not_windows_has_no_name_list():
     assert hidlist.interface_paths() is None
+
+
+def test_a_bluetooth_hid_name_counts_as_the_vendors_device():
+    bluetooth = r"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_dev_vid&021038_pid&2269_rev&0100_abc#9&1&0&0000#{4d1e55b2}"
+    assert hidlist.signature([bluetooth, _MOUSE], 0x1038) == (bluetooth,)
+    assert hidlist.signature([bluetooth.replace("vid&02", "vid&01")], 0x1038) != ()
+    assert hidlist.signature([bluetooth], 0x046D) == ()

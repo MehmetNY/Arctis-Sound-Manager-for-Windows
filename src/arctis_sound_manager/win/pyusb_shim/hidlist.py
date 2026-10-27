@@ -78,6 +78,11 @@ def interface_paths() -> list[str] | None:
 
 
 def signature(paths: Sequence[str], vendor_id: int) -> tuple[str, ...]:
-    """The interface names that belong to ``vendor_id``, sorted: equal signatures mean the same devices."""
-    marker = f"vid_{vendor_id:04x}"
-    return tuple(sorted(path for path in paths if marker in path))
+    """The interface names that belong to ``vendor_id``, sorted: equal signatures mean the same devices.
+
+    USB devices carry ``vid_1038`` in their name; a Bluetooth HID device has ``vid&021038`` (USB-IF vendor id) or
+    ``vid&011038`` (Bluetooth SIG vendor id). Anything that might be the vendor's counts, so the shortcut can only
+    ever err towards enumerating for real.
+    """
+    markers = (f"vid_{vendor_id:04x}", f"vid&02{vendor_id:04x}", f"vid&01{vendor_id:04x}")
+    return tuple(sorted(path for path in paths if any(marker in path for marker in markers)))
