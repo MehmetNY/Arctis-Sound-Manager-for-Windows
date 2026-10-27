@@ -77,6 +77,7 @@ class _HidApiBackend:
         self._paths_at = 0.0
         self._paths: list[str] | None = None
         self.enumerations = 0      # how many real hid.enumerate calls were made (diagnostics, tests)
+        self.questions = 0         # how many times the daemon asked (the difference is what the shortcuts saved)
 
     def _mod(self):
         if self._hid is None:
@@ -107,6 +108,7 @@ class _HidApiBackend:
 
     def enumerate(self, vendor_id: int, product_id: int) -> list[dict]:
         with self._lock:
+            self.questions += 1
             now = time.monotonic()
             names = self._interface_names(now) if vendor_id else None
             marker = hidlist.signature(names, vendor_id) if names is not None else None
@@ -145,6 +147,12 @@ def set_backend(backend: Any) -> None:
 
 def get_backend() -> Any:
     return _backend
+
+
+def scan_stats() -> dict:
+    """``hid_questions`` asked and ``hid_enumerations`` really made so far, for the daemon's health line."""
+    backend = get_backend()
+    return {"hid_questions": getattr(backend, "questions", 0), "hid_enumerations": getattr(backend, "enumerations", 0)}
 
 
 # ── descriptors ──────────────────────────────────────────────────────────────

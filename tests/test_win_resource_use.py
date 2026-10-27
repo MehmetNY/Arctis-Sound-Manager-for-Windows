@@ -515,3 +515,13 @@ def test_hours_of_scans_on_a_pc_without_a_headset_enumerate_nothing(monkeypatch)
         assert list(core.find(find_all=True, idVendor=0x1038)) == []     # the hot-plug poll
     assert backend.enumerations == 0
     assert backend._hid.calls == []
+
+
+def test_the_scan_statistics_say_how_often_the_daemon_asked_and_how_often_windows_really_was(monkeypatch):
+    now = _clock(monkeypatch)
+    names = _Names([_STEEL])
+    backend = _named_backend(names, now)
+    monkeypatch.setattr(core, "_backend", backend)
+    for _ in range(50):
+        core.find(idVendor=0x1038, idProduct=0x12E5)
+    assert core.scan_stats() == {"hid_questions": 50, "hid_enumerations": 1}

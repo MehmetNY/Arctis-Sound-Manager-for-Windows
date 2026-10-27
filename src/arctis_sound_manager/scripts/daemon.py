@@ -217,7 +217,8 @@ async def main_async():
     if IS_WINDOWS:
         # What this process costs, one line every few minutes (see win/health.py): memory, handles, threads, CPU.
         from arctis_sound_manager.win import health
-        health.start_for('daemon', logging.getLogger('health'))
+        from arctis_sound_manager.win.pyusb_shim import core as _hid_shim
+        health.start_for('daemon', logging.getLogger('health'), extra=_hid_shim.scan_stats)
 
     # Before anything that touches the audio graph, the USB device or the
     # session's PipeWire metadata (CHA-4).
