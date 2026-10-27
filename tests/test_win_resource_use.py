@@ -328,3 +328,167 @@ def test_waveform_timer_runs_only_while_shown(qapp):
     host.hide()
     qapp.processEvents()
     assert not wave._timer.isActive()
+
+
+# ── the interface-name shortcut: a PC with no SteelSeries device never enumerates ─────────────────────────────
+
+from arctis_sound_manager.win.pyusb_shim import hidlist  # noqa: E402
+
+_STEEL = r"\\?\hid#vid_1038&pid_12e5&mi_04#7&1a2b3c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+_STEEL_2 = r"\\?\hid#vid_1038&pid_12e5&mi_03#7&1a2b3c&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+_MOUSE = r"\\?\hid#vid_046d&pid_c52b&mi_00#7&9&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+
+
+class _Names:
+    """A stand-in for the Windows name list that can be changed between questions."""
+
+    def __init__(self, names):
+        self.names = names
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        return None if self.names is None else list(self.names)
+
+
+def _named_backend(names, clock):
+    backend = core._HidApiBackend(lister=names)
+    backend._hid = _FakeHidModule(_entries())
+    return backend
+
+
+def _clock(monkeypatch, start=100.0):
+    now = [start]
+    monkeypatch.setattr(core.time, "monotonic", lambda: now[0])
+    return now
+
+
+def test_no_steelseries_device_means_no_enumeration_ever(monkeypatch):
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names([_MOUSE]), now)
+    for step in range(2000):                                # hours of 2 s polls and 3 s scans, TTL long expired each time
+        now[0] += 3.0
+        assert backend.enumerate(0x1038, 0) == []
+        assert backend.enumerate(0x1038, 0x12E5) == []
+    assert backend.enumerations == 0
+    assert backend._hid.calls == []
+
+
+def test_a_device_that_appears_is_enumerated_once_and_then_answered_from_the_store(monkeypatch):
+    now = _clock(monkeypatch)
+    names = _Names([_MOUSE])
+    backend = _named_backend(names, now)
+    assert backend.enumerate(0x1038, 0) == []
+    names.names = [_MOUSE, _STEEL, _STEEL_2]
+    now[0] += 3.0
+    found = backend.enumerate(0x1038, 0)
+    assert {e["interface_number"] for e in found} == {4, 3}
+    assert backend.enumerations == 1
+    for _ in range(100):                                    # minutes with the same set of interfaces
+        now[0] += 2.0
+        assert len(backend.enumerate(0x1038, 0x12E5)) == 2
+    assert backend.enumerations == 1
+
+
+def test_a_changed_set_of_interfaces_is_enumerated_again(monkeypatch):
+    now = _clock(monkeypatch)
+    names = _Names([_STEEL, _STEEL_2])
+    backend = _named_backend(names, now)
+    backend.enumerate(0x1038, 0)
+    now[0] += 2.0
+    names.names = [_STEEL]                                   # one node went away
+    backend.enumerate(0x1038, 0)
+    assert backend.enumerations == 2
+    now[0] += 2.0
+    names.names = []                                         # the whole device left
+    assert backend.enumerate(0x1038, 0) == []
+    assert backend.enumerations == 2
+    now[0] += 2.0
+    names.names = [_STEEL, _STEEL_2]                         # and came back
+    assert len(backend.enumerate(0x1038, 0)) == 2
+    assert backend.enumerations == 3
+
+
+def test_the_store_is_renewed_after_its_maximum_age(monkeypatch):
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names([_STEEL]), now)
+    backend.enumerate(0x1038, 0)
+    now[0] += core._HidApiBackend.SNAPSHOT_MAX_AGE_S - 1
+    backend.enumerate(0x1038, 0)
+    assert backend.enumerations == 1
+    now[0] += 2
+    backend.enumerate(0x1038, 0)
+    assert backend.enumerations == 2
+
+
+def test_one_name_list_serves_all_the_questions_of_a_scan(monkeypatch):
+    now = _clock(monkeypatch)
+    names = _Names([_MOUSE])
+    backend = _named_backend(names, now)
+    for pid in range(0x1200, 0x1200 + 90):                  # a scan over every profile
+        backend.enumerate(0x1038, pid)
+    assert names.calls == 1
+    now[0] += 1.0
+    backend.enumerate(0x1038, 0x1200)
+    assert names.calls == 2
+
+
+def test_invalidate_forgets_the_store_and_the_names(monkeypatch):
+    now = _clock(monkeypatch)
+    names = _Names([_STEEL])
+    backend = _named_backend(names, now)
+    backend.enumerate(0x1038, 0)
+    backend.invalidate()
+    backend.enumerate(0x1038, 0)
+    assert backend.enumerations == 2
+    assert names.calls == 2
+
+
+def test_without_the_names_the_old_time_limit_applies(monkeypatch):
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names(None), now)             # not Windows, or the call failed
+    backend.enumerate(0x1038, 0)
+    backend.enumerate(0x1038, 0x12E5)
+    assert backend.enumerations == 1
+    now[0] += core._HidApiBackend.ENUMERATE_TTL_S + 0.1
+    backend.enumerate(0x1038, 0)
+    assert backend.enumerations == 2
+
+
+def test_a_failing_name_list_is_the_same_as_no_name_list(monkeypatch):
+    now = _clock(monkeypatch)
+
+    def broken():
+        raise OSError("cfgmgr32 said no")
+
+    backend = _named_backend(broken, now)
+    assert len(backend.enumerate(0x1038, 0)) == 2
+    assert backend.enumerations == 1
+
+
+def test_a_question_about_every_vendor_is_not_shortcut(monkeypatch):
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names([_MOUSE]), now)
+    assert len(backend.enumerate(0, 0)) == 3
+    assert backend.enumerations == 1
+
+
+def test_names_of_other_vendors_do_not_hide_this_vendors_device(monkeypatch):
+    now = _clock(monkeypatch)
+    backend = _named_backend(_Names([_MOUSE, _STEEL]), now)
+    assert len(backend.enumerate(0x046D, 0)) == 1
+    assert len(backend.enumerate(0x1038, 0)) == 2
+    assert backend.enumerations == 2
+
+
+def test_the_multi_string_list_windows_returns_is_split_and_the_vendor_signature_is_sorted():
+    raw = _STEEL_2 + "\0" + _MOUSE + "\0" + _STEEL + "\0\0"
+    names = hidlist.parse_multi_sz(raw)
+    assert names == [_STEEL_2, _MOUSE, _STEEL]
+    assert hidlist.signature(names, 0x1038) == tuple(sorted([_STEEL, _STEEL_2]))
+    assert hidlist.signature(names, 0x0001) == ()
+    assert hidlist.parse_multi_sz("\0") == []
+
+
+def test_not_windows_has_no_name_list():
+    assert hidlist.interface_paths() is None

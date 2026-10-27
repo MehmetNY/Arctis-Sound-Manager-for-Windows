@@ -22,7 +22,7 @@ import time
 from typing import Any, Iterator
 
 from arctis_sound_manager.win.hid_descriptor import Collection, parse_report_descriptor
-from arctis_sound_manager.win.pyusb_shim import util
+from arctis_sound_manager.win.pyusb_shim import hidlist, util
 
 log = logging.getLogger(__name__)
 
@@ -54,17 +54,28 @@ class _HidApiBackend:
 
     ``hid.enumerate`` is not cheap on Windows: it walks every HID interface of the machine and opens each one to read
     its ids and strings (twenty to sixty CreateFile calls). The daemon asks for a device far more often than that —
-    one question per device profile, once per scan, plus the hot-plug poll — so the answer is taken once per
-    :attr:`ENUMERATE_TTL_S` for a vendor and every question inside that second is answered from it. A headset that
-    shows up is seen at most that much later; one that vanishes is noticed by its failing handle anyway.
+    one question per device profile, once per scan, plus the hot-plug poll every two seconds — so two things keep
+    the real enumeration rare:
+
+    * the list of HID interface *names* (:mod:`hidlist`, one call that opens nothing) says whether the vendor has
+      any device at all, and whether it is the same set as when the last real enumeration was made. No SteelSeries
+      device: the answer is empty and ``hid.enumerate`` is not called, however long that lasts. The same set: the
+      stored answer stands (it is renewed after :attr:`SNAPSHOT_MAX_AGE_S` anyway).
+    * where Windows cannot give that list, an answer is reused for :attr:`ENUMERATE_TTL_S`.
     """
 
     ENUMERATE_TTL_S = 1.0
+    PATHS_TTL_S = 0.5            # one name list serves every question asked inside half a second
+    SNAPSHOT_MAX_AGE_S = 300.0
 
-    def __init__(self) -> None:
+    def __init__(self, lister=None) -> None:
         self._hid: Any = None
         self._lock = threading.Lock()
-        self._snapshots: dict[int, tuple[float, list[dict]]] = {}
+        # vendor -> (taken at, entries, interface-name signature or None when the names were not available)
+        self._snapshots: dict[int, tuple[float, list[dict], tuple[str, ...] | None]] = {}
+        self._lister = hidlist.interface_paths if lister is None else lister
+        self._paths_at = 0.0
+        self._paths: list[str] | None = None
         self.enumerations = 0      # how many real hid.enumerate calls were made (diagnostics, tests)
 
     def _mod(self):
@@ -82,15 +93,35 @@ class _HidApiBackend:
         """Forget the cached answers (a device was just opened, closed or re-plugged)."""
         with self._lock:
             self._snapshots.clear()
+            self._paths = None
+
+    def _interface_names(self, now: float) -> list[str] | None:
+        if self._paths is not None and 0 <= now - self._paths_at <= self.PATHS_TTL_S:
+            return self._paths
+        try:
+            names = self._lister()
+        except Exception:  # noqa: BLE001 - the shortcut is optional
+            names = None
+        self._paths, self._paths_at = names, now
+        return names
 
     def enumerate(self, vendor_id: int, product_id: int) -> list[dict]:
         with self._lock:
             now = time.monotonic()
+            names = self._interface_names(now) if vendor_id else None
+            marker = hidlist.signature(names, vendor_id) if names is not None else None
+            if marker is not None and not marker:
+                self._snapshots.pop(vendor_id, None)          # none of this vendor's devices is there
+                return []
             hit = self._snapshots.get(vendor_id)
-            if hit is None or now - hit[0] > self.ENUMERATE_TTL_S or now < hit[0]:
+            if marker is not None:
+                fresh = (hit is not None and hit[2] == marker and 0 <= now - hit[0] <= self.SNAPSHOT_MAX_AGE_S)
+            else:
+                fresh = hit is not None and 0 <= now - hit[0] <= self.ENUMERATE_TTL_S
+            if not fresh:
                 entries = list(self._mod().enumerate(vendor_id, 0))
                 self.enumerations += 1
-                self._snapshots[vendor_id] = (time.monotonic(), entries)
+                self._snapshots[vendor_id] = (time.monotonic(), entries, marker)
             else:
                 entries = hit[1]
         if product_id:
