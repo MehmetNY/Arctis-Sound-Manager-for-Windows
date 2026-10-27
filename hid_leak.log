@@ -1,0 +1,27 @@
+hid module: C:\hostedtoolcache\windows\Python\3.13.16\x64\Lib\site-packages\hid.cp313-win_amd64.pyd version 0.15.0
+== hid.enumerate() - every HID device of the machine
+   call     0: private    10.2 MB, handles   156, devices seen 1, 22.6 ms per call
+   call   500: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  1000: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  1500: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  2000: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  2500: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  3000: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   call  3500: private    10.2 MB, handles   156, devices seen 1, 0.2 ms per call
+   hid.enumerate() - every HID device of the machine: 10.2 MB -> 10.2 MB over 4000 calls; growth +0.00 KB per call (second half), handles now 156
+== hid.enumerate(0x1038, 0) - what the daemon asks (no SteelSeries device on this machine)
+   call     0: private    10.2 MB, handles   156, devices seen 0, 0.2 ms per call
+   call   500: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  1000: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  1500: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  2000: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  2500: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  3000: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   call  3500: private    10.2 MB, handles   156, devices seen 0, 0.1 ms per call
+   hid.enumerate(0x1038, 0) - what the daemon asks (no SteelSeries device on this machine): 10.2 MB -> 10.2 MB over 4000 calls; growth +0.00 KB per call (second half), handles now 156
+== the interface-name list (cfgmgr32), which opens nothing
+   1 interfaces, e.g. ['\\\\?\\hid#{cfa8b69e-5b4a-4cc0-b98b-8ba1a1f3f95a}#5&1a8c06af&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}']
+   hid.enumerate sees 1; not in the name list: []
+   SteelSeries (vid_1038) signature: ()
+   80000 calls: 0.039 ms per call; 11.8 -> 11.8 MB (growth +0.000 KB per call, second half); handles 160 -> 160
+== no leak in the enumeration
