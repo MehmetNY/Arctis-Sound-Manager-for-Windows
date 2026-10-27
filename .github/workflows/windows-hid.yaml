@@ -1,0 +1,35 @@
+name: windows-hid
+on:
+  push:
+    branches: [exp-hid]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: windows-hid-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  hidenum:
+    # Does asking Windows "which HID devices are there?" leak? With no headset on the PC the daemon used to do exactly that
+    # about twenty-five times every three seconds. Thousands of real hid.enumerate calls, memory per call. See ci/hid_leak.py.
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install psutil hidapi
+      - name: Enumerate HID devices over and over
+        shell: pwsh
+        timeout-minutes: 8
+        run: python ci/hid_leak.py | Tee-Object -FilePath hid_leak.log
+        continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files hid_leak.log
+      - name: Publish
+        if: always()
+        shell: bash
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-hid hid_leak.log
