@@ -5,13 +5,15 @@
 
 Two *processing domains* run independently, each paced by the device it ends in::
 
-    playback   virtual cables (game / chat / media / aux) -> EngineGraph -> headset   (+ optional 2nd output)
-    microphone real microphone -> MicChain -> a virtual cable that other programs record from
+    playback   each program's own sound (the per-application tap) -> EngineGraph -> headset   (+ optional 2nd output)
+    microphone the headset's microphone, as the microphone effect inside Windows' audio engine hands it over
+               (:mod:`arctis_sound_manager.win.fx`) -> MicChain -> back to the effect, which gives it to the programs
 
-A domain's thread sleeps until its master output's device callback wakes it, then produces just enough
+The playback thread sleeps until its master output's device callback wakes it, then produces just enough
 blocks to refill that output to its target. Everything else follows from that: inputs are resampled a
 few ppm to follow their own clocks (:mod:`.ports`), a device that stops delivering is noticed and
 re-opened (``supervise``), and a changed state file is picked up without a click (``StateWatcher``).
+The microphone has no device of its own here: it is paced by the effect, block by block, as the audio arrives.
 
 The classes here do no sleeping of their own and take their devices from a *backend*, so the whole
 engine can be driven step by step against :class:`~.backend.FakeBackend` in tests.
@@ -30,12 +32,13 @@ import numpy as np
 
 from arctis_sound_manager.win.audio import fast
 from arctis_sound_manager.win.audio.backend import BackendError, DeviceInfo, OpenedStream, find_device
-from arctis_sound_manager.win.audio.engine_config import EngineConfig, cable_inputs
+from arctis_sound_manager.win.audio.engine_config import EngineConfig
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS, MASTER, EngineGraph, StateSnapshot, read_state
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.ports import InputPort, OutputPort
 from arctis_sound_manager.win.audio.realtime import ThreadBoost
 from arctis_sound_manager.win.audio.tap import TapStream, load_rules, save_rules
+from arctis_sound_manager.win.fx import shared as fxshared
 from arctis_sound_manager.win.profiling import ProfileTrigger
 
 _log = logging.getLogger(__name__)
@@ -224,31 +227,175 @@ class PlaybackPipeline(Pipeline):
             port.push(to_channels(audio, port.channels))
 
 
-class MicPipeline(Pipeline):
-    name = "microphone"
+class FxMicPipeline(Pipeline):
+    """The processed microphone, with no device of its own.
 
-    def __init__(self, graph: EngineGraph, box: SnapshotBox, block: int):
+    The microphone effect (``native/micfx``) runs inside Windows' audio engine on the headset's own microphone. Every
+    block of the microphone is put into a ring in shared memory; this pipeline takes it out, runs the
+    :class:`~.mic.MicChain` and puts the result into the other ring, from where the effect hands it to whichever
+    program is recording. Nothing is paced by a clock here: blocks are processed as they arrive. With no engine
+    running, or with nothing enabled, the effect passes the microphone through untouched.
+    """
+
+    name = "microphone"
+    OPEN_RETRY_S = 1.0                  # how often to look for the effect while it is not loaded
+    IDLE_BEAT_S = 0.2                   # a sign of life to the effect while no program is recording (its limit is 0.6 s)
+    MAX_BLOCKS_PER_TURN = 16
+
+    def __init__(self, graph: EngineGraph, box: SnapshotBox, block: int, open_link: Callable[[], object] = fxshared.open_link):
         super().__init__(box, block)
         self.graph = graph
-        self.source: InputPort | None = None
-        self.sink: OutputPort | None = None
         self.tap: InputPort | None = None                           # hands the processed microphone to the playback side
+        self._open_link = open_link
+        self.link = None
+        self.claimed = False
+        self.state = "waiting for the effect"
+        self._next_open = 0.0
+        self._last_period = 480
 
+    # nothing here is paced by an output device
     def master(self) -> OutputPort | None:
-        return self.sink if self.source is not None else None
+        return None
 
     def apply(self, snapshot: StateSnapshot) -> None:
         self.graph.apply_mic(snapshot)
 
-    def process_block(self) -> None:
-        source, sink = self.source, self.sink
-        x = source.pull(self.block)
-        mono = x[0] if x.shape[0] == 1 else x.mean(axis=0)
-        y = self.graph.process_mic(mono)
-        sink.push(to_channels(np.vstack([y, y]), sink.channels))
-        tap = self.tap
-        if tap is not None and self.graph.stream.enabled:
-            tap.on_audio(np.ascontiguousarray(y, dtype=np.float32)[:, None])
+    def wants(self) -> bool:
+        """Does the microphone need to come through the engine? Not when nothing is enabled (the effect then passes it
+        on untouched, with no extra delay), unless Streamer mode wants the microphone in its mix."""
+        return bool(self.graph.mic.active or self.graph.stream.enabled)
+
+    def lead_frames(self) -> int:
+        return int(min(4800, max(960, 2 * self._last_period, self.block)))
+
+    def poll(self, now: float | None = None) -> int:
+        """One turn of the loop; returns the blocks processed. Tests call it directly."""
+        now = time.monotonic() if now is None else now
+        self.sync_state()
+        link = self.link
+        if link is None:
+            if now < self._next_open:
+                return 0
+            self._next_open = now + self.OPEN_RETRY_S
+            try:
+                link = self._open_link()
+            except Exception:                                       # noqa: BLE001 — never let the lookup stop the thread
+                _log.debug("opening the microphone effect failed", exc_info=True)
+                link = None
+            if link is None:
+                self.state = "waiting for the effect"
+                return 0
+            self.link, self.claimed = link, False
+            _log.info("microphone: connected to the microphone effect")
+        try:
+            return self._turn(link)
+        except Exception:                                           # noqa: BLE001 — the view may have gone with the effect
+            self.stats.errors += 1
+            if self._error_log < 3:
+                _log.exception("microphone: lost the connection to the effect")
+            self._error_log += 1
+            self._drop_link()
+            return 0
+
+    def _turn(self, link) -> int:
+        wants = self.wants()
+        period = link.get("period_frames")
+        if period:
+            self._last_period = period
+        if not self.claimed:
+            self.claimed = link.claim(wants, self.lead_frames())
+            if not self.claimed:
+                self.state = "another engine is using the effect"
+                return 0
+        elif not link.owns():                                       # somebody else took the rings over
+            self.claimed = False
+            return 0
+        link.heartbeat(wants, self.lead_frames())
+        if link.sync():
+            self.graph.mic.reset()
+        rate, channels = link.format()
+        if not link.apo_alive():
+            self.state = "idle"                                     # no program is recording
+        elif rate != RATE or channels not in (1, 2):
+            self.state = f"unsupported format ({rate} Hz, {channels} ch)"
+        elif not wants:
+            self.state = "bypass"
+        else:
+            self.state = "processing"
+        if not wants or rate != RATE or channels not in (1, 2):
+            return 0
+        made = 0
+        while made < self.MAX_BLOCKS_PER_TURN and link.available() >= self.block:
+            raw = link.read(self.block, channels)
+            link.write(self._process(raw, channels))
+            made += 1
+        return made
+
+    def _process(self, raw: np.ndarray, channels: int) -> np.ndarray:
+        t0 = time.perf_counter()
+        try:
+            mono = raw[:, 0] if channels == 1 else raw.mean(axis=1)
+            y = self.graph.process_mic(np.ascontiguousarray(mono, dtype=np.float64))
+            y32 = np.ascontiguousarray(y, dtype=np.float32)
+            tap = self.tap
+            if tap is not None and self.graph.stream.enabled:
+                tap.on_audio(y32[:, None])
+            out = np.repeat(y32[:, None], channels, axis=1)
+            self.failed = False
+        except Exception:                                           # noqa: BLE001 — fail open: the person's voice is never silenced
+            self.stats.errors += 1
+            self.failed = True
+            if self._error_log < 3 or self.stats.errors % 200 == 0:
+                _log.exception("microphone: processing a block failed (%d so far)", self.stats.errors)
+            self._error_log += 1
+            out = raw
+        self.stats.add(time.perf_counter() - t0)
+        return out
+
+    def _drop_link(self) -> None:
+        link, self.link, self.claimed = self.link, None, False
+        if link is not None:
+            try:
+                link.close()
+            except Exception:                                       # noqa: BLE001
+                pass
+
+    def close(self) -> None:
+        self._drop_link()
+
+    def info(self) -> dict:
+        out = {"state": self.state, "claimed": self.claimed, "wants": self.wants(), **self.stats.as_dict()}
+        link = self.link
+        if link is not None:
+            try:
+                out["effect"] = link.info()
+            except Exception:                                       # noqa: BLE001
+                pass
+        return out
+
+    def prefill(self) -> None:
+        self.sync_state()
+
+    def step(self) -> int:
+        return self.poll()
+
+    def run(self, stop: threading.Event) -> None:
+        trigger = ProfileTrigger(self.name)
+        try:
+            with ThreadBoost():
+                while not stop.is_set():
+                    trigger.poll()
+                    self.poll()
+                    link = self.link
+                    if link is None:
+                        stop.wait(0.25)
+                    elif link.apo_alive():
+                        link.wait(0.02)                             # returns the moment the effect has a block for us
+                    else:
+                        stop.wait(self.IDLE_BEAT_S)
+        finally:
+            trigger.abort()
+            self._drop_link()
 
 
 # ── state files ──────────────────────────────────────────────────────────────
@@ -380,7 +527,8 @@ class Engine:
     def __init__(self, config: EngineConfig, backend, config_dir: Path | None = None, native=None,
                  hrir_id: str | None = None, probe: Callable[[], list[DeviceInfo]] | None = None,
                  clock: Callable[[], float] = time.monotonic, port_clock: Callable[[], float] = time.perf_counter,
-                 quick_probe: Callable[[], list[DeviceInfo] | None] | None = None):
+                 quick_probe: Callable[[], list[DeviceInfo] | None] | None = None,
+                 fx_link: Callable[[], object] = fxshared.open_link):
         self.config = config
         self.backend = backend
         self.config_dir = config_dir or default_config_dir()
@@ -397,10 +545,11 @@ class Engine:
                                  routing=dict(config.routing), native=native)
         self.watcher = StateWatcher(self.config_dir, hrir_id, RATE)
         self.playback = PlaybackPipeline(self.graph, self.box, self.block)
-        self.mic = MicPipeline(self.graph, self.box, self.mic_block)
+        self.mic = FxMicPipeline(self.graph, self.box, self.mic_block, open_link=fx_link)
         if config.mic_enabled:
-            # the two domains run on different clocks (the microphone's cable and the headset): the tap is a
-            # drift-controlled port between them. It must be able to hold one microphone block plus a margin.
+            # the two domains run on different clocks (the microphone's, which Windows' audio engine paces, and the
+            # headset): the tap is a drift-controlled port between them. It must be able to hold one microphone
+            # block plus a margin.
             self.mic_tap = InputPort("mic:tap", 1, self.block, target_blocks=self.mic_block / self.block + 1.5,
                                       clock=self._port_clock)
             self.playback.mic_tap = self.mic_tap
@@ -440,9 +589,6 @@ class Engine:
         for bus, query in cfg.outputs.items():
             if query:
                 self.endpoints[f"out:{bus}"] = Endpoint(f"out:{bus}", "output", query, 2)
-        if cfg.mic_enabled:
-            self.endpoints["mic:in"] = Endpoint("mic:in", "input", cfg.mic_input, 1)
-            self.endpoints["mic:out"] = Endpoint("mic:out", "output", cfg.mic_output, 2)
 
     def start(self, threaded: bool = True) -> None:
         """Open every device that can be opened, pre-fill the outputs, start the streams and the threads."""
@@ -469,7 +615,10 @@ class Engine:
             self.running = True
         if threaded:
             self._stop.clear()
-            for target, name in ((self.playback.run, "asm-playback"), (self.mic.run, "asm-microphone")):
+            runs = [(self.playback.run, "asm-playback")]
+            if self.config.mic_enabled:
+                runs.append((self.mic.run, "asm-microphone"))
+            for target, name in runs:
                 t = threading.Thread(target=target, args=(self._stop,), name=name, daemon=True)
                 t.start()
                 self._threads.append(t)
@@ -518,6 +667,7 @@ class Engine:
         for t in self._threads:
             t.join(timeout=2.0)
         self._threads = []
+        self.mic.close()                                             # the microphone goes back to the programs untouched
         with self._lock:
             if self.tap is not None:
                 self.tap.engage(False)                               # every program's volume back before the sound system closes
@@ -530,7 +680,7 @@ class Engine:
 
     def _buffering(self, ep: Endpoint) -> tuple[int, float]:
         """(processing block, blocks of audio to keep in hand) for an endpoint's port."""
-        block = self.mic_block if ep.key.startswith("mic") else self.block
+        block = self.block
         return block, self.profile.input_blocks if ep.kind == "input" else self.profile.output_blocks
 
     def _try_open(self, ep: Endpoint, now: float, start_stream: bool = True) -> bool:
@@ -567,7 +717,7 @@ class Engine:
         name = ep.key
         if ep.kind == "input":
             return InputPort(name, channels, block, target_blocks=blocks, clock=self._port_clock)
-        master = ep.key in ("out:headset", "mic:out")
+        master = ep.key == "out:headset"
         return OutputPort(name, channels, block, master=master, target_blocks=blocks, clock=self._port_clock)
 
     def _attach(self, ep: Endpoint) -> None:
@@ -575,20 +725,12 @@ class Engine:
             self.playback.inputs[ep.key[3:]] = ep.port
         elif ep.key.startswith("out:"):
             self.playback.outputs[ep.key[4:]] = ep.port
-        elif ep.key == "mic:in":
-            self.mic.source = ep.port
-        elif ep.key == "mic:out":
-            self.mic.sink = ep.port
 
     def _detach(self, ep: Endpoint) -> None:
         if ep.key.startswith("in:"):
             self.playback.inputs.pop(ep.key[3:], None)
         elif ep.key.startswith("out:"):
             self.playback.outputs.pop(ep.key[4:], None)
-        elif ep.key == "mic:in":
-            self.mic.source = None
-        elif ep.key == "mic:out":
-            self.mic.sink = None
 
     def _close(self, ep: Endpoint) -> None:
         stream, ep.stream = ep.stream, None
@@ -657,10 +799,6 @@ class Engine:
         endpoints: list[str] = []
         if playing:
             endpoints.append(headset.device)
-            if self.config.tap_cables:
-                # Windows' output picked as "CABLE Input": those programs are heard in the headset too (the engine's own
-                # microphone stream into that cable is left alone: it is excluded by process id)
-                endpoints += [name for name in cable_inputs(self._devices) if name != headset.device]
         key = (engaged, tuple(endpoints))
         if key == self._tap_key:
             return
@@ -720,7 +858,7 @@ class Engine:
         changed = hint is not None and hint != self._hint_seen
         if now - self._last_refresh < (REFRESH_MIN_GAP if changed else self._refresh_interval()):
             return
-        audible = any(ep.state == "running" for key, ep in self.endpoints.items() if key in ("out:headset", "mic:out"))
+        audible = any(ep.state == "running" for key, ep in self.endpoints.items() if key == "out:headset")
         have_probe = self._probe is not None or self._quick_probe is not None
         if not have_probe and audible:
             return                                                    # a blind rebuild would interrupt sound someone hears
@@ -850,7 +988,7 @@ class Engine:
     def status(self) -> dict:
         notes = list(self.notes) + list(self.graph.mic.notes)
         if self.graph.stream.enabled and "out:stream" not in self.endpoints:
-            notes.append("Streamer mode is on, but no stream output cable is chosen (Settings > Audio engine).")
+            notes.append("Streamer mode is on, but no output for the stream mix is chosen (Settings > Audio engine).")
         return {
             "running": self.running,
             "profile": self.config.latency,
@@ -860,7 +998,7 @@ class Engine:
             "endpoints": {key: ep.info() for key, ep in self.endpoints.items()},
             "playback": {**self.playback.stats.as_dict(), "active": self.playback.master() is not None,
                          "spatial": [ch for ch, s in self.graph.strips.items() if s.spatial_active]},
-            "microphone": {**self.mic.stats.as_dict(), "active": self.mic.master() is not None,
+            "microphone": {**self.mic.info(), "active": self.mic.state == "processing",
                            "noise_engine": self.graph.mic.noise_engine_active},
             "volumes": dict(self.volumes), "muted": dict(self.muted),
             "stream": {"enabled": self.graph.stream.enabled, "output": "out:stream" in self.endpoints},

@@ -19,23 +19,29 @@ _EN = {
     "btn_devices": "Devices...",
     "dialog_title": "Audio devices",
     "dialog_intro": (
-        "ASM finds your headset and microphone by itself - change them here only if it picked the wrong ones. "
+        "ASM finds your headset by itself - change it here only if it picked the wrong one. "
         "Programs need no setup: ASM takes each program's sound from Windows, sorts it into Game, Chat, Media "
-        "or Aux, applies the equalizer and spatial audio and plays the result to the headset."),
+        "or Aux, applies the equalizer and spatial audio and plays the result to the headset. Nothing virtual is "
+        "added to Windows: the headset stays the only sound device, and the microphone stays the headset's own."),
     "scanning": "Looking for sound devices...",
     "scan_failed": "Could not list the sound devices: {error}",
-    "no_cable": ("No virtual cable found, so the processed microphone is not available. ASM's setup installs it "
-                 "(VB-CABLE): run the setup again and keep that option ticked."),
     "label_headset": "Headset (playback)",
     "label_stream": "Stream mix output (optional)",
-    "label_mic_in": "Microphone",
-    "label_mic_out": "Processed microphone (virtual cable)",
     "label_latency": "Latency / stability",
     "label_limiter": "Protect the headset with a limiter",
-    "mic_out_hint": "In Discord, OBS, games and other programs choose \"CABLE Output\" as the microphone to use the processed one.",
-    "vbcable_note": (
-        "The processed microphone uses VB-CABLE by VB-Audio Software, installed with ASM. It is donationware: "
-        "if it is useful to you, please support its author at <a href=\"https://vb-audio.com/Cable/\">vb-audio.com</a>."),
+    "fx_title": "Microphone",
+    "fx_running": "Microphone effect: working. Programs that record from the headset's microphone get the processed sound (noise cancelling, noise reduction, gate, compressor, equalizer).",
+    "fx_ready": "Microphone effect: set up. It starts working as soon as a program records from the headset's microphone - no other microphone needs to be chosen anywhere.",
+    "fx_needs_setup": "Microphone effect: not set up yet. It lets the processed microphone reach Discord, OBS and games through the headset's own microphone, without any extra device.",
+    "fx_no_headset": "Microphone effect: waiting for Windows to know the headset's microphone. Connect the headset.",
+    "fx_disabled": "Microphone effect: switched off ({reason}). Microphone processing is not applied; the microphone works as Windows gives it.",
+    "fx_missing": "Microphone effect: its file is not installed, so the microphone is not processed. Run the setup again.",
+    "fx_off": "Microphone effect: not available here.",
+    "btn_fx_setup": "Set up the microphone effect",
+    "btn_fx_remove": "Switch the microphone effect off",
+    "fx_asked": "Asked Windows to set it up; this takes a few seconds (the sound may stop for a moment).",
+    "fx_asked_off": "Asked Windows to switch it off; this takes a few seconds.",
+    "fx_cannot_ask": "Could not start the setup: run ASM's installer again, or run  ArctisSoundManager.exe --fx attach  as administrator.",
     "none": "(none)",
     "not_found": "{name} (not found)",
     "latency_low": "Low - about {ms} ms, highest CPU use",
@@ -64,24 +70,29 @@ _TR = {
     "btn_devices": "Aygıtlar...",
     "dialog_title": "Ses aygıtları",
     "dialog_intro": (
-        "ASM kulaklığınızı ve mikrofonunuzu kendisi bulur - yanlış olanları seçtiyse burada değiştirin. "
+        "ASM kulaklığınızı kendisi bulur - yanlış olanı seçtiyse burada değiştirin. "
         "Programlar için ayar gerekmez: ASM her programın sesini Windows'tan alır, Oyun, Sohbet, Medya veya Aux "
-        "kanalına ayırır, ekolayzır ve uzamsal sesi uygular, sonucu kulaklığa çalar."),
+        "kanalına ayırır, ekolayzır ve uzamsal sesi uygular, sonucu kulaklığa çalar. Windows'a sanal hiçbir şey "
+        "eklenmez: tek ses aygıtı kulaklık, mikrofon da kulaklığın kendi mikrofonu olarak kalır."),
     "scanning": "Ses aygıtları aranıyor...",
     "scan_failed": "Ses aygıtları listelenemedi: {error}",
-    "no_cable": ("Sanal kablo bulunamadı, bu yüzden işlenmiş mikrofon kullanılamıyor. ASM'nin kurulumu onu "
-                 "(VB-CABLE) kurar: kurulumu yeniden çalıştırıp o seçeneği işaretli bırakın."),
     "label_headset": "Kulaklık (oynatma)",
     "label_stream": "Yayın karışımı çıkışı (isteğe bağlı)",
-    "label_mic_in": "Mikrofon",
-    "label_mic_out": "İşlenmiş mikrofon (sanal kablo)",
     "label_latency": "Gecikme / kararlılık",
     "label_limiter": "Kulaklığı sınırlayıcıyla koru",
-    "mic_out_hint": "İşlenmiş mikrofonu kullanmak için Discord, OBS, oyunlar ve diğer programlarda mikrofon olarak \"CABLE Output\" seçin.",
-    "vbcable_note": (
-        "İşlenmiş mikrofon, ASM ile birlikte kurulan VB-Audio Software'in VB-CABLE'ını kullanır. Bağış (donationware) "
-        "ile dağıtılır: işinize yarıyorsa yazarını <a href=\"https://vb-audio.com/Cable/\">vb-audio.com</a> "
-        "üzerinden desteklemenizi rica ederiz."),
+    "fx_title": "Mikrofon",
+    "fx_running": "Mikrofon efekti: çalışıyor. Kulaklığın mikrofonundan kayıt yapan programlar işlenmiş sesi alır (gürültü engelleme, gürültü azaltma, gate, kompresör, ekolayzır).",
+    "fx_ready": "Mikrofon efekti: kurulu. Bir program kulaklığın mikrofonundan kayıt yapar yapmaz çalışmaya başlar - hiçbir yerde başka bir mikrofon seçmeniz gerekmez.",
+    "fx_needs_setup": "Mikrofon efekti: henüz kurulmadı. İşlenmiş mikrofonu, ek bir aygıt olmadan, kulaklığın kendi mikrofonu üzerinden Discord, OBS ve oyunlara ulaştırır.",
+    "fx_no_headset": "Mikrofon efekti: Windows'un kulaklığın mikrofonunu tanıması bekleniyor. Kulaklığı bağlayın.",
+    "fx_disabled": "Mikrofon efekti: kapalı ({reason}). Mikrofon işlenmiyor; mikrofon Windows'un verdiği haliyle çalışır.",
+    "fx_missing": "Mikrofon efekti: dosyası kurulu değil, bu yüzden mikrofon işlenmiyor. Kurulumu yeniden çalıştırın.",
+    "fx_off": "Mikrofon efekti: burada kullanılamıyor.",
+    "btn_fx_setup": "Mikrofon efektini kur",
+    "btn_fx_remove": "Mikrofon efektini kapat",
+    "fx_asked": "Windows'tan kurması istendi; birkaç saniye sürer (ses bir an kesilebilir).",
+    "fx_asked_off": "Windows'tan kapatması istendi; birkaç saniye sürer.",
+    "fx_cannot_ask": "Kurulum başlatılamadı: ASM kurucusunu yeniden çalıştırın ya da yönetici olarak  ArctisSoundManager.exe --fx attach  çalıştırın.",
     "none": "(yok)",
     "not_found": "{name} (bulunamadı)",
     "latency_low": "Düşük - yaklaşık {ms} ms, en yüksek CPU kullanımı",

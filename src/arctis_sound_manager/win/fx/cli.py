@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """``ArctisSoundManager.exe --fx <command>``: the microphone effect from the command line.
 
-    attach [--match WORD ...] [--force] [--no-protect]   register the effect and attach it to the headset's microphone (administrator)
+    attach [--match WORD ...] [--force] [--no-protect] [--slots efx,sfx,...] [--builder]
+                                           register the effect and attach it to the headset's microphone (administrator)
     detach [--reason TEXT]                 take it away again and put Windows back as it was (administrator)
     guard                                  detach for good if the audio engine crashed in the effect (administrator)
     status [--json]                        what is in place (anyone)
@@ -45,6 +46,10 @@ def _words(args: list[str]) -> list[str]:
     return [w for w in out if w]
 
 
+def _option(args: list[str], name: str) -> str | None:
+    return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+
+
 def _print(result: fx.Result) -> int:
     print(json.dumps({"ok": result.ok, "changed": result.changed, "restarted": result.restarted,
                       "attached": result.attached, "errors": result.errors, "notes": result.notes}))
@@ -65,11 +70,13 @@ def main(args: list[str]) -> int:
     if command == "attach":
         if "--force" in rest:
             fx.clear_marker()
+        slots = tuple(w for w in (_option(rest, "--slots") or "").split(",") if w in fx.SLOTS) or fx.DEFAULT_SLOTS
+        builder = "--builder" in rest
         return _print(fx.attach(system_registry(), dll_path(), fx.selector(_words(rest)), force="--force" in rest,
-                                protect="--no-protect" not in rest))
+                                protect="--no-protect" not in rest, slots=slots,
+                                restart=lambda: fx.restart_audio_service(builder=builder)))
     if command == "detach":
-        reason = rest[rest.index("--reason") + 1] if "--reason" in rest and rest.index("--reason") + 1 < len(rest) else ""
-        return _print(fx.detach(system_registry(), reason=reason))
+        return _print(fx.detach(system_registry(), reason=_option(rest, "--reason") or ""))
     if command == "guard":
         return _print(fx.guard(system_registry()))
     if command == "tasks-install":

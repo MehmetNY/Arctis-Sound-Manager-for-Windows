@@ -99,6 +99,11 @@ class MicChain:
     # ── processing ──────────────────────────────────────────────────────────
 
     @property
+    def active(self) -> bool:
+        """Does the chain change the sound at all? (Nothing enabled: the microphone can go to programs untouched.)"""
+        return bool(self._filters.sections or self._gate_on or self._compressor_on or self.noise_engine_active)
+
+    @property
     def latency_frames(self) -> int:
         frames = self._gate.lookahead_frames if self._gate_on else 0
         if self.noise_engine_active and self._denoiser is not None:

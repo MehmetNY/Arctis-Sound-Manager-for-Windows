@@ -1,10 +1,12 @@
 # Copyright (C) 2026 loteran — Windows portability layer
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The Windows "Audio devices" window: which headset, which microphone, where the processed microphone goes.
+"""The Windows "Audio devices" window: which headset, and how the microphone effect is doing.
 
-ASM chooses all of this by itself the first time it runs (and again whenever its choice no longer exists),
-so this window is only for correcting a wrong guess. It lists the sound devices (taken by a separate process,
+ASM chooses the headset by itself the first time it runs (and again whenever its choice no longer exists),
+so this window is only for correcting a wrong guess. The microphone has nothing to choose: the processed one reaches
+programs through the headset's own microphone (:mod:`arctis_sound_manager.win.fx`), so the window only says how that
+effect is doing and offers to set it up or switch it off. It lists the sound devices (taken by a separate process,
 so devices plugged in since ASM started show up), shows what the engine is configured with and, on
 *Save and apply*, writes ``win_audio_engine.json``, starts the engine if it is not running and tells it to
 rebuild. *Choose automatically* hands the choice back to ASM. Every blocking step runs in a worker thread.
@@ -28,13 +30,14 @@ from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.win.audio.backend import DeviceInfo
 from arctis_sound_manager.win.audio.bridge import shared_bridge
 from arctis_sound_manager.win.audio.control import EngineClient
-from arctis_sound_manager.win.audio.engine_config import (CHANNELS, PROFILES, EngineConfig, _CABLE, load_config,
+from arctis_sound_manager.win.audio.engine_config import (CHANNELS, PROFILES, EngineConfig, is_virtual, load_config,
                                                           save_config, suggest_config)
 from arctis_sound_manager.win.audio.host import subprocess_probe
 from arctis_sound_manager.win.audio.launcher import start_engine
 from arctis_sound_manager.win.audio.strings import t
 from arctis_sound_manager.win.audio.summary import endpoint_lines, engine_state
 from arctis_sound_manager.win.audio.tap import is_tap_device
+from arctis_sound_manager.win.fx import state as fxstate
 
 _log = logging.getLogger(__name__)
 
@@ -56,22 +59,11 @@ def _pool(devices: list[DeviceInfo]) -> list[DeviceInfo]:
 
 
 def candidates(devices: list[DeviceInfo]) -> dict[str, list[DeviceInfo]]:
-    """The devices each drop-down lists (WASAPI ones only when there are any), the likeliest first."""
-    pool = _pool(devices)
-    inputs = [d for d in pool if d.max_inputs > 0]
-    outputs = [d for d in pool if d.max_outputs > 0]
-
-    def ordered(items, cable):
-        return sorted(items, key=lambda d: (not (bool(_CABLE.search(d.name)) == cable), d.name.lower()))
-    return {
-        "mic": ordered(inputs, False),
-        "headset": ordered(outputs, False),
-        "cable_out": ordered(outputs, True),                     # the Input end of a cable, which the engine plays into
-    }
-
-
-def has_cable(devices: list[DeviceInfo]) -> bool:
-    return any(d.max_outputs > 0 and _CABLE.search(d.name) for d in _pool(devices))
+    """The devices each drop-down lists (WASAPI ones only when there are any), the likeliest first. Virtual devices that
+    other software brought (a voice mixer, somebody's virtual cable) are never listed: ASM does not use them."""
+    pool = [d for d in _pool(devices) if d.max_outputs > 0 and not is_virtual(d.name)]
+    ordered = sorted(pool, key=lambda d: (not ("arctis" in d.name.lower() or "steelseries" in d.name.lower()), d.name.lower()))
+    return {"headset": ordered, "stream": ordered}
 
 
 def combo_items(options: list[DeviceInfo], current: str, optional: bool, lang: str | None = None) -> list[tuple[str, str]]:
@@ -122,13 +114,16 @@ class AudioDevicesDialog(QDialog):
                  probe: Callable[[], list[DeviceInfo]] = subprocess_probe,
                  ensure_engine: Callable[..., bool] = start_engine,
                  client_factory: Callable[..., EngineClient] = EngineClient, bridge=None,
-                 synchronous: bool = False, poll_ms: int = 1500):
+                 synchronous: bool = False, poll_ms: int = 1500,
+                 fx_describe: Callable[..., fxstate.FxState] = fxstate.describe,
+                 fx_request: Callable[[str], bool] = fxstate.request):
         super().__init__(parent)
         self._config_dir = config_dir
         self._probe, self._ensure = probe, ensure_engine
         self._client_factory = client_factory
         self._bridge = bridge or shared_bridge()
         self._synchronous = synchronous
+        self._fx_describe, self._fx_request = fx_describe, fx_request
         self._devices: list[DeviceInfo] = []
         self._tasks: list[_Task] = []
         self._lang = _lang()
@@ -158,8 +153,7 @@ class AudioDevicesDialog(QDialog):
         form.setSpacing(8)
         self._combos: dict[str, NoWheelComboBox] = {}
         self._rows: dict[str, tuple[QLabel, NoWheelComboBox]] = {}
-        for key, label_key in (("out:headset", "label_headset"), ("mic:in", "label_mic_in"),
-                               ("mic:out", "label_mic_out"), ("out:stream", "label_stream")):
+        for key, label_key in (("out:headset", "label_headset"), ("out:stream", "label_stream")):
             combo = NoWheelComboBox()
             combo.setMinimumWidth(360)
             self._combos[key] = combo
@@ -176,11 +170,16 @@ class AudioDevicesDialog(QDialog):
         form.addRow("", self._limiter)
         root.addLayout(form)
 
-        self._mic_hint = note(t("mic_out_hint", self._lang))
-        root.addWidget(self._mic_hint)
         self._message = note("", "TEXT_PRIMARY")
         root.addWidget(self._message)
-        root.addWidget(note(t("vbcable_note", self._lang), links=True))
+        self._fx_lbl = note("")
+        root.addWidget(self._fx_lbl)
+        self._fx_btn = QPushButton("")
+        self._fx_btn.clicked.connect(self._fx_clicked)
+        fx_row = QHBoxLayout()
+        fx_row.addWidget(self._fx_btn)
+        fx_row.addStretch(1)
+        root.addLayout(fx_row)
 
         buttons = QHBoxLayout()
         self._auto_btn = QPushButton(t("btn_automatic", self._lang))
@@ -250,15 +249,12 @@ class AudioDevicesDialog(QDialog):
         self._devices = list(devices)
         fresh = not self._config.outputs.get("headset")
         self.populate(suggest_config(self._devices) if fresh else self._config)
-        self._message.setText("" if has_cable(self._devices) else t("no_cable", self._lang))
+        self._message.setText("")
 
     def populate(self, cfg: EngineConfig) -> None:
         cand = candidates(self._devices)
-        cable = has_cable(self._devices)
         wanted = {"out:headset": (cfg.outputs.get("headset", ""), "headset", False),
-                  "out:stream": (cfg.outputs.get("stream", ""), "cable_out", True),
-                  "mic:in": (cfg.mic_input, "mic", True),
-                  "mic:out": (cfg.mic_output, "cable_out", True)}
+                  "out:stream": (cfg.outputs.get("stream", ""), "stream", True)}
         for key, (current, pool, optional) in wanted.items():
             items = combo_items(cand[pool], current, optional, self._lang)
             combo = self._combos[key]
@@ -268,11 +264,9 @@ class AudioDevicesDialog(QDialog):
                 combo.addItem(label, value)
             combo.setCurrentIndex(pick_index(items, current) if current else 0)
             combo.blockSignals(False)
-        # the processed microphone needs a cable; the stream mix row only matters with a second one (or one in use)
-        for key in ("mic:in", "mic:out"):
-            self._combos[key].setEnabled(cable or bool(wanted[key][0]))
-        self._mic_hint.setVisible(cable or bool(cfg.mic_output))
-        show_stream = bool(cfg.outputs.get("stream")) or len([d for d in cand["cable_out"] if _CABLE.search(d.name)]) > 1
+        # Streamer mode's separate output only means something with a second real output device (or one already chosen)
+        others = [d for d in cand["stream"] if d.name != cfg.outputs.get("headset")]
+        show_stream = bool(cfg.outputs.get("stream")) or len(others) > 1
         for widget in self._rows["out:stream"]:
             widget.setVisible(show_stream)
         index = self._latency.findData(cfg.latency if cfg.latency in LATENCY_ORDER else "balanced")
@@ -290,10 +284,8 @@ class AudioDevicesDialog(QDialog):
             cfg = suggest_config(self._devices)                  # a first run: the channels' own capture devices
         cfg.outputs = {**{b: n for b, n in cfg.outputs.items() if b not in ("headset", "stream")},
                        "headset": value("out:headset")}
-        if value("out:stream"):                                  # Streamer mode's cable; no entry when it is not used
+        if value("out:stream"):                                  # Streamer mode's second output; no entry when it is not used
             cfg.outputs["stream"] = value("out:stream")
-        cfg.mic_output = value("mic:out")
-        cfg.mic_input = value("mic:in") if cfg.mic_output else ""      # a microphone without a cable to send it to is no use
         cfg.latency = str(self._latency.currentData() or "balanced")
         cfg.master_limiter = self._limiter.isChecked()
         cfg.auto = False                                         # the user has chosen: ASM stops choosing
@@ -353,3 +345,35 @@ class AudioDevicesDialog(QDialog):
         state = engine_state(status, configured=cfg_ok, lang=self._lang)
         lines = endpoint_lines(status)
         self._state_lbl.setText(state.text + ("\n" + "  |  ".join(lines) if lines else ""))
+        self._refresh_fx(status)
+
+    # ── the microphone effect ───────────────────────────────────────────────
+
+    def _refresh_fx(self, status: dict | None) -> None:
+        try:
+            state = self._fx_describe(status)
+        except Exception as exc:                                 # noqa: BLE001 — a status line must never raise
+            _log.debug("microphone effect state failed: %r", exc)
+            state = fxstate.FxState(fxstate.OFF)
+        self._fx_state = state
+        self._fx_lbl.setText(t(f"fx_{state.code}", self._lang, reason=state.detail))
+        if state.code in (fxstate.READY, fxstate.RUNNING):
+            self._fx_btn.setText(t("btn_fx_remove", self._lang))
+            self._fx_btn.setVisible(True)
+        elif state.code in (fxstate.NEEDS_SETUP, fxstate.DISABLED):
+            self._fx_btn.setText(t("btn_fx_setup", self._lang))
+            self._fx_btn.setVisible(True)
+        else:
+            self._fx_btn.setVisible(False)
+
+    def fx_text(self) -> str:
+        return self._fx_lbl.text()
+
+    def _fx_clicked(self) -> None:
+        state = getattr(self, "_fx_state", None)
+        remove = state is not None and state.active
+        action = "detach" if remove else "attach"
+        if self._fx_request(action):
+            self._message.setText(t("fx_asked_off" if remove else "fx_asked", self._lang))
+        else:
+            self._message.setText(t("fx_cannot_ask", self._lang))

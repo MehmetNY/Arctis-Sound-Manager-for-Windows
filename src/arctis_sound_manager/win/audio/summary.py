@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from arctis_sound_manager.win.audio.strings import t
 
 _NAMES = {"in:game": "Game", "in:chat": "Chat", "in:media": "Media", "in:aux": "Aux", "out:headset": "Headset",
-          "out:stream": "Stream", "mic:in": "Mic", "mic:out": "Mic out"}
+          "out:stream": "Stream"}
 
 
 @dataclass(frozen=True)
@@ -49,9 +49,13 @@ def engine_state(status: dict | None, enabled: bool = True, configured: bool = T
 
 
 def endpoint_lines(status: dict | None) -> list[str]:
-    """``Game: running (CABLE-A Output ...)`` for every endpoint, for the Devices window's detail box."""
+    """``Headset: running (Headphones (Arctis ...))`` for every endpoint, then the microphone effect's state, for the
+    Devices window's detail box."""
     lines = []
     for key, ep in ((status or {}).get("endpoints") or {}).items():
         detail = ep.get("device") or ep.get("error") or ""
         lines.append(f"{_NAMES.get(key, key)}: {ep.get('state', 'closed')}" + (f" ({detail})" if detail else ""))
+    mic = (status or {}).get("microphone") or {}
+    if mic.get("state"):
+        lines.append(f"Microphone: {mic['state']}")
     return lines

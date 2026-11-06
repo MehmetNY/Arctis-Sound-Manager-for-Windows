@@ -3,15 +3,11 @@ Arctis Sound Manager for Windows - third-party components shipped with the insta
 
 Arctis Sound Manager (ASM) is free software, GPL-3.0-or-later. Its Windows port bundles the following.
 
-VB-CABLE Virtual Audio Device
-  Origin of VB-CABLE: www.vb-cable.com  (VB-Audio Software, Vincent Burel, https://vb-audio.com/Cable/)
-  VB-CABLE is a donationware, all participations are welcome.
-  ASM installs the unmodified VB-CABLE driver pack silently (VB-Audio's own "VB-CABLE silent installation" for
-  bundling in an installation package), once, so that the microphone ASM has cleaned up (noise cancelling,
-  EQ, ...) can be offered to other programs as a recording device: "CABLE Output (VB-Audio Virtual Cable)".
-  It stays visible and identifiable as a VB-Audio product in Windows' sound settings and in ASM's settings.
-  If you find it useful, please donate / support VB-Audio: https://shop.vb-audio.com/en/win-apps/11-vb-cable.html
-  Removing ASM leaves VB-CABLE installed unless you ask the uninstaller to remove it too.
+Nothing virtual is installed
+  ASM adds no audio driver and no virtual sound device to Windows, and it installs no third-party audio software.
+  The processed microphone reaches other programs through a small audio effect of ASM's own (asm_micfx.dll, GPL-3.0)
+  that Windows' audio engine runs on the headset's own microphone; it can be switched off in the Devices window and is
+  removed by the uninstaller, which also restores the Windows setting it needs ("DisableProtectedAudioDG").
 
 RNNoise
   Copyright (c) 2017, Mozilla; (c) 2007-2017, Jean-Marc Valin; Xiph.Org Foundation. BSD-3-Clause.

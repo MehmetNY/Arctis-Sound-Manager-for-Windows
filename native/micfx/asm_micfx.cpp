@@ -20,6 +20,8 @@
 #include <mmreg.h>
 #include <new>
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <audioenginebaseapo.h>
 #if __has_include(<audiomediatype.h>)
 #include <audiomediatype.h>
@@ -35,6 +37,35 @@ static const GUID kFloatSubtype = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00
 
 static volatile LONG g_objects = 0;
 static volatile LONG g_instances = 0;
+
+// ── a trace, only when asked for ───────────────────────────────────────────────────────────────────────────────────
+// Nothing is written unless the file %SystemRoot%\Temp\asm_micfx_trace.log already exists (create an empty one to turn
+// the trace on, delete it to turn it off). It is how a "the effect does not load" report is diagnosed: which of the
+// steps Windows takes with the effect happened. Never called from the real-time path except for the very first block.
+static void Trace(const char* fmt, ...) {
+    wchar_t path[MAX_PATH];
+    UINT n = GetSystemWindowsDirectoryW(path, MAX_PATH);
+    if (n == 0 || n > MAX_PATH - 40) return;
+    wcscat_s(path, L"\\Temp\\asm_micfx_trace.log");
+    HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    char line[600];
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    int k = _snprintf_s(line, sizeof(line), _TRUNCATE, "%02d:%02d:%02d.%03d pid %lu tid %lu  ", t.wHour, t.wMinute,
+                        t.wSecond, t.wMilliseconds, GetCurrentProcessId(), GetCurrentThreadId());
+    va_list ap;
+    va_start(ap, fmt);
+    int m = _vsnprintf_s(line + k, sizeof(line) - k - 2, _TRUNCATE, fmt, ap);
+    va_end(ap);
+    if (m < 0) m = (int)strlen(line + k);
+    k += m;
+    line[k++] = '\n';
+    DWORD written = 0;
+    WriteFile(f, line, (DWORD)k, &written, nullptr);
+    CloseHandle(f);
+}
 
 // ── the memory shared with the ASM engine (one per process) ────────────────────────────────────────────────────────
 
@@ -116,8 +147,8 @@ static void RingRead(const float* ring, uint64_t position, float* dst, uint32_t 
 class MicFx final : public IAudioProcessingObject, public IAudioProcessingObjectRT,
                     public IAudioProcessingObjectConfiguration, public IAudioSystemEffects {
 public:
-    MicFx() : m_refs(1) { InterlockedIncrement(&g_objects); }
-    ~MicFx() { InterlockedDecrement(&g_objects); }
+    MicFx() : m_refs(1) { InterlockedIncrement(&g_objects); Trace("MicFx created"); }
+    ~MicFx() { InterlockedDecrement(&g_objects); Trace("MicFx destroyed"); }
 
     // IUnknown
     STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override {
@@ -131,8 +162,10 @@ public:
             *ppv = static_cast<IAudioProcessingObjectConfiguration*>(this);
         else if (riid == __uuidof(IAudioSystemEffects))
             *ppv = static_cast<IAudioSystemEffects*>(this);
-        else
+        else {
+            Trace("QueryInterface refused %08lx-%04x-%04x", riid.Data1, riid.Data2, riid.Data3);
             return E_NOINTERFACE;
+        }
         AddRef();
         return S_OK;
     }
@@ -152,6 +185,7 @@ public:
     }
     STDMETHOD(GetRegistrationProperties)(APO_REG_PROPERTIES** ppRegProps) override {
         if (!ppRegProps) return E_POINTER;
+        Trace("GetRegistrationProperties");
         const size_t bytes = sizeof(APO_REG_PROPERTIES) + 2 * sizeof(IID);
         APO_REG_PROPERTIES* p = (APO_REG_PROPERTIES*)CoTaskMemAlloc(bytes);
         if (!p) return E_OUTOFMEMORY;
@@ -174,7 +208,7 @@ public:
         *ppRegProps = p;
         return S_OK;
     }
-    STDMETHOD(Initialize)(UINT32, BYTE*) override { return S_OK; }
+    STDMETHOD(Initialize)(UINT32 size, BYTE*) override { Trace("Initialize (%u bytes of initialisation data)", size); return S_OK; }
     STDMETHOD(IsInputFormatSupported)(IAudioMediaType* pOpposite, IAudioMediaType* pRequested,
                                       IAudioMediaType** ppSupported) override {
         return CheckFormat(pOpposite, pRequested, ppSupported);
@@ -202,7 +236,10 @@ public:
         m_owner = false;
         m_primed = false;
         m_misses = 0;
-        if (OpenShared()) {
+        const bool shared_ok = OpenShared();
+        Trace("LockForProcess: %u channels, %u Hz, float=%d, supported=%d, shared memory %s (error %lu)", m_channels,
+              m_rate, (int)m_float, (int)m_supported, shared_ok ? "open" : "NOT open", shared_ok ? 0ul : GetLastError());
+        if (shared_ok) {
             AsmFxHeader* h = g_shared.header;
             if (m_id == 0) {
                 LONG n = InterlockedIncrement(&g_instances);
@@ -231,9 +268,11 @@ public:
             if (!m_owner) h->apo_state = h->apo_state;   // the owner keeps reporting; this instance only passes through
         }
         m_locked = true;
+        Trace("LockForProcess done, owner=%d", (int)m_owner);
         return S_OK;
     }
     STDMETHOD(UnlockForProcess)() override {
+        Trace("UnlockForProcess");
         m_locked = false;
         if (m_owner && g_shared.header) {
             AsmFxHeader* h = g_shared.header;
@@ -251,6 +290,7 @@ public:
         const APO_CONNECTION_PROPERTY* ci = in[0];
         APO_CONNECTION_PROPERTY* co = out[0];
         const uint32_t frames = ci->u32ValidFrameCount;
+        if (!m_traced) { m_traced = true; Trace("first block: %u frames, flags %u, owner=%d", frames, (unsigned)ci->u32BufferFlags, (int)m_owner); }
         const bool silent = ci->u32BufferFlags == BUFFER_SILENT;
         const float* src = (const float*)ci->pBuffer;
         float* dst = (float*)co->pBuffer;
@@ -285,6 +325,8 @@ private:
         *supported = nullptr;
         UNCOMPRESSEDAUDIOFORMAT f = {};
         if (FAILED(requested->GetUncompressedAudioFormat(&f))) return APOERR_FORMAT_NOT_SUPPORTED;
+        Trace("format asked: %u channels, %.0f Hz, %u-byte container, float=%d, opposite=%d", f.dwSamplesPerFrame,
+              f.fFramesPerSecond, f.dwBytesPerSampleContainer, (int)(f.guidFormatType == kFloatSubtype), opposite ? 1 : 0);
         // like every effect that works on floating point: 32-bit float samples, anything else is not ours to handle
         if (!(f.guidFormatType == kFloatSubtype && f.dwBytesPerSampleContainer == 4)) return APOERR_FORMAT_NOT_SUPPORTED;
         if (opposite) {
@@ -404,6 +446,7 @@ private:
     bool m_owner = false;
     bool m_primed = false;
     bool m_faulted = false;
+    bool m_traced = false;
     uint32_t m_misses = 0;
 };
 
@@ -439,6 +482,7 @@ static Factory g_factory;
 extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID riid, void** ppv) {
     if (!ppv) return E_POINTER;
     *ppv = nullptr;
+    Trace("DllGetClassObject %08lx", clsid.Data1);
     if (!IsEqualGUID(clsid, CLSID_AsmMicFx)) return CLASS_E_CLASSNOTAVAILABLE;
     return g_factory.QueryInterface(riid, ppv);
 }
@@ -446,6 +490,12 @@ extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID riid, void
 extern "C" HRESULT __stdcall DllCanUnloadNow() { return g_objects == 0 ? S_OK : S_FALSE; }
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        wchar_t exe[MAX_PATH] = L"?";
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        const wchar_t* base = wcsrchr(exe, L'\\');
+        Trace("loaded into %ls", base ? base + 1 : exe);
+    }
     if (reason == DLL_PROCESS_DETACH) CloseShared();
     return TRUE;
 }

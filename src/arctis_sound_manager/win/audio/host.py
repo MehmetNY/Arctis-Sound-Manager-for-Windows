@@ -112,8 +112,7 @@ class EngineHost:
 
     def autoconfigure(self) -> bool:
         """Pick the devices by ourselves: on a first run (no configuration file) and, for a configuration we made
-        ourselves (``auto``), whenever it no longer works - the headset was switched on later, a cable was
-        installed. A configuration the user saved is never touched. Returns whether a file was (re)written."""
+        ourselves (``auto``), whenever it no longer works - the headset was switched on later. A configuration the user saved is never touched. Returns whether a file was (re)written."""
         with self._lock:
             path = config_path(self.config_dir)
             current = load_config(self.config_dir)
@@ -144,8 +143,7 @@ class EngineHost:
                 except OSError:
                     pass
             save_config(guess, self.config_dir)
-            _log.info("auto-setup: configuration written (headset %r, microphone %r -> %r)", guess.outputs.get("headset"),
-                      guess.mic_input, guess.mic_output)
+            _log.info("auto-setup: configuration written (headset %r)", guess.outputs.get("headset"))
             return True
 
     def _missing(self, cfg: EngineConfig) -> list[str]:

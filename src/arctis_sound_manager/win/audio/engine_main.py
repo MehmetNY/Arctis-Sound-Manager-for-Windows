@@ -6,7 +6,7 @@
     (no arguments)      run the engine until Ctrl+C or a ``shutdown`` command
     --list-devices      print the sound devices (add --json for machines)
     --suggest           print a first guess at win_audio_engine.json for this computer (--write to save it)
-    --selftest          check the set-up: devices, a cable loopback tone per channel, and a CPU benchmark
+    --selftest          check the set-up: devices, the microphone effect, and a CPU benchmark
     --bench             just the CPU benchmark of the processing graph
 
 Everything is also logged to ``asm-audio-engine.log`` in ASM's config folder.
@@ -121,45 +121,6 @@ def benchmark(config_dir: Path, block: int = 960, seconds: float = 3.0, hrir_id:
     }
 
 
-def check_cable(backend, capture, render, seconds: float = 1.5, pump=None, sleep=time.sleep, freq: float = 1000.0) -> dict:
-    """Play a tone into a cable's render end and record it from the capture end: does the cable work, how
-    loud does it come back, and how far is its clock from the system's (ppm)."""
-    state = {"phase": 0, "frames": 0, "recorded": []}
-
-    def play(out):
-        n = out.shape[0]
-        t = (np.arange(n) + state["phase"]) / RATE
-        out[:] = (0.25 * np.sin(2 * np.pi * freq * t))[:, None]
-        state["phase"] += n
-
-    def record(data):
-        state["recorded"].append(np.array(data[:, 0], dtype=np.float64))
-
-    out_stream = backend.open_output(render, 2, play)
-    in_stream = backend.open_input(capture, 2, record)
-    started = time.perf_counter()
-    try:
-        in_stream.start()
-        out_stream.start()
-        while time.perf_counter() - started < seconds:
-            if pump is not None:
-                pump()
-            sleep(0.02)
-    finally:
-        out_stream.stop(); in_stream.stop(); out_stream.close(); in_stream.close()
-    elapsed = time.perf_counter() - started
-    rec = np.concatenate(state["recorded"]) if state["recorded"] else np.zeros(0)
-    if rec.size < RATE // 4:
-        return {"ok": False, "error": "nothing came back through the cable", "frames": int(rec.size)}
-    body = rec[rec.size // 4:]
-    level = float(np.sqrt(np.mean(body ** 2)))
-    spectrum = np.abs(np.fft.rfft(body * np.hanning(body.size)))
-    peak_hz = float(np.argmax(spectrum) * RATE / body.size)
-    return {"ok": level > 0.05, "level": round(level, 3), "expected": round(0.25 / np.sqrt(2), 3),
-            "tone_hz": round(peak_hz, 1), "frames": int(rec.size), "seconds": round(elapsed, 2),
-            "rate_ratio": round(rec.size / (elapsed * RATE), 4)}
-
-
 def selftest(config_dir: Path, backend=None, out=print, seconds: float = 1.5, pump=None) -> int:
     cfg = load_config(config_dir)
     failures = 0
@@ -185,28 +146,22 @@ def selftest(config_dir: Path, backend=None, out=print, seconds: float = 1.5, pu
         out(f"   {ch:6s} <- {d.label()}")
     for bus, d in resolved.outputs.items():
         out(f"   {bus:6s} -> {d.label()}")
-    if resolved.mic_input:
-        out(f"   mic    <- {resolved.mic_input.label()}")
-    if resolved.mic_output:
-        out(f"   mic    -> {resolved.mic_output.label()}")
     for line in resolved.missing:
         out(f"   MISSING: {line}")
         failures += 1
-    out("== 3. Cable loopback (a quiet tone goes into each cable and must come back out)")
-    for ch, capture in resolved.inputs.items():
-        render = _render_end_of(capture, devices)
-        if render is None:
-            out(f"   {ch}: no matching playback end found for '{capture.name}' (skipped)")
-            continue
-        try:
-            r = check_cable(backend, capture, render, seconds=seconds, pump=pump)
-        except BackendError as exc:
-            out(f"   {ch}: FAILED to open: {exc}")
-            failures += 1
-            continue
-        verdict = "ok" if r["ok"] else "FAILED"
-        out(f"   {ch}: {verdict} {r}")
-        failures += 0 if r["ok"] else 1
+    out("== 3. The microphone effect (what lets programs record the processed microphone)")
+    try:
+        from arctis_sound_manager.win.fx import shared as fxshared
+        link = fxshared.open_link()
+    except Exception as exc:                                              # noqa: BLE001
+        link = None
+        out(f"   could not look: {exc}")
+    if link is None:
+        out("   not loaded in Windows' audio engine (it loads when a program starts recording from the headset's microphone;"
+            " run  ArctisSoundManager.exe --fx status  to see whether it is installed)")
+    else:
+        out(f"   loaded: {link.info()}")
+        link.memory.close()
     out("== 4. Processing speed (the same graph the engine runs, every channel and the microphone busy)")
     b = benchmark(config_dir, cfg.playback_block, seconds=2.0)
     out(f"   playback: {b['playback_ms_mean']} ms per {cfg.playback_block}-frame block "
@@ -218,14 +173,6 @@ def selftest(config_dir: Path, backend=None, out=print, seconds: float = 1.5, pu
         failures += 1
     out("== Result: " + ("everything checked out" if failures == 0 else f"{failures} thing(s) need attention"))
     return 1 if failures else 0
-
-
-def _render_end_of(capture, devices):
-    """The playback end of the same virtual cable: 'CABLE-A Output (...)' <-> 'CABLE-A Input (...)'."""
-    from arctis_sound_manager.win.audio.engine_config import _cable_base
-    base = _cable_base(capture.name)
-    candidates = [d for d in devices if d.max_outputs > 0 and _cable_base(d.name) == base and d.wasapi == capture.wasapi]
-    return candidates[0] if candidates else None
 
 
 # ── entry point ──────────────────────────────────────────────────────────────

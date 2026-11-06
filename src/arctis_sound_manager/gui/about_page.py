@@ -70,8 +70,6 @@ ABOUT_CONTENT: dict[str, dict] = {
             {
                 "heading": "Components",
                 "body": (
-                    "• VB-CABLE virtual audio device by VB-Audio Software - donationware; it carries the processed "
-                    "microphone to other programs. Please support VB-Audio too: https://vb-audio.com/Cable/\n"
                     "• RNNoise (Mozilla / Xiph.Org, BSD-3-Clause) - the noise cancelling\n"
                     "• HeSuVi impulse responses (Matt Gore, MIT) - spatial audio\n\n"
                     "The full notices are in THIRD-PARTY-NOTICES.txt in the installation folder."
@@ -135,8 +133,6 @@ ABOUT_CONTENT: dict[str, dict] = {
             {
                 "heading": "Bileşenler",
                 "body": (
-                    "• VB-Audio Software'in VB-CABLE sanal ses aygıtı - bağışa dayalıdır; işlenmiş mikrofonu "
-                    "diğer programlara taşır. Lütfen VB-Audio'ya da destek olun: https://vb-audio.com/Cable/\n"
                     "• RNNoise (Mozilla / Xiph.Org, BSD-3-Clause) - gürültü engelleme\n"
                     "• HeSuVi dürtü yanıtları (Matt Gore, MIT) - uzamsal ses\n\n"
                     "Tüm bildirimler kurulum klasöründeki THIRD-PARTY-NOTICES.txt dosyasındadır."

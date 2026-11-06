@@ -38,7 +38,16 @@ DLL_NAME = "asm_micfx.dll"
 FRIENDLY_NAME = "Arctis Sound Manager microphone effect"
 
 CAPTURE = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture"
-EFX = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},7"                  # PKEY_FX_EndpointEffectClsid
+FX_GUID = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d}"
+# The places in an endpoint's FxProperties where Windows looks for an effect (property id after the comma). The new ones
+# (stream, mode, endpoint) win over the old pre-mix/post-mix pair when any of them is present.
+SLOTS = {"lfx": 1, "gfx": 2, "sfx": 5, "mfx": 6, "efx": 7}
+DEFAULT_SLOTS = ("efx",)                                           # PKEY_FX_EndpointEffectClsid: one instance per device
+EFX = f"{FX_GUID},{SLOTS['efx']}"
+
+
+def slot_key(name: str) -> str:
+    return f"{FX_GUID},{SLOTS[name]}"
 AUDIO = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Audio"
 PROTECT = "DisableProtectedAudioDG"
 STATE = r"SOFTWARE\ArctisSoundManager\MicFx"
@@ -115,11 +124,17 @@ class Result:
 
 # ── the audio service ────────────────────────────────────────────────────────
 
-def restart_audio_service(run: Callable = subprocess.run, sleep: Callable[[float], None] = time.sleep) -> bool:
-    """Stop and start Windows' audio service (audiodg.exe goes with it, so effects are loaded or released). ~2 seconds."""
+def restart_audio_service(run: Callable = subprocess.run, sleep: Callable[[float], None] = time.sleep,
+                          builder: bool = False) -> bool:
+    """Stop and start Windows' audio service (audiodg.exe goes with it, so effects are loaded or released). ~2 seconds.
+    ``builder``: the endpoint builder too (it keeps the device list; every audio device blinks for a moment)."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         run(["net", "stop", "audiosrv", "/y"], capture_output=True, creationflags=flags, timeout=60)
+        if builder:
+            run(["net", "stop", "AudioEndpointBuilder", "/y"], capture_output=True, creationflags=flags, timeout=60)
+            sleep(0.5)
+            run(["net", "start", "AudioEndpointBuilder"], capture_output=True, creationflags=flags, timeout=60)
         sleep(0.5)
         run(["net", "start", "audiosrv"], capture_output=True, creationflags=flags, timeout=60)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -205,14 +220,20 @@ def restore_audio_protection(reg: Registry) -> bool:
     return True
 
 
-def attached_guids(reg: Registry) -> list[str]:
-    """Endpoints that carry the effect as their endpoint effect right now."""
-    out = []
-    for ep in endpoints(reg):
-        value = reg.get(ep.fx_path, EFX)
+def carries(reg: Registry, ep_or_path, slots: Sequence[str] | None = None) -> list[str]:
+    """The slots (names) of an endpoint that hold the effect."""
+    path = ep_or_path.fx_path if isinstance(ep_or_path, Endpoint) else ep_or_path
+    found = []
+    for name in (slots or tuple(SLOTS)):
+        value = reg.get(path, slot_key(name))
         if value is not None and str(value.data).upper() == CLSID:
-            out.append(ep.guid)
-    return out
+            found.append(name)
+    return found
+
+
+def attached_guids(reg: Registry, slots: Sequence[str] | None = None) -> list[str]:
+    """Endpoints that carry the effect right now."""
+    return [ep.guid for ep in endpoints(reg) if carries(reg, ep, slots)]
 
 
 # ── attach / detach ──────────────────────────────────────────────────────────
@@ -227,7 +248,7 @@ def disabled_reason(marker_dir: Path | None = None) -> str | None:
 
 def attach(reg: Registry, dll: str, select: Callable[[Endpoint], bool] = is_headset_microphone,
            restart: Callable[[], bool] | None = restart_audio_service, marker_dir: Path | None = None,
-           force: bool = False, protect: bool = True) -> Result:
+           force: bool = False, protect: bool = True, slots: Sequence[str] = DEFAULT_SLOTS) -> Result:
     """Everything described in the module docstring. Safe to repeat: it changes (and restarts audio) only when needed."""
     result = Result()
     reason = None if force else disabled_reason(marker_dir)
@@ -250,15 +271,16 @@ def attach(reg: Registry, dll: str, select: Callable[[Endpoint], bool] = is_head
         return result
     for ep in chosen:
         try:
-            have = reg.get(ep.fx_path, EFX)
-            if have is not None and str(have.data).upper() == CLSID:
-                result.attached.append(ep.guid)
-                continue
-            if reg.get(f"{STATE}\\Endpoints\\{ep.guid}", "Before") is None:
-                reg.set(f"{STATE}\\Endpoints\\{ep.guid}", "Before", "" if have is None else str(have.data), REG_SZ)
-            _write_protected(reg, ep.fx_path, EFX, CLSID, REG_SZ)
+            for name in slots:
+                key = slot_key(name)
+                have = reg.get(ep.fx_path, key)
+                if have is not None and str(have.data).upper() == CLSID:
+                    continue
+                if reg.get(f"{STATE}\\Endpoints\\{ep.guid}", f"Before_{name}") is None:
+                    reg.set(f"{STATE}\\Endpoints\\{ep.guid}", f"Before_{name}", "" if have is None else str(have.data), REG_SZ)
+                _write_protected(reg, ep.fx_path, key, CLSID, REG_SZ)
+                result.changed = True
             result.attached.append(ep.guid)
-            result.changed = True
         except OSError as exc:
             result.fail(f"cannot attach to {ep.guid}: {exc}")
     if result.changed and restart is not None:
@@ -273,22 +295,25 @@ def detach(reg: Registry, restart: Callable[[], bool] | None = restart_audio_ser
     state_endpoints = f"{STATE}\\Endpoints"
     for guid in reg.subkeys(state_endpoints):
         fx_path = f"{CAPTURE}\\{guid}\\FxProperties"
-        before = reg.get(f"{state_endpoints}\\{guid}", "Before")
         try:
-            now = reg.get(fx_path, EFX)
-            if now is not None and str(now.data).upper() == CLSID:
-                if before is not None and str(before.data):
-                    _write_protected(reg, fx_path, EFX, str(before.data), REG_SZ)
-                else:
-                    _delete_protected(reg, fx_path, EFX)
-                result.changed = True
+            for name in SLOTS:
+                key = slot_key(name)
+                before = reg.get(f"{state_endpoints}\\{guid}", f"Before_{name}")
+                now = reg.get(fx_path, key)
+                if now is not None and str(now.data).upper() == CLSID:
+                    if before is not None and str(before.data):
+                        _write_protected(reg, fx_path, key, str(before.data), REG_SZ)
+                    else:
+                        _delete_protected(reg, fx_path, key)
+                    result.changed = True
             result.attached.append(guid)
         except OSError as exc:
             result.fail(f"cannot restore {guid}: {exc}")
     for guid in attached_guids(reg):                               # attached by an earlier build that kept no record
         if guid not in result.attached:
             try:
-                _delete_protected(reg, f"{CAPTURE}\\{guid}\\FxProperties", EFX)
+                for name in carries(reg, f"{CAPTURE}\\{guid}\\FxProperties"):
+                    _delete_protected(reg, f"{CAPTURE}\\{guid}\\FxProperties", slot_key(name))
                 result.changed = True
             except OSError as exc:
                 result.fail(f"cannot detach from {guid}: {exc}")

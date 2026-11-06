@@ -15,14 +15,17 @@ Timeline of one case (seconds after the recording started) and what the recordin
     13.5 - 17.5 wants it again                      -> a quarter again
     17.5 - 22  the engine goes away                 -> untouched again
 
-It is run twice: with Windows' audio protection left alone, and with it switched off the way the product does, to find
-out whether Windows loads the effect at all without that.
+It is run once for every way of attaching the effect that could work (which slot of the endpoint's FxProperties, whether
+the endpoint builder is restarted too, whether Windows' audio protection is switched off), to learn from a real Windows
+which of them the product must use. Every case ends with a dump of what Windows and the effect's own trace (see
+native/micfx/asm_micfx.cpp: Trace) say, so a failure explains itself.
 """
 from __future__ import annotations
 
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -34,7 +37,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 LOG = open(ROOT / "fx_e2e.log", "w", encoding="utf-8")
-DLL = ROOT / "build" / "asm_micfx.dll"
+BUILT = ROOT / "build" / "asm_micfx.dll"
+# where the product keeps it: Windows' audio service (a different account) must be able to read the file
+DLL = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "ArctisSoundManager" / "fx" / "asm_micfx.dll"
+TRACE = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Temp" / "asm_micfx_trace.log"
+ENDPOINT = {"guid": ""}
 RATE = 48000
 AMPLITUDE = 0.5
 GAIN = 0.25
@@ -65,6 +72,59 @@ def sh(cmd: list[str], timeout: float = 120.0, env: dict | None = None) -> str:
 def fx(*args: str) -> str:
     code = "import sys; from arctis_sound_manager.win.fx import cli; sys.exit(cli.main(sys.argv[1:]))"
     return sh([sys.executable, "-c", code, *args], env={"PYTHONPATH": str(ROOT / "src"), "ASM_MICFX_DLL": str(DLL)})
+
+
+def endpoint_guid() -> str:
+    out = fx("status", "--match", "CABLE Output", "--json")
+    try:
+        wanted = json.loads(out.splitlines()[-1])["wanted"]
+        return wanted[0] if wanted else ""
+    except Exception:                                                     # noqa: BLE001
+        return ""
+
+
+def ps(script: str, timeout: float = 120.0) -> str:
+    return sh(["powershell", "-NoProfile", "-Command", script], timeout=timeout)
+
+
+def trace_text(clear: bool = True) -> str:
+    try:
+        text = TRACE.read_text(encoding="utf-8", errors="replace")
+        if clear:
+            TRACE.write_text("", encoding="utf-8")
+        return text
+    except OSError as exc:
+        return f"(no trace file: {exc!r})"
+
+
+def diagnose(label: str) -> None:
+    """What Windows and the effect say after a case."""
+    log(f"--- diagnosis: {label}")
+    guid = ENDPOINT["guid"]
+    base = rf"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\{guid}"
+    sh(["reg", "query", base + r"\FxProperties"])
+    sh(["reg", "query", r"HKLM\SOFTWARE\Classes\CLSID\{A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808}", "/s"])
+    sh(["reg", "query", r"HKLM\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\{A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808}"])
+    sh(["reg", "query", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio", "/v", "DisableProtectedAudioDG"])
+    ps("Get-Process audiodg -ErrorAction SilentlyContinue | ForEach-Object { 'audiodg pid ' + $_.Id + ' started ' + $_.StartTime }")
+    ps("try { (Get-Process audiodg).Modules | Where-Object { $_.ModuleName -match 'asm|micfx' } | ForEach-Object { 'LOADED ' + $_.FileName } } catch { 'modules not readable: ' + $_.Exception.Message }")
+    sh(["tasklist", "/m", "/fi", "imagename eq audiodg.exe"])
+    log("the effect's own trace:")
+    for line in trace_text().splitlines()[:80]:
+        log("   | " + line)
+    ps("foreach ($n in 'Microsoft-Windows-Audio/Operational','System','Application') { "
+       "Get-WinEvent -FilterHashtable @{LogName=$n; StartTime=(Get-Date).AddMinutes(-3)} -ErrorAction SilentlyContinue "
+       "| Where-Object { $_.ProviderName -match 'Audio|audiodg|Application Error|Windows Error' -or $_.Message -match 'audiodg|asm_micfx|APO' } "
+       "| Select-Object -First 12 | ForEach-Object { $n + ' ' + $_.TimeCreated.ToString('HH:mm:ss') + ' id ' + $_.Id + ' ' + $_.ProviderName + ': ' + ($_.Message -replace '\\s+',' ').Substring(0, [Math]::Min(300, $_.Message.Length)) } }")
+
+
+def install_dll() -> None:
+    DLL.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(BUILT, DLL)
+    sh(["icacls", str(DLL)])
+    sh(["icacls", str(BUILT)])
+    TRACE.write_text("", encoding="utf-8")
+    sh(["icacls", str(TRACE), "/grant", "*S-1-1-0:(F)"])                  # Everyone: the audio service writes the trace
 
 
 def find_devices():
@@ -134,7 +194,7 @@ def rms(samples: np.ndarray, start_s: float, end_s: float) -> float:
     return float(np.sqrt(np.mean(part ** 2))) if part.size else float("nan")
 
 
-def timeline() -> dict:
+def timeline(quick: bool = True) -> dict:
     import sounddevice as sd
     mic, play = find_devices()
     log(f"devices: capture {mic} playback {play}")
@@ -169,8 +229,20 @@ def timeline() -> dict:
             if action:
                 action()
                 log(f"t={at:5.1f}s  {engine.report['samples'][-1] if engine.report['samples'] else '(effect not seen yet)'}")
+            if quick and at == TIMELINE["engine_on"]:                    # give the effect a few seconds to show itself
+                deadline = time.monotonic() + 4.0
+                while time.monotonic() < deadline and engine.report["mapping_seen_s"] is None:
+                    time.sleep(0.05)
+                if engine.report["mapping_seen_s"] is None:
+                    log("   the effect never showed itself: cutting this case short")
+                    result["aborted"] = True
+                    break
     engine.ctl["stop"] = True
     engine.join(3)
+    if result.get("aborted"):
+        result["engine"] = engine.report
+        result["levels"] = {}
+        return result
     recording = np.concatenate(chunks) if chunks else np.zeros(0)
     log(f"recorded {recording.size / RATE:.1f} s")
     result["levels"] = {
@@ -194,54 +266,79 @@ def check(levels: dict) -> dict:
     return verdict
 
 
-def case(title: str, protect: bool) -> dict:
+VARIANTS = [
+    # (title, arguments of "attach", does it use the product's way of switching Windows' audio protection off)
+    ("EFX, audio service restarted (the plan)", ["--slots", "efx"], True),
+    ("EFX, endpoint builder restarted too", ["--slots", "efx", "--builder"], True),
+    ("SFX (stream effect)", ["--slots", "sfx"], True),
+    ("SFX + MFX + EFX", ["--slots", "sfx,mfx,efx", "--builder"], True),
+    ("MFX (mode effect)", ["--slots", "mfx"], True),
+    ("LFX (old pre-mix)", ["--slots", "lfx"], True),
+    ("LFX + GFX (old pre- and post-mix)", ["--slots", "lfx,gfx", "--builder"], True),
+    ("EFX, audio protection left alone", ["--slots", "efx"], False),
+]
+
+
+def case(title: str, extra: list[str], protect: bool) -> dict:
     log("")
     log(f"########## {title}")
     fx("detach")
-    out = fx("attach", "--match", "CABLE Output", *(() if protect else ("--no-protect",)))
+    trace_text()
+    fx("attach", "--match", "CABLE Output", *extra, *(() if protect else ("--no-protect",)))
     fx("status", "--match", "CABLE Output")
     time.sleep(3)
-    summary: dict = {"title": title, "protect": protect}
+    summary: dict = {"title": title, "protect": protect, "args": extra}
     try:
         result = timeline()
         summary.update(result)
-        summary["verdict"] = check(result["levels"])
+        summary["verdict"] = check(result["levels"]) if result.get("levels") else {}
     except Exception as exc:                                              # noqa: BLE001
         log("   timeline failed:", repr(exc))
         summary["error"] = repr(exc)
-    sh(["tasklist", "/m", "asm_micfx.dll"])
-    sh(["powershell", "-NoProfile", "-Command",
-        "Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue "
-        "| Where-Object { $_.Message -match 'audiodg|asm_micfx' } | Select-Object -First 8 | Format-List TimeCreated, Id, Message"])
+    diagnose(title)
     fx("detach")
     return summary
 
 
+def passed(summary: dict) -> bool:
+    verdict = summary.get("verdict") or {}
+    return bool(verdict) and all(v["ok"] for v in verdict.values())
+
+
 def main() -> int:
-    if not DLL.is_file():
+    if not BUILT.is_file():
         log("build\\asm_micfx.dll is missing")
         return 1
+    install_dll()
     sh(["powershell", "-NoProfile", "-Command",
         "Get-PnpDevice -Class AudioEndpoint -ErrorAction SilentlyContinue | Format-Table FriendlyName, Status, InstanceId -AutoSize | Out-String -Width 250"])
-    summaries = [case("audio protection switched off (what the product does)", True),
-                 case("audio protection left alone", False)]
+    ENDPOINT["guid"] = endpoint_guid()
+    log("endpoint under test:", ENDPOINT["guid"] or "(not found)")
+    summaries = []
+    for title, extra, protect in VARIANTS:
+        summaries.append(case(title, extra, protect))
+        if passed(summaries[-1]) and len(summaries) >= 2 and not protect:
+            break
     log("")
     log("========== SUMMARY")
     for s in summaries:
         verdict = s.get("verdict") or {}
-        log(f"{s['title']}: " + ("; ".join(f"{k} {v['level']} (want {v['expected']}) {'ok' if v['ok'] else 'WRONG'}" for k, v in verdict.items())
-                                or s.get("error", "no result")))
         seen = s.get("engine", {}).get("mapping_seen_s")
-        log(f"   the effect's shared memory appeared after {seen} s" if seen is not None else "   the effect's shared memory never appeared")
+        log(f"[{'PASS' if passed(s) else 'fail'}] {s['title']}: "
+            + ("; ".join(f"{k} {v['level']} (want {v['expected']}) {'ok' if v['ok'] else 'WRONG'}" for k, v in verdict.items())
+               or s.get("error") or "the effect never loaded")
+            + (f"  (shared memory after {seen} s)" if seen is not None else ""))
         samples = s.get("engine", {}).get("samples") or []
         if samples:
-            log("   last report from the effect:", json.dumps(samples[-1]))
-    product = summaries[0].get("verdict") or {}
-    if not product or not all(v["ok"] for v in product.values()):
-        FAILS.append("with the product's settings the effect did not behave")
-    protected = summaries[1].get("verdict") or {}
-    log("Windows loads the effect without switching the audio protection off: "
-        + ("YES" if protected and all(v["ok"] for v in protected.values()) else "no"))
+            log("      last report from the effect:", json.dumps(samples[-1]))
+    working = [s for s in summaries if passed(s)]
+    if not working:
+        FAILS.append("no way of attaching the effect worked")
+    elif not passed(summaries[0]):
+        log("NOTE: the plan (first case) did not work but another did:", "; ".join(s["title"] for s in working))
+    protected = [s for s in summaries if not s["protect"]]
+    if protected:
+        log("Windows loads the effect without switching the audio protection off: " + ("YES" if passed(protected[-1]) else "no"))
     Path(ROOT / "fx_e2e.json").write_text(json.dumps(summaries, indent=1, default=str), encoding="utf-8")
     log("RESULT:", "FAIL " + "; ".join(FAILS) if FAILS else "all good")
     return 1 if FAILS else 0

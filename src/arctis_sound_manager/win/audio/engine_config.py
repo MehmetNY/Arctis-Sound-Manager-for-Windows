@@ -7,17 +7,20 @@
 name, because Windows device indices change from one boot to the next::
 
     {
+      "schema": 3,
       "latency": "balanced",
-      "inputs":  {"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "CABLE-C Output", "aux": ""},
+      "inputs":  {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"},
       "outputs": {"headset": "Arctis Nova Pro"},
       "routing": {"game": "headset", "chat": "headset", "media": "headset", "aux": "headset"},
-      "mic":     {"input": "Microphone (Arctis", "output": "CABLE-D Input"},
+      "mic":     {"fx": true},
       "master_limiter": true
     }
 
-An empty name disables that input. Channels the user's programs are sent to (one virtual cable each)
-are read from the *Output* side of a cable; the processed mix goes to the real headset; the processed
-microphone goes to the *Input* side of one more cable, which other programs then record from.
+An empty name disables that input. The channels are the per-application tap's (each program's own sound, taken by
+``asm-audiotap.exe``); the processed mix goes to the real headset. The processed microphone needs no device at all:
+the microphone effect inside Windows' audio engine hands the headset's own microphone to the engine and takes the
+processed one back (:mod:`arctis_sound_manager.win.fx`), so programs keep recording from the one microphone they
+already know. No virtual device of any kind is used.
 
 A file that carries ``"auto": true`` was written by ASM itself the first time it ran (see
 :meth:`~arctis_sound_manager.win.audio.host.EngineHost.autoconfigure`); it is redone whenever the devices it names
@@ -76,11 +79,9 @@ class EngineConfig:
     inputs: dict[str, str] = field(default_factory=lambda: {ch: "" for ch in CHANNELS})
     outputs: dict[str, str] = field(default_factory=lambda: {"headset": ""})
     routing: dict[str, str] = field(default_factory=lambda: {ch: "headset" for ch in CHANNELS})
-    mic_input: str = ""
-    mic_output: str = ""
+    mic_fx: bool = True                       # the processed microphone, through the microphone effect in Windows' audio engine
     master_limiter: bool = True
-    schema: int = 2                           # 1: a build before the per-application tap (cables per channel); 2: the tap
-    tap_cables: bool = True                   # also take programs that play into a virtual cable's Input end (Windows' output picked as "CABLE Input")
+    schema: int = 3                           # 1: a build before the per-application tap; 2: the tap, a virtual cable for the microphone; 3: the microphone effect
     auto: bool = False                        # made by ASM itself (first run): it may be redone when devices appear or go
 
     # ── derived ─────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ class EngineConfig:
 
     @property
     def mic_enabled(self) -> bool:
-        return bool(self.mic_input and self.mic_output)
+        return self.mic_fx
 
     @property
     def playback_enabled(self) -> bool:
@@ -110,10 +111,8 @@ class EngineConfig:
     def to_dict(self) -> dict:
         out = {"schema": self.schema, "latency": self.latency, "device_latency": self.device_latency,
                "inputs": dict(self.inputs), "outputs": dict(self.outputs), "routing": dict(self.routing),
-               "mic": {"input": self.mic_input, "output": self.mic_output},
+               "mic": {"fx": self.mic_fx},
                "master_limiter": self.master_limiter}
-        if not self.tap_cables:
-            out["tap_cables"] = False
         if self.auto:
             out["auto"] = True
         if self.block:
@@ -155,15 +154,12 @@ class EngineConfig:
                 if routing.get(ch) in BUSES:
                     cfg.routing[ch] = routing[ch]
         mic = raw.get("mic")
-        if isinstance(mic, dict):
-            cfg.mic_input = str(mic.get("input") or "").strip()
-            cfg.mic_output = str(mic.get("output") or "").strip()
+        if isinstance(mic, dict) and isinstance(mic.get("fx"), bool):
+            cfg.mic_fx = mic["fx"]                                # the "input"/"output" of older builds named devices: gone
         if isinstance(raw.get("master_limiter"), bool):
             cfg.master_limiter = raw["master_limiter"]
         if raw.get("auto") is True:
             cfg.auto = True
-        if raw.get("tap_cables") is False:
-            cfg.tap_cables = False
         schema = raw.get("schema")
         cfg.schema = schema if isinstance(schema, int) and not isinstance(schema, bool) else 1     # no mark: an older build wrote it
         return cfg
@@ -178,38 +174,14 @@ class EngineConfig:
             if not self.outputs.get("headset"):
                 issues.append("no headset output device is chosen")
             if not any(self.inputs.get(ch) for ch in CHANNELS):
-                issues.append("no virtual cable is assigned to any channel")
+                issues.append("no source is assigned to any channel (the audio helper asm-audiotap.exe is missing)")
         for ch, bus in self.routing.items():
             if bus != "headset" and not self.outputs.get(bus):
                 issues.append(f"{ch} is routed to '{bus}' but that output has no device")
         used = [name for name in (*self.inputs.values(),) if name]
         if len(set(used)) != len(used):
             issues.append("the same device is assigned to two channels")
-        if self.mic_input and not self.mic_output:
-            issues.append("a microphone is chosen but there is no virtual cable to send it to")
-        issues.extend(self._loops())
         return issues
-
-    def _loops(self) -> list[str]:
-        """A cable's two ends are one wire: playing into the Input of a cable the engine reads from (its Output end)
-        would feed the engine its own sound, and two things played into one cable would be mixed together."""
-        reads = {}
-        for ch in CHANNELS:
-            base = _cable_base(self.inputs.get(ch) or "")
-            if base:
-                reads.setdefault(base, ch)
-        found, writes = [], {}
-        for label, name in (("the headset", self.outputs.get("headset")), ("the stream mix", self.outputs.get("stream")),
-                            ("the processed microphone", self.mic_output)):
-            base = _cable_base(name or "")
-            if not base:
-                continue
-            if base in reads:
-                found.append(f"{label} plays into the cable that the {reads[base]} channel reads from, so the sound would loop")
-            if base in writes:
-                found.append(f"{label} and {writes[base]} use the same device")
-            writes.setdefault(base, label)
-        return found
 
 
 def config_path(config_dir: Path | None = None) -> Path:
@@ -244,8 +216,6 @@ class ResolvedConfig:
     config: EngineConfig
     inputs: dict[str, DeviceInfo] = field(default_factory=dict)
     outputs: dict[str, DeviceInfo] = field(default_factory=dict)
-    mic_input: DeviceInfo | None = None
-    mic_output: DeviceInfo | None = None
     missing: list[str] = field(default_factory=list)          # human-readable "not found" lines
 
 
@@ -268,107 +238,40 @@ def resolve(cfg: EngineConfig, devices: list[DeviceInfo]) -> ResolvedConfig:
             out.missing.append(f"{bus}: no playback device matching '{name}'")
         else:
             out.outputs[bus] = found
-    if cfg.mic_input and cfg.mic_output:
-        out.mic_input = find_device(devices, cfg.mic_input, "input")
-        out.mic_output = find_device(devices, cfg.mic_output, "output")
-        if out.mic_input is None:
-            out.missing.append(f"microphone: no capture device matching '{cfg.mic_input}'")
-        if out.mic_output is None:
-            out.missing.append(f"microphone: no playback device matching '{cfg.mic_output}'")
     return out
 
 
 # ── a first guess for a machine that has never been configured ───────────────
 
-_CABLE = re.compile(r"cable|vb-audio|voicemeeter|virtual", re.IGNORECASE)
-_SERIAL = re.compile(r"cable(?:[ -]?([a-z]))?\b", re.IGNORECASE)
+# devices that are not a headset: virtual ones other programs bring (a voice mixer, a virtual cable somebody installed
+# for their own use, SteelSeries GG's Sonar). ASM never uses them and never lists them.
+_VIRTUAL = re.compile(r"cable|vb-audio|voicemeeter|virtual|sonar", re.IGNORECASE)
 _HEADSET = re.compile(r"arctis|steelseries", re.IGNORECASE)
 _NOT_A_HEADSET = re.compile(r"sonar|\bgg\b", re.IGNORECASE)
 
 
-def _cable_key(name: str) -> tuple:
-    """Order cables: plain 'CABLE' first, then 'CABLE-A', 'CABLE-B', ..."""
-    m = _SERIAL.search(name)
-    letter = (m.group(1) or "").lower() if m else ""
-    return (letter != "", letter, name.lower())
-
-
-def _cable_base(name: str) -> str:
-    """'CABLE-A Output (VB-Audio Cable A)' and 'CABLE-A Input (VB-Audio Cable A)' -> 'cable-a'."""
-    bare = re.sub(r"\(.*?\)", "", name)
-    # VB-CABLE also lists "CABLE In 16ch": a second render end of the same cable. Windows lets only one of the
-    # two be open at a time (measured: the second one is refused as an invalid device), so it counts as the same end.
-    return re.sub(r"\b(output|input|in 16ch)\b", "", bare, flags=re.IGNORECASE).strip().lower()
-
-
-def cable_inputs(devices: list[DeviceInfo]) -> list[str]:
-    """The Input (render) ends of virtual cables, which people pick as Windows' sound output. ``CABLE In 16ch`` is left
-    out: it shares its wire with ``CABLE Input`` and Windows lets only one of the two be open."""
-    names = []
-    for d in devices:
-        if d.max_outputs > 0 and d.wasapi and not is_tap_device(d) and _CABLE.search(d.name) \
-                and re.search(r"\binput\b", re.sub(r"\(.*?\)", "", d.name), re.IGNORECASE) and "16ch" not in d.name.lower():
-            names.append(d.name)
-    return names
+def is_virtual(name: str) -> bool:
+    """A device that belongs to somebody else's virtual audio software, not a sound card or a headset."""
+    return bool(_VIRTUAL.search(name))
 
 
 def suggest_config(devices: list[DeviceInfo]) -> EngineConfig:
-    """Pair up virtual cables with channels, find the headset and its microphone.
+    """Find the headset and the per-application tap's channels: the first guess the setup assistant shows, and what
+    the engine applies by itself on a first run (``"auto": true``).
 
-    A virtual cable has two ends: programs play into its *Input* (a render device) and the engine
-    records from its *Output* (a capture device). Cables, in name order, become game / chat / media /
-    aux; with five or more the fifth, with fewer (but at least two) the last one carries the processed
-    microphone instead, through its *Input* end. A sixth cable, if there is one, takes Streamer mode's
-    mix (what OBS records). A headset is a non-virtual device with 'Arctis' or
-    'SteelSeries' in its name, else the system default output. This is a starting point for the setup
-    assistant, and what the engine applies by itself on a first run (``"auto": true``).
+    The channels are the tap's (one per Game / Chat / Media / Aux, offered by the audio helper); the headset is a
+    real device with 'Arctis' or 'SteelSeries' in its name, else the system default output. The microphone has no
+    device to choose: it is the headset's own, through the microphone effect.
     """
     cfg = EngineConfig()
     wasapi = [d for d in devices if d.wasapi] or devices
-    captures = sorted((d for d in wasapi if d.max_inputs > 0 and _CABLE.search(d.name)), key=lambda d: _cable_key(d.name))
-    renders = [d for d in wasapi if d.max_outputs > 0 and _CABLE.search(d.name)]
-    cables = []                                               # (capture end, render end) of every complete cable
-    for cap in captures:
-        ends = sorted((r for r in renders if _cable_base(r.name) == _cable_base(cap.name)),
-                      key=lambda r: ("16ch" in r.name.lower(), r.name))      # the plain Input end first
-        end = ends[0] if ends else None
-        if end is not None:
-            cables.append((cap, end))
-
-    stream_cable = None
     taps = {d.name for d in devices if is_tap_device(d)}
     if all(tap_device_name(ch) in taps for ch in CHANNELS):
-        # the per-application tap needs no cable per channel: a cable is only for the processed microphone
-        # (and, with a second one, Streamer mode's mix)
-        channel_cables = []
         for ch in CHANNELS:
             cfg.inputs[ch] = tap_device_name(ch)
-        mic_cable = cables[0] if cables else None
-        stream_cable = cables[1] if len(cables) > 1 else None
-    elif len(cables) > len(CHANNELS) + 1:
-        channel_cables, mic_cable = cables[:len(CHANNELS)], cables[len(CHANNELS)]
-        stream_cable = cables[len(CHANNELS) + 1]
-    elif len(cables) > len(CHANNELS):
-        channel_cables, mic_cable = cables[:len(CHANNELS)], cables[len(CHANNELS)]
-    elif len(cables) >= 2:
-        channel_cables, mic_cable = cables[:-1], cables[-1]
-    else:
-        channel_cables, mic_cable = cables, None
-    for ch, (cap, _end) in zip(CHANNELS, channel_cables):
-        cfg.inputs[ch] = cap.name
-    if mic_cable is not None:
-        cfg.mic_output = mic_cable[1].name
-    if stream_cable is not None:
-        cfg.outputs["stream"] = stream_cable[1].name
-
-    outputs = [d for d in wasapi if d.max_outputs > 0 and not _CABLE.search(d.name)]
+    outputs = [d for d in wasapi if d.max_outputs > 0 and not is_virtual(d.name) and not is_tap_device(d)]
     headset = next((d for d in outputs if _HEADSET.search(d.name) and not _NOT_A_HEADSET.search(d.name)), None) \
         or next((d for d in outputs if d.default_output), None)
     if headset is not None:
         cfg.outputs["headset"] = headset.name
-    mics = [d for d in wasapi if d.max_inputs > 0 and not _CABLE.search(d.name)]
-    mic = next((d for d in mics if _HEADSET.search(d.name) and not _NOT_A_HEADSET.search(d.name)), None) \
-        or next((d for d in mics if d.default_input), None)
-    if mic is not None and cfg.mic_output:
-        cfg.mic_input = mic.name
     return cfg
