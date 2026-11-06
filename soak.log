@@ -1,0 +1,309 @@
+== phase 1: window open, two programs playing, 12 minutes, one sample every 10 s
+   the window is on the screen: pid 8244 'Arctis Sound Manager' 1040x759 (the second launch exited with 0)
+   [1] t=     0s  audiosrv:6MB/0%  daemon:103MB/0%  engine:181MB/0%  helper:4MB/0%  tray:230MB/0%
+   [1] t=    33s  audiosrv:6MB/0%  daemon:104MB/1%  engine:183MB/4%  helper:4MB/1%  tray:232MB/4%
+   [1] t=    66s  audiosrv:6MB/0%  daemon:100MB/0%  engine:156MB/3%  helper:5MB/0%  tray:229MB/1%
+   [1] t=    99s  audiosrv:6MB/0%  daemon:91MB/0%  engine:128MB/3%  helper:5MB/0%  tray:228MB/1%
+   [1] t=   133s  audiosrv:6MB/0%  daemon:87MB/0%  engine:103MB/4%  helper:6MB/1%  tray:211MB/1%
+   [1] t=   166s  audiosrv:7MB/0%  daemon:83MB/0%  engine:84MB/4%  helper:6MB/0%  tray:175MB/1%
+   [1] t=   199s  audiosrv:7MB/0%  daemon:72MB/0%  engine:78MB/3%  helper:6MB/0%  tray:141MB/1%
+   [1] t=   232s  audiosrv:7MB/0%  daemon:59MB/0%  engine:76MB/4%  helper:7MB/0%  tray:127MB/1%
+   [1] t=   265s  audiosrv:7MB/0%  daemon:52MB/1%  engine:77MB/5%  helper:7MB/1%  tray:105MB/1%
+   [1] t=   298s  audiosrv:8MB/0%  daemon:51MB/0%  engine:78MB/6%  helper:8MB/1%  tray:104MB/1%
+   [1] t=   331s  audiosrv:8MB/0%  daemon:51MB/0%  engine:78MB/4%  helper:8MB/1%  tray:104MB/1%
+   [1] t=   365s  audiosrv:8MB/0%  daemon:51MB/0%  engine:77MB/4%  helper:8MB/0%  tray:104MB/1%
+   [1] t=   398s  audiosrv:8MB/0%  daemon:51MB/0%  engine:77MB/4%  helper:8MB/1%  tray:103MB/1%
+   [1] t=   431s  audiosrv:9MB/0%  daemon:50MB/0%  engine:77MB/3%  helper:7MB/1%  tray:103MB/0%
+   [1] t=   464s  audiosrv:9MB/0%  daemon:50MB/0%  engine:76MB/5%  helper:7MB/0%  tray:102MB/1%
+   [1] t=   497s  audiosrv:9MB/0%  daemon:49MB/0%  engine:77MB/4%  helper:7MB/0%  tray:103MB/1%
+   [1] t=   530s  audiosrv:9MB/0%  daemon:49MB/0%  engine:77MB/4%  helper:8MB/0%  tray:102MB/1%
+   [1] t=   563s  audiosrv:10MB/0%  daemon:50MB/1%  engine:76MB/4%  helper:7MB/0%  tray:103MB/1%
+   [1] t=   596s  audiosrv:10MB/0%  daemon:50MB/1%  engine:77MB/5%  helper:8MB/1%  tray:103MB/1%
+   [1] t=   630s  audiosrv:10MB/0%  daemon:50MB/1%  engine:77MB/4%  helper:8MB/1%  tray:104MB/1%
+   [1] t=   663s  audiosrv:10MB/0%  daemon:50MB/1%  engine:77MB/3%  helper:8MB/1%  tray:103MB/1%
+   [1] t=   696s  audiosrv:11MB/0%  daemon:50MB/0%  engine:78MB/4%  helper:8MB/1%  tray:103MB/1%
+   the window is still on the screen at the end: True
+== phase 1 result (private working set seen from outside; growth fitted over the second half)
+process       pid  start MB   end MB  growth MB/h  cpu avg %  cpu max %  threads  handles +
+audiosrv     3384         6       11           27        0.0          0       11          0
+daemon        984       103       49           -6        0.4          1       10        -12
+engine       7428       181       78            2        3.9          6       16         -9
+helper       8536         4        9           11        0.5          1        7         -7
+tray         8244       230      103            3        0.9          4       27          8
+== phase 1: what the processes report about themselves (private = committed memory, not shrunk by Windows)
+process     pid samples  private MB   -> MB   MB/h  handles   gdi  user  threads  objects  widgets  cpu avg
+daemon      984      27         302     301      0       -3    +0    +0        4    +1953        -      0.4
+engine     7428      27         357     357     -0       -2    +0    +0        8    +6808        -      3.9
+tray       8244      27         394     394      0       +2    +0    +0       11    +7055       +0      0.9
+--- asm-audio-engine.log: the last diagnostics (54 lines)
+    03:37:10 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:37:10 INFO    health: diag: objects grown since the first sample: +23932 list, +15952 tuple, +9023 ReferenceType, +8335 dict, +7033 function, +4914 builtin_function_or_method
+    03:37:40 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:37:40 INFO    health: diag: objects grown since the first sample: +23887 list, +15928 tuple, +9021 ReferenceType, +8277 dict, +7033 function, +4914 builtin_function_or_method
+    03:38:10 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:38:10 INFO    health: diag: objects grown since the first sample: +23843 list, +15891 tuple, +9018 ReferenceType, +8220 dict, +7033 function, +4914 builtin_function_or_method
+    03:38:40 INFO    health: diag: objects grown since the last sample: +487 builtin_method, +321 tuple, +269 dict, +199 list, +198 _FuncPtr, +82 getset_descriptor, +41 ReferenceType, +35 PyInstallerWinDLL
+    03:38:40 INFO    health: diag: objects grown since the first sample: +24042 list, +16212 tuple, +9059 ReferenceType, +8489 dict, +7033 function, +4914 builtin_function_or_method
+    03:39:10 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:39:10 INFO    health: diag: objects grown since the first sample: +24002 list, +16193 tuple, +9057 ReferenceType, +8437 dict, +7033 function, +4914 builtin_function_or_method
+    03:39:40 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:39:40 INFO    health: diag: objects grown since the first sample: +23957 list, +16170 tuple, +9055 ReferenceType, +8379 dict, +7033 function, +4914 builtin_function_or_method
+--- daemon.log: the last diagnostics (53 lines)
+    [   INFO]               health: diag: objects grown since the last sample: +644 tuple, +359 cell, +319 function, +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list
+    [   INFO]               health: diag: objects grown since the first sample: +18746 function, +10338 tuple, +8037 dict, +5624 cell, +4791 list, +3472 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list, +2 PyCStructType, +2 PyCPointerType
+    [   INFO]               health: diag: objects grown since the first sample: +18129 function, +9172 tuple, +8041 dict, +4923 cell, +4793 list, +3476 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +638 tuple, +371 cell, +319 function, +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list
+    [   INFO]               health: diag: objects grown since the first sample: +18448 function, +9810 tuple, +8045 dict, +5294 cell, +4795 list, +3480 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +629 tuple, +359 cell, +313 function, +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list
+    [   INFO]               health: diag: objects grown since the first sample: +18761 function, +10439 tuple, +8049 dict, +5653 cell, +4797 list, +3484 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +10 TimerHandle, +10 Context, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list, +2 PyCStructType
+    [   INFO]               health: diag: objects grown since the first sample: +18150 function, +9291 tuple, +8053 dict, +4946 cell, +4799 list, +3488 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +600 tuple, +347 cell, +299 function, +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list
+    [   INFO]               health: diag: objects grown since the first sample: +18449 function, +9891 tuple, +8057 dict, +5293 cell, +4801 list, +3492 ReferenceType
+--- tray.log: the last diagnostics (53 lines)
+    health     INFO | diag: objects grown since the last sample: +50 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+    health     INFO | diag: objects grown since the first sample: +18861 function, +10406 dict, +10170 tuple, +10150 list, +4951 cell, +3736 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +60 TimerHandle, +60 Context, +18 CField, +15 tuple, +12 function, +8 cell, +8 FreezableDefaultDict
+    health     INFO | diag: objects grown since the first sample: +18873 function, +10412 dict, +10185 tuple, +10148 list, +4959 cell, +3737 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +60 TimerHandle, +60 Context, +48 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list
+    health     INFO | diag: objects grown since the first sample: +18873 function, +10431 dict, +10233 tuple, +10161 list, +4959 cell, +3744 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +60 TimerHandle, +60 Context, +18 CField, +16 tuple, +12 function, +8 cell, +8 FreezableDefaultDict
+    health     INFO | diag: objects grown since the first sample: +18885 function, +10437 dict, +10249 tuple, +10159 list, +4967 cell, +3745 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +49 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+    health     INFO | diag: objects grown since the first sample: +18885 function, +10456 dict, +10298 tuple, +10172 list, +4967 cell, +3752 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +60 TimerHandle, +60 Context, +18 CField, +14 tuple, +12 function, +8 cell, +8 FreezableDefaultDict
+    health     INFO | diag: objects grown since the first sample: +18897 function, +10462 dict, +10312 tuple, +10170 list, +4975 cell, +3753 ReferenceType
+   [1q] t=     0s  audiosrv:11MB/0%  daemon:49MB/0%  engine:78MB/2%  helper:10MB/1%  tray:103MB/1%
+   [1q] t=    33s  audiosrv:11MB/0%  daemon:49MB/0%  engine:77MB/1%  helper:10MB/0%  tray:103MB/1%
+   [1q] t=    66s  audiosrv:11MB/0%  daemon:49MB/1%  engine:78MB/2%  helper:11MB/0%  tray:103MB/1%
+   [1q] t=    99s  audiosrv:11MB/0%  daemon:49MB/0%  engine:78MB/2%  helper:11MB/0%  tray:103MB/1%
+== phase 1, nothing playing (devices open, silence) (private working set seen from outside; growth fitted over the second half)
+process       pid  start MB   end MB  growth MB/h  cpu avg %  cpu max %  threads  handles +
+audiosrv     3384        11       11           18        0.0          0       11          0
+daemon        984        49       49          -13        0.4          1       10          0
+engine       7428        78       78            1        1.8          3       16          0
+helper       8536        10       11            8        0.4          1        5         -2
+tray         8244       103      103          -14        0.8          1       25         -2
+--- C:\Users\runneradmin\.config\arctis_manager\asm-audio-engine.log (178 lines), last 12
+    03:42:24 INFO    health: profile: playback:  15.435s     1994 calls  audio/runtime.py:164(step)
+    03:42:24 INFO    health: profile: playback:  15.135s      997 calls  audio/runtime.py:145(_guarded_block)
+    03:42:24 INFO    health: profile: playback:  13.791s     1999 calls  ~:0(<method 'read' of '_io.FileIO' objects>)
+    03:42:24 INFO    health: profile: playback:   3.968s      997 calls  audio/runtime.py:211(process_block)
+    03:42:24 INFO    health: profile: playback:   3.608s     2228 calls  threading.py:641(wait)
+    03:42:24 INFO    health: profile: playback:   3.477s     2221 calls  threading.py:327(wait)
+    03:42:24 INFO    health: profile: playback:   1.230s      113 calls  selectors.py:310(select)
+    03:42:24 INFO    health: profile: playback:   1.208s      113 calls  selectors.py:304(_select)
+    03:42:24 INFO    health: profile: playback:   0.494s      112 calls  ~:0(<built-in method select.select>)
+    03:42:24 INFO    health: profile: playback:   0.306s     2000 calls  audio/tap.py:473(_dispatch)
+    03:42:24 INFO    health: profile: playback:   0.225s       28 calls  threading.py:1001(_bootstrap)
+    03:42:24 INFO    health: profile: playback:   0.225s       28 calls  threading.py:1028(_bootstrap_inner)
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\daemon.log (135 lines), last 12
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 53.0 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 595302, cpu 0.5%, up 14m00s, hid_questions 7029, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list, +2 PyCStructType, +2 PyCPointerType
+    [   INFO]               health: diag: objects grown since the first sample: +18158 function, +9385 tuple, +8065 dict, +4954 cell, +4805 list, +3500 ReferenceType
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 52.9 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 596049, cpu 0.3%, up 14m30s, hid_questions 7268, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +622 tuple, +348 cell, +308 function, +18 CField, +8 getset_descriptor, +5 TimerHandle, +5 Context, +4 dict
+    [   INFO]               health: diag: objects grown since the first sample: +18466 function, +10007 tuple, +8069 dict, +5302 cell, +4807 list, +3504 ReferenceType
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 51.8 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 596753, cpu 0.3%, up 15m01s, hid_questions 7507, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +573 tuple, +336 cell, +286 function, +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list
+    [   INFO]               health: diag: objects grown since the first sample: +18752 function, +10580 tuple, +8073 dict, +5638 cell, +4809 list, +3508 ReferenceType
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 51.8 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 595554, cpu 0.3%, up 15m31s, hid_questions 7746, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +8 getset_descriptor, +4 dict, +4 ReferenceType, +2 list, +2 PyCStructType, +2 PyCPointerType
+    [   INFO]               health: diag: objects grown since the first sample: +18139 function, +9425 tuple, +8077 dict, +4935 cell, +4811 list, +3512 ReferenceType
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\tray.log (112 lines), last 12
+                  health     INFO | health: tray pid 8244, private 393.5 MB, ws 115.1 MB (peak 294.4), handles 929, gdi 35, user 68, threads 11, python-objects 779775, cpu 0.7%, up 14m03s, qt_widgets 1444, window open
+                  health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +18 CField, +16 tuple, +12 function, +8 cell, +8 FreezableDefaultDict, +6 dict, +5 method
+                  health     INFO | diag: objects grown since the first sample: +18909 function, +10485 dict, +10375 tuple, +10181 list, +4983 cell, +3761 ReferenceType
+                  health     INFO | health: tray pid 8244, private 393.5 MB, ws 114.2 MB (peak 294.4), handles 925, gdi 35, user 67, threads 11, python-objects 780157, cpu 0.8%, up 14m33s, qt_widgets 1444, window open
+                  health     INFO | diag: objects grown since the last sample: +60 TimerHandle, +60 Context, +49 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list
+                  health     INFO | diag: objects grown since the first sample: +18909 function, +10504 dict, +10424 tuple, +10194 list, +4983 cell, +3768 ReferenceType
+                  health     INFO | health: tray pid 8244, private 394.5 MB, ws 114.3 MB (peak 294.4), handles 926, gdi 35, user 66, threads 11, python-objects 781555, cpu 0.7%, up 15m03s, qt_widgets 1444, window open
+                  health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +60 TimerHandle, +60 Context, +18 CField, +14 tuple, +12 function, +8 cell, +8 FreezableDefaultDict
+                  health     INFO | diag: objects grown since the first sample: +18921 function, +10510 dict, +10438 tuple, +10192 list, +4991 cell, +3769 ReferenceType
+                  health     INFO | health: tray pid 8244, private 394.5 MB, ws 114.0 MB (peak 294.4), handles 926, gdi 35, user 66, threads 11, python-objects 781580, cpu 0.8%, up 15m33s, qt_widgets 1444, window open
+                  health     INFO | diag: objects grown since the last sample: +50 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+                  health     INFO | diag: objects grown since the first sample: +18921 function, +10529 dict, +10488 tuple, +10205 list, +4991 cell, +3776 ReferenceType
+--- asm-audio-engine.log: the profile (40 lines)
+    03:42:04 INFO    health: profile: playback thread, 20 s starting (the engine is a little slower meanwhile)
+    03:42:24 INFO    health: profile: playback: own time (of 20.00 s in 402 functions):
+    03:42:24 INFO    health: profile: playback:  68.1%  13.612s     1999 calls  ~:0(<method 'read' of '_io.FileIO' objects>)
+    03:42:24 INFO    health: profile: playback:  18.5%   3.693s      997 calls  audio/runtime.py:211(process_block)
+    03:42:24 INFO    health: profile: playback:   6.3%   1.269s    10905 calls  ~:0(<method 'acquire' of '_thread.lock' objects>)
+    03:42:24 INFO    health: profile: playback:   2.5%   0.492s      112 calls  ~:0(<built-in method select.select>)
+    03:42:24 INFO    health: profile: playback:   1.2%   0.239s     2000 calls  audio/tap.py:473(_dispatch)
+    03:42:24 INFO    health: profile: playback:   0.5%   0.094s     2221 calls  threading.py:327(wait)
+    03:42:24 INFO    health: profile: playback:   0.4%   0.079s       54 calls  ~:0(<method 'recv_into' of '_socket.socket' objects>)
+    03:42:24 INFO    health: profile: playback:   0.3%   0.054s      997 calls  audio/runtime.py:145(_guarded_block)
+    03:42:24 INFO    health: profile: playback:   0.2%   0.037s   224608 calls  win/health.py:241(<genexpr>)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.024s     5988 calls  audio/ports.py:88(_take)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.023s     8997 calls  audio/ports.py:52(write)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.020s     3952 calls  audio/resample.py:112(push)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.020s     8997 calls  ~:0(<built-in method numpy.ascontiguousarray>)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.019s     8973 calls  ~:0(<method 'reduce' of 'numpy.ufunc' objects>)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.017s     3988 calls  audio/graph.py:202(process)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.015s        1 calls  ~:0(<built-in method gc.get_objects>)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.013s     2000 calls  audio/tap.py:294(feed)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.012s     4241 calls  ~:0(<method 'release' of '_thread.lock' objects>)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.011s     2000 calls  sounddevice.py:2791(_array)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.011s     3988 calls  audio/resample.py:116(pull)
+    03:42:24 INFO    health: profile: playback:   0.1%   0.010s     3988 calls  audio/ports.py:195(pull)
+    03:42:24 INFO    health: profile: playback:   0.0%   0.010s     2228 calls  threading.py:641(wait)
+    03:42:24 INFO    health: profile: playback:   0.0%   0.009s      380 calls  pathlib/_local.py:510(stat)
+    03:42:24 INFO    health: profile: playback:   0.0%   0.009s      997 calls  audio/graph.py:355(process)
+    03:42:24 INFO    health: profile: playback:   0.0%   0.008s    12949 calls  ~:0(<built-in method numpy.asarray>)
+    03:42:24 INFO    health: profile: playback: cumulative time:
+    03:42:24 INFO    health: profile: playback:  15.435s     1994 calls  audio/runtime.py:164(step)
+    03:42:24 INFO    health: profile: playback:  15.135s      997 calls  audio/runtime.py:145(_guarded_block)
+    03:42:24 INFO    health: profile: playback:  13.791s     1999 calls  ~:0(<method 'read' of '_io.FileIO' objects>)
+    03:42:24 INFO    health: profile: playback:   3.968s      997 calls  audio/runtime.py:211(process_block)
+    03:42:24 INFO    health: profile: playback:   3.608s     2228 calls  threading.py:641(wait)
+    03:42:24 INFO    health: profile: playback:   3.477s     2221 calls  threading.py:327(wait)
+    03:42:24 INFO    health: profile: playback:   1.230s      113 calls  selectors.py:310(select)
+    03:42:24 INFO    health: profile: playback:   1.208s      113 calls  selectors.py:304(_select)
+    03:42:24 INFO    health: profile: playback:   0.494s      112 calls  ~:0(<built-in method select.select>)
+    03:42:24 INFO    health: profile: playback:   0.306s     2000 calls  audio/tap.py:473(_dispatch)
+    03:42:24 INFO    health: profile: playback:   0.225s       28 calls  threading.py:1001(_bootstrap)
+    03:42:24 INFO    health: profile: playback:   0.225s       28 calls  threading.py:1028(_bootstrap_inner)
+--- asm-audio-engine.log: health lines that name the busiest threads (27), the last 30
+    03:26:38 INFO    health: health: engine pid 7428, private 294.9 MB, ws 141.3 MB (peak 147.0), handles 270, gdi 0, user 2, threads 4, python-objects 529830, cpu 166.5%, busiest threads: asm-warmup 83%, asm-health-engine 83%, up 0m00s
+    03:27:09 INFO    health: health: engine pid 7428, private 355.3 MB, ws 223.7 MB (peak 223.7), handles 399, gdi 0, user 6, threads 8, python-objects 784919, cpu 6.6%, busiest threads: asm-playback 1%, up 0m30s, helper_private_mb 4.9, helper_handles 195, strips_idle 4/4, playback_load 1%, mic_load 0%, numba yes
+    03:28:09 INFO    health: health: engine pid 7428, private 355.2 MB, ws 223.8 MB (peak 226.9), handles 399, gdi 0, user 6, threads 8, python-objects 789509, cpu 4.1%, busiest threads: asm-playback 2%, up 1m30s, helper_private_mb 6.2, helper_handles 237, strips_idle 2/4, playback_load 3%, mic_load 0%, numba yes
+    03:28:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 212.4 MB (peak 228.7), handles 399, gdi 0, user 6, threads 8, python-objects 789186, cpu 4.0%, busiest threads: asm-playback 3%, up 2m00s, helper_private_mb 6.6, helper_handles 238, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:29:09 INFO    health: health: engine pid 7428, private 357.0 MB, ws 182.2 MB (peak 228.7), handles 395, gdi 0, user 6, threads 8, python-objects 788779, cpu 4.0%, busiest threads: asm-playback 3%, up 2m30s, helper_private_mb 7.1, helper_handles 234, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:29:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 153.7 MB (peak 228.7), handles 392, gdi 0, user 6, threads 8, python-objects 788425, cpu 3.9%, busiest threads: asm-playback 2%, up 3m00s, helper_private_mb 7.5, helper_handles 234, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:30:09 INFO    health: health: engine pid 7428, private 357.0 MB, ws 126.4 MB (peak 228.7), handles 392, gdi 0, user 6, threads 8, python-objects 790881, cpu 3.9%, busiest threads: asm-playback 3%, up 3m30s, helper_private_mb 7.9, helper_handles 232, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:30:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 99.6 MB (peak 228.7), handles 392, gdi 0, user 6, threads 8, python-objects 790483, cpu 3.7%, busiest threads: asm-playback 2%, up 4m00s, helper_private_mb 8.3, helper_handles 232, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:31:09 INFO    health: health: engine pid 7428, private 356.9 MB, ws 86.3 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 790095, cpu 4.0%, busiest threads: asm-playback 2%, up 4m30s, helper_private_mb 9.0, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:31:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 85.5 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 789694, cpu 4.0%, busiest threads: asm-playback 3%, up 5m00s, helper_private_mb 9.3, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:32:09 INFO    health: health: engine pid 7428, private 357.0 MB, ws 85.2 MB (peak 228.7), handles 389, gdi 0, user 6, threads 8, python-objects 789185, cpu 4.3%, busiest threads: asm-playback 3%, up 5m30s, helper_private_mb 9.7, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:32:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 85.2 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 791619, cpu 4.3%, busiest threads: asm-playback 3%, up 6m00s, helper_private_mb 10.2, helper_handles 230, strips_idle 2/4, playback_load 3%, mic_load 0%, numba yes
+    03:33:09 INFO    health: health: engine pid 7428, private 357.0 MB, ws 86.2 MB (peak 228.7), handles 398, gdi 0, user 8, threads 8, python-objects 794389, cpu 4.2%, busiest threads: asm-playback 3%, up 6m30s, helper_private_mb 10.5, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:33:39 INFO    health: health: engine pid 7428, private 357.0 MB, ws 85.9 MB (peak 228.7), handles 398, gdi 0, user 8, threads 8, python-objects 794566, cpu 3.8%, busiest threads: asm-playback 2%, up 7m00s, helper_private_mb 11.1, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:34:09 INFO    health: health: engine pid 7428, private 357.0 MB, ws 85.6 MB (peak 228.7), handles 398, gdi 0, user 8, threads 8, python-objects 794163, cpu 4.1%, busiest threads: asm-playback 3%, up 7m30s, helper_private_mb 11.6, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:34:39 INFO    health: health: engine pid 7428, private 356.9 MB, ws 84.3 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 793693, cpu 4.3%, busiest threads: asm-playback 3%, up 8m00s, helper_private_mb 12.0, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:35:09 INFO    health: health: engine pid 7428, private 356.9 MB, ws 83.8 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 793225, cpu 3.7%, busiest threads: asm-playback 2%, up 8m30s, helper_private_mb 12.3, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:35:40 INFO    health: health: engine pid 7428, private 356.9 MB, ws 83.6 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 795619, cpu 4.1%, busiest threads: asm-playback 3%, up 9m01s, helper_private_mb 12.9, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:36:10 INFO    health: health: engine pid 7428, private 356.9 MB, ws 83.6 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 795277, cpu 3.9%, busiest threads: asm-playback 3%, up 9m31s, helper_private_mb 13.4, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:36:40 INFO    health: health: engine pid 7428, private 357.0 MB, ws 84.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 794878, cpu 3.1%, busiest threads: asm-playback 2%, up 10m01s, helper_private_mb 13.8, helper_handles 230, strips_idle 2/4, playback_load 3%, mic_load 0%, numba yes
+    03:37:10 INFO    health: health: engine pid 7428, private 357.0 MB, ws 84.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 794495, cpu 4.1%, busiest threads: asm-playback 3%, up 10m31s, helper_private_mb 14.2, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:37:40 INFO    health: health: engine pid 7428, private 357.0 MB, ws 84.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 794040, cpu 4.1%, busiest threads: asm-playback 2%, up 11m01s, helper_private_mb 14.5, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:38:10 INFO    health: health: engine pid 7428, private 357.0 MB, ws 84.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 796513, cpu 4.0%, busiest threads: asm-playback 3%, up 11m31s, helper_private_mb 15.2, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:38:40 INFO    health: health: engine pid 7428, private 357.0 MB, ws 84.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 796080, cpu 3.5%, busiest threads: asm-playback 2%, up 12m01s, helper_private_mb 15.5, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:39:10 INFO    health: health: engine pid 7428, private 356.9 MB, ws 85.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 795653, cpu 3.7%, busiest threads: asm-playback 3%, up 12m31s, helper_private_mb 15.9, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:39:40 INFO    health: health: engine pid 7428, private 356.9 MB, ws 85.1 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 795233, cpu 3.6%, busiest threads: asm-playback 3%, up 13m01s, helper_private_mb 16.4, helper_handles 230, strips_idle 2/4, playback_load 2%, mic_load 0%, numba yes
+    03:40:10 INFO    health: health: engine pid 7428, private 356.9 MB, ws 84.7 MB (peak 228.7), handles 390, gdi 0, user 6, threads 8, python-objects 794716, cpu 3.1%, busiest threads: asm-playback 1%, up 13m31s, helper_private_mb 18.0, helper_handles 194, strips_idle 4/4, playback_load 0%, mic_load 0%, numba yes
+--- daemon.log: health lines that name the busiest threads (2), the last 30
+    [   INFO]               health: health: daemon pid 984, private 37.1 MB, ws 54.2 MB (peak 54.7), handles 205, gdi 0, user 2, threads 2, python-objects 240344, cpu 156.1%, busiest threads: MainThread 312%, asm-health-daemon 156%, up 0m00s, hid_questions 0, hid_enumerations 0
+    [   INFO]               health: health: daemon pid 984, private 299.5 MB, ws 141.4 MB (peak 154.7), handles 282, gdi 0, user 2, threads 4, python-objects 583374, cpu 3.3%, busiest threads: MainThread 3%, up 0m30s, hid_questions 632, hid_enumerations 0
+--- daemon.log: the daemon's last health lines with the device-search counters
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 52.9 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 596049, cpu 0.3%, up 14m30s, hid_questions 7268, hid_enumerations 0
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 51.8 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 596753, cpu 0.3%, up 15m01s, hid_questions 7507, hid_enumerations 0
+    [   INFO]               health: health: daemon pid 984, private 301.4 MB, ws 51.8 MB (peak 154.7), handles 270, gdi 0, user 2, threads 4, python-objects 595554, cpu 0.3%, up 15m31s, hid_questions 7746, hid_enumerations 0
+--- tray.log: health lines that name the busiest threads (1), the last 30
+    health     INFO | health: tray pid 8244, private 393.4 MB, ws 290.9 MB (peak 292.1), handles 930, gdi 35, user 66, threads 11, python-objects 767006, cpu 16.5%, busiest threads: MainThread 16%, up 1m31s, qt_widgets 1446, window open
+== phase 2: the headset's output does not exist; the window is opened and closed; the tray must replace itself
+   pids: tray 8424, daemon 9004, engine 2716
+   engine device_looks at the start: {'probes': 0, 'quick_probes': 2, 'rebuilds': 0, 'next_look_s': 60.0}
+   the window is on the screen: pid 8424 'Arctis Sound Manager' 1040x759 (the second launch exited with 0)
+   the window after WM_CLOSE: closed
+   the tray was replaced 164 s after the window was closed: pid 8424 -> 4104
+   the new tray holds 61 MB (private working set)
+   [2] t=   185s  audiosrv:5MB/0%  daemon:54MB/0%  engine:64MB/0%  helper:1MB/0%  tray:61MB/0%
+   [2] t=   218s  audiosrv:5MB/0%  daemon:51MB/0%  engine:64MB/0%  helper:1MB/0%  tray:61MB/0%
+   [2] t=   251s  audiosrv:5MB/0%  daemon:84MB/0%  engine:63MB/1%  helper:1MB/0%  tray:78MB/1%
+   [2] t=   284s  audiosrv:5MB/0%  daemon:84MB/0%  engine:62MB/1%  helper:1MB/1%  tray:71MB/1%
+   [2] t=   318s  audiosrv:5MB/0%  daemon:83MB/1%  engine:62MB/1%  helper:1MB/0%  tray:69MB/0%
+   engine device_looks over the last 150 s: {'probes': 0, 'quick_probes': 4, 'rebuilds': 0, 'next_look_s': 120.0} -> {'probes': 0, 'quick_probes': 5, 'rebuilds': 0, 'next_look_s': 120.0}
+== phase 2 result (private working set seen from outside; growth fitted over the second half)
+process       pid  start MB   end MB  growth MB/h  cpu avg %  cpu max %  threads  handles +
+audiosrv     3384         5        5           -2        0.0          0        8          0
+daemon       9004        54       82          -66        0.2          1       10         -3
+engine       2716        64       62          -49        0.6          1       15         -2
+helper       5528         1        1           -1        0.3          1        4          0
+tray         4104        61       62         -666        0.3          1       11         33
+== phase 2: what the processes report about themselves (private = committed memory, not shrunk by Windows)
+process     pid samples  private MB   -> MB   MB/h  handles   gdi  user  threads  objects  widgets  cpu avg
+daemon     9004      14         301     302     -2      -12    +0    +0        4     -218        -      0.2
+engine     2716      14         335     335      0      -12    +0    +0        8    +1092        -      0.6
+tray       4104       6          49     158    240      +33    +0    -2        5   +44974       +0      0.3
+tray       8424       8         389     391     -4      -26    -6   -18       11    +6094       +0      2.8
+--- asm-audio-engine.log: the last diagnostics (28 lines)
+    03:46:44 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:46:44 INFO    health: diag: objects grown since the first sample: +13354 tuple, +6888 function, +6340 ReferenceType, +4260 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:47:14 INFO    health: diag: objects grown since the last sample: +487 builtin_method, +308 tuple, +269 dict, +199 list, +198 _FuncPtr, +82 getset_descriptor, +41 ReferenceType, +35 PyInstallerWinDLL
+    03:47:14 INFO    health: diag: objects grown since the first sample: +13662 tuple, +6888 function, +6381 ReferenceType, +4529 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:47:45 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:47:45 INFO    health: diag: objects grown since the first sample: +13644 tuple, +6888 function, +6378 ReferenceType, +4480 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:48:15 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:48:15 INFO    health: diag: objects grown since the first sample: +13613 tuple, +6888 function, +6375 ReferenceType, +4414 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:48:45 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:48:45 INFO    health: diag: objects grown since the first sample: +13582 tuple, +6888 function, +6372 ReferenceType, +4348 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:49:15 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:49:15 INFO    health: diag: objects grown since the first sample: +13551 tuple, +6888 function, +6369 ReferenceType, +4282 dict, +2761 staticmethod, +2598 builtin_function_or_method
+--- daemon.log: the last diagnostics (27 lines)
+    [   INFO]               health: diag: objects grown since the last sample: +59 tuple, +43 cell, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +14 function, +12 list
+    [   INFO]               health: diag: objects grown since the first sample: +18412 function, +9354 tuple, +8710 dict, +5240 cell, +4915 list, +3452 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +67 tuple, +56 cell, +26 builtin_method, +21 dict, +19 function, +18 CField, +14 list, +14 getset_descriptor
+    [   INFO]               health: diag: objects grown since the first sample: +18431 function, +9421 tuple, +8731 dict, +5296 cell, +4929 list, +3463 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +2 PyCStructType, +2 PyCPointerType
+    [   INFO]               health: diag: objects grown since the first sample: +18157 function, +8307 tuple, +8019 dict, +4800 list, +4798 cell, +3445 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +63 tuple, +45 cell, +26 builtin_method, +20 dict, +18 CField, +17 getset_descriptor, +15 function, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18172 function, +8370 tuple, +8039 dict, +4843 cell, +4813 list, +3453 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +59 tuple, +45 cell, +26 builtin_method, +19 dict, +18 CField, +15 function, +14 getset_descriptor, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18187 function, +8429 tuple, +8058 dict, +4888 cell, +4826 list, +3460 ReferenceType
+    [   INFO]               health: diag: objects grown since the last sample: +59 tuple, +45 cell, +26 builtin_method, +19 dict, +18 CField, +15 function, +14 getset_descriptor, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18202 function, +8488 tuple, +8077 dict, +4933 cell, +4839 list, +3467 ReferenceType
+--- tray.log: the last diagnostics (25 lines)
+    health     INFO | diag: objects grown since the last sample: +198 tuple, +26 builtin_method, +20 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+    health     INFO | diag: objects grown since the first sample: +18854 function, +10323 dict, +10076 list, +9775 tuple, +4934 cell, +3654 ReferenceType
+    health     INFO | diag: objects grown since the last sample: +87 tuple, +26 builtin_method, +24 list, +24 dict, +24 ReferenceType, +18 CField, +16 builtin_function_or_method, +14 getset_descriptor
+    health     INFO | diag: objects grown since the first sample: +87 tuple, +26 builtin_method, +24 list, +24 dict, +24 ReferenceType, +18 CField
+    health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +18 CField, +12 function, +8 cell, +8 FreezableDefaultDict, +5 method, +4 _lru_cache_wrapper, +4 Lookup
+    health     INFO | diag: objects grown since the first sample: +154 ZipInfo, +36 CField, +22 ReferenceType, +21 function, +21 dict, +16 list
+    health     INFO | diag: objects grown since the last sample: +1529 function, +1300 tuple, +933 wrapper_descriptor, +930 dict, +580 frozenset, +235 getset_descriptor, +222 list, +197 cell
+    health     INFO | diag: objects grown since the first sample: +1550 function, +951 dict, +933 wrapper_descriptor, +850 tuple, +580 frozenset, +247 getset_descriptor
+    health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +44 dict, +39 function, +29 ReferenceType, +26 builtin_method, +22 list, +18 CField, +17 builtin_function_or_method
+    health     INFO | diag: objects grown since the first sample: +1589 function, +995 dict, +933 wrapper_descriptor, +353 tuple, +308 ZipInfo, +261 getset_descriptor
+    health     INFO | diag: objects grown since the last sample: +44 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+    health     INFO | diag: objects grown since the first sample: +1589 function, +1014 dict, +933 wrapper_descriptor, +397 tuple, +308 ZipInfo, +275 getset_descriptor
+--- C:\Users\runneradmin\.config\arctis_manager\asm-audio-engine.log (52 lines), last 12
+    03:47:45 INFO    health: health: engine pid 2716, private 335.1 MB, ws 72.8 MB (peak 192.1), handles 364, gdi 0, user 4, threads 8, python-objects 677085, cpu 0.5%, up 5m00s, helper_private_mb 1.7, helper_handles 131, strips_idle 0/4, playback_load 0%, mic_load 0%, numba yes
+    03:47:45 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:47:45 INFO    health: diag: objects grown since the first sample: +13644 tuple, +6888 function, +6378 ReferenceType, +4480 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:48:15 INFO    health: health: engine pid 2716, private 335.1 MB, ws 71.7 MB (peak 192.1), handles 364, gdi 0, user 4, threads 8, python-objects 676596, cpu 0.6%, up 5m30s, helper_private_mb 1.7, helper_handles 131, strips_idle 0/4, playback_load 0%, mic_load 0%, numba yes
+    03:48:15 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:48:15 INFO    health: diag: objects grown since the first sample: +13613 tuple, +6888 function, +6375 ReferenceType, +4414 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:48:45 INFO    health: health: engine pid 2716, private 335.1 MB, ws 70.9 MB (peak 192.1), handles 364, gdi 0, user 4, threads 8, python-objects 676122, cpu 0.5%, up 6m00s, helper_private_mb 1.7, helper_handles 131, strips_idle 0/4, playback_load 0%, mic_load 0%, numba yes
+    03:48:45 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:48:45 INFO    health: diag: objects grown since the first sample: +13582 tuple, +6888 function, +6372 ReferenceType, +4348 dict, +2761 staticmethod, +2598 builtin_function_or_method
+    03:49:15 INFO    health: health: engine pid 2716, private 335.1 MB, ws 70.4 MB (peak 192.1), handles 364, gdi 0, user 4, threads 8, python-objects 675701, cpu 0.9%, up 6m30s, helper_private_mb 1.7, helper_handles 131, strips_idle 0/4, playback_load 0%, mic_load 0%, numba yes
+    03:49:15 INFO    health: diag: objects grown since the last sample: +29 CField, +3 PyCStructType, +3 PyCPointerType
+    03:49:15 INFO    health: diag: objects grown since the first sample: +13551 tuple, +6888 function, +6369 ReferenceType, +4282 dict, +2761 staticmethod, +2598 builtin_function_or_method
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\daemon.log (81 lines), last 12
+    [   INFO]               health: health: daemon pid 9004, private 301.5 MB, ws 59.2 MB (peak 155.1), handles 270, gdi 0, user 2, threads 4, python-objects 590294, cpu 0.3%, up 5m00s, hid_questions 2279, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +18 CField, +2 PyCStructType, +2 PyCPointerType
+    [   INFO]               health: diag: objects grown since the first sample: +18157 function, +8307 tuple, +8019 dict, +4800 list, +4798 cell, +3445 ReferenceType
+    [   INFO]               health: health: daemon pid 9004, private 301.5 MB, ws 91.3 MB (peak 155.1), handles 270, gdi 0, user 2, threads 4, python-objects 591454, cpu 0.2%, up 5m30s, hid_questions 2406, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +63 tuple, +45 cell, +26 builtin_method, +20 dict, +18 CField, +17 getset_descriptor, +15 function, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18172 function, +8370 tuple, +8039 dict, +4843 cell, +4813 list, +3453 ReferenceType
+    [   INFO]               health: health: daemon pid 9004, private 301.5 MB, ws 91.1 MB (peak 155.1), handles 270, gdi 0, user 2, threads 4, python-objects 591800, cpu 0.1%, up 6m00s, hid_questions 2533, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +59 tuple, +45 cell, +26 builtin_method, +19 dict, +18 CField, +15 function, +14 getset_descriptor, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18187 function, +8429 tuple, +8058 dict, +4888 cell, +4826 list, +3460 ReferenceType
+    [   INFO]               health: health: daemon pid 9004, private 301.5 MB, ws 91.2 MB (peak 155.1), handles 270, gdi 0, user 2, threads 4, python-objects 592148, cpu 0.2%, up 6m30s, hid_questions 2660, hid_enumerations 0
+    [   INFO]               health: diag: objects grown since the last sample: +59 tuple, +45 cell, +26 builtin_method, +19 dict, +18 CField, +15 function, +14 getset_descriptor, +13 list
+    [   INFO]               health: diag: objects grown since the first sample: +18202 function, +8488 tuple, +8077 dict, +4933 cell, +4839 list, +3467 ReferenceType
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\tray.log (53 lines), last 12
+                  health     INFO | health: tray pid 4104, private 50.7 MB, ws 82.7 MB (peak 82.7), handles 396, gdi 9, user 19, threads 5, python-objects 283839, cpu 0.1%, up 1m00s, qt_widgets 3, window closed
+                  health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +18 CField, +12 function, +8 cell, +8 FreezableDefaultDict, +5 method, +4 _lru_cache_wrapper, +4 Lookup
+                  health     INFO | diag: objects grown since the first sample: +154 ZipInfo, +36 CField, +22 ReferenceType, +21 function, +21 dict, +16 list
+                  health     INFO | health: tray pid 4104, private 153.5 MB, ws 91.3 MB (peak 91.3), handles 408, gdi 9, user 20, threads 5, python-objects 323266, cpu 0.5%, up 1m30s, qt_widgets 3, window closed
+                  health     INFO | diag: objects grown since the last sample: +1529 function, +1300 tuple, +933 wrapper_descriptor, +930 dict, +580 frozenset, +235 getset_descriptor, +222 list, +197 cell
+                  health     INFO | diag: objects grown since the first sample: +1550 function, +951 dict, +933 wrapper_descriptor, +850 tuple, +580 frozenset, +247 getset_descriptor
+                  health     INFO | health: tray pid 4104, private 157.7 MB, ws 93.6 MB (peak 99.3), handles 432, gdi 9, user 18, threads 5, python-objects 327912, cpu 0.4%, up 2m00s, qt_widgets 3, window closed
+                  health     INFO | diag: objects grown since the last sample: +154 ZipInfo, +44 dict, +39 function, +29 ReferenceType, +26 builtin_method, +22 list, +18 CField, +17 builtin_function_or_method
+                  health     INFO | diag: objects grown since the first sample: +1589 function, +995 dict, +933 wrapper_descriptor, +353 tuple, +308 ZipInfo, +261 getset_descriptor
+                  health     INFO | health: tray pid 4104, private 157.5 MB, ws 89.6 MB (peak 99.3), handles 428, gdi 9, user 18, threads 5, python-objects 328208, cpu 0.2%, up 2m30s, qt_widgets 3, window closed
+                  health     INFO | diag: objects grown since the last sample: +44 tuple, +26 builtin_method, +19 dict, +18 CField, +14 getset_descriptor, +13 list, +12 _FuncPtr, +7 ReferenceType
+                  health     INFO | diag: objects grown since the first sample: +1589 function, +1014 dict, +933 wrapper_descriptor, +397 tuple, +308 ZipInfo, +275 getset_descriptor
+== 0 problem(s)
