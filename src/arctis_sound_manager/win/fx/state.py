@@ -107,3 +107,20 @@ class Maintainer:
             self._run("attach")
             return "attach"
         return None
+
+
+async def maintain(maintainer: Maintainer | None = None, interval_s: float = 60.0, sleep=None) -> None:
+    """The daemon's background task: look every ``interval_s`` seconds, ask for what is missing. Never raises, never blocks
+    the event loop (reading the registry and starting a task are done in a worker thread)."""
+    import asyncio
+    sleep = sleep or asyncio.sleep
+    maintainer = maintainer or Maintainer()
+    await sleep(20.0)                                   # the daemon has other things to do first
+    while True:
+        try:
+            await asyncio.to_thread(maintainer.tick)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:                        # noqa: BLE001
+            _log.debug("microphone effect maintenance: %r", exc)
+        await sleep(interval_s)

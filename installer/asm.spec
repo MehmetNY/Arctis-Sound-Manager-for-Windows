@@ -4,7 +4,7 @@
 #
 #   pyinstaller --noconfirm --distpath build\dist --workpath build\pyi installer\asm.spec
 #
-# The native helper (asm-audiotap.exe), the RNNoise library and the VB-CABLE driver pack are put next to it by
+# The native helper (asm-audiotap.exe), the RNNoise library and the microphone effect (fx\asm_micfx.dll) are put next to it by
 # installer\build.ps1; the spec only deals with Python.
 import os
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata

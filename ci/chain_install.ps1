@@ -1,4 +1,5 @@
-# Install the real installer silently on a clean runner and look at what it did (files, virtual microphone driver, Start with Windows).
+# Install the real installer silently on a runner and look at what it did (files, the microphone effect, Start with Windows).
+# The runner has no sound card: ci/setup_audio.ps1 put VB-CABLE there as a test fixture before this; the installer must leave it alone.
 param([Parameter(Mandatory = $true)][string]$Installer)
 $script:LogFile = "chain-install.log"
 . ./ci/common.ps1
@@ -28,8 +29,11 @@ Run "installed files" {
     if (Test-Path $app) { Get-ChildItem $app | Select-Object Name, Length | Format-Table | Out-String } else { "MISSING: $app" }
     if (Test-Path (Join-Path $app "unins000.exe")) { "uninstaller present" } else { "MISSING uninstaller" }
 }
-Run "virtual microphone driver" {
-    Get-ChildItem (Join-Path $env:windir "System32\drivers") -Filter "vbaudio*" | Select-Object Name, Length | Format-Table | Out-String
+Run "the microphone effect (registered by the installer)" {
+    $app = Join-Path $env:ProgramFiles "Arctis Sound Manager"
+    & (Join-Path $app "ArctisSoundManager.exe") --fx status 2>&1 | Out-String
+    schtasks /query /fo LIST 2>&1 | Select-String "ASM microphone effect" | Out-String
+    "VB-CABLE driver files (the fixture; the installer must not add or remove any): " + ((Get-ChildItem (Join-Path $env:windir "System32\drivers") -Filter "vbaudio*" -ErrorAction SilentlyContinue | ForEach-Object Name) -join ", ")
 }
 Run "start with windows (HKCU Run)" {
     $r = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue

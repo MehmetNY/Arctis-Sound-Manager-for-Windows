@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The whole chain on a real Windows audio stack, with the program the installer put on disk.
 
-Run after ci/chain_install.ps1 (which ran ASM-Setup.exe silently, VB-CABLE included). The CI machine has no sound card:
+Run after ci/chain_install.ps1 (which ran ASM-Setup.exe silently; VB-CABLE was put there before by ci/setup_audio.ps1 as a
+test fixture, the installer installs no driver). The CI machine has no sound card:
 "CABLE Input" is where the programs play (Windows' default output there) and "CABLE In 16ch" plays the part of the
 headset. The "programs" are copies of audioprobe.exe under other names.
 
@@ -286,10 +287,19 @@ def main() -> int:
     log("== installed program")
     check("C0.1 the installer put the program on disk", EXE.exists(), str(EXE))
     check("C0.2 and the per-application helper", (APP / "asm-audiotap.exe").exists())
-    check("C0.3 and the virtual microphone driver's installer", (APP / "vbcable" / "VBCABLE_Setup_x64.exe").exists())
+    check("C0.3 and the microphone effect (the audio engine's plug-in)", (APP / "fx" / "asm_micfx.dll").exists())
+    check("C0.4 no third-party driver pack is shipped", not (APP / "vbcable").exists())
+    status = subprocess.run([str(EXE), "--fx", "status", "--json"], capture_output=True, text=True, timeout=120)
+    log("   fx status:", status.stdout.strip()[:400])
+    try:
+        info = json.loads(status.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        info = {}
+    check("C0.5 the installer registered the effect with Windows and created its scheduled tasks",
+          bool(info.get("com_registered")) and bool(info.get("tasks")), json.dumps(info)[:200])
     out = ap("list")
     log(out)
-    check("C1.1 the installer set up the virtual microphone (CABLE endpoints exist)", "CABLE Input" in out and "CABLE Output" in out)
+    check("C1.1 the test machine's stand-in endpoints (VB-CABLE, installed by the CI, not by ASM) are there", "CABLE Input" in out and "CABLE Output" in out)
     entry = run_key()
     check("C2.1 Start with Windows is registered", bool(entry) and "ArctisSoundManager.exe" in (entry or ""), str(entry))
     check("C2.2 and starts quietly in the background", "--background" in (entry or ""), str(entry))
@@ -438,6 +448,17 @@ def main() -> int:
               str([p.name for p in APP.glob("*")][:8]) if APP.exists() else "folder removed")
         check("C9.2 Start with Windows is removed", run_key() is None, str(run_key()))
         check("C9.3 nothing is left running", not processes("ArctisSoundManager.exe") and not processes("asm-audiotap.exe"))
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\CLSID\{A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808}", 0,
+                                winreg.KEY_READ | winreg.KEY_WOW64_64KEY):
+                registered = True
+        except OSError:
+            registered = False
+        tasks = subprocess.run(["schtasks", "/query", "/fo", "LIST"], capture_output=True, text=True, timeout=60).stdout
+        check("C9.4 Windows is back to how it was: the effect is unregistered and its scheduled tasks are gone",
+              not registered and "ASM microphone effect" not in tasks, f"registered={registered}")
+        drivers = [p.name for p in (Path(os.environ.get("windir", r"C:\Windows")) / "System32" / "drivers").glob("vbaudio*")]
+        check("C9.5 and a VB-CABLE that is not ASM's (the CI fixture) was left alone", bool(drivers), str(drivers))
 
     log("== logs of the programs")
     tail_logs()

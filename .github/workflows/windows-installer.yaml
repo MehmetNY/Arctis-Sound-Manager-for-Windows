@@ -53,7 +53,7 @@ jobs:
             --notes "Unsigned installer built by CI from commit $GITHUB_SHA. Windows SmartScreen will warn about an unknown publisher: choose More info > Run anyway."
 
   chain:
-    # The installer exactly as a user gets it, on a clean machine: silent installation (VB-CABLE included), the program
+    # The installer exactly as a user gets it, on a clean machine: silent installation, the program
     # started the way "Start with Windows" starts it, real programs playing, the engine mixing, the uninstaller.
     needs: installer
     runs-on: windows-2025
@@ -68,6 +68,10 @@ jobs:
       - name: Build the native test tools
         shell: pwsh
         run: ./ci/build_native.ps1
+      - name: Test endpoints (VB-CABLE, test fixture only) and microphone consent
+        shell: pwsh
+        timeout-minutes: 8
+        run: ./ci/setup_audio.ps1
       - name: Install silently
         shell: pwsh
         timeout-minutes: 10
@@ -104,6 +108,10 @@ jobs:
       - name: Build the native test tools
         shell: pwsh
         run: ./ci/build_native.ps1
+      - name: Test endpoints (VB-CABLE, test fixture only) and microphone consent
+        shell: pwsh
+        timeout-minutes: 8
+        run: ./ci/setup_audio.ps1
       - name: Install silently
         shell: pwsh
         timeout-minutes: 10

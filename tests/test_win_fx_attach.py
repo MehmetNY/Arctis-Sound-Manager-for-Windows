@@ -76,7 +76,7 @@ def test_attach_registers_the_effect_and_puts_it_on_the_microphone(reg, dll, tmp
     assert reg.get(fx.COM_KEY + r"\InprocServer32", "").data == dll
     assert reg.get(fx.COM_KEY + r"\InprocServer32", "ThreadingModel").data == "Both"
     apo = reg.values(fx.APO_KEY)
-    assert apo["NumAPOInterfaces"].data == 3 and apo["APOInterface2"].data == fx.APO_INTERFACES[2]
+    assert apo["NumAPOInterfaces"].data == 4 and apo["APOInterface3"].data == "{5FA00F27-ADD6-499A-8A9D-6B98521FA75B}"
     assert apo["Flags"].data == 0xF and apo["MinInputConnections"].kind == REG_DWORD
     assert reg.get(fx.FXP.format(ARCTIS) if hasattr(fx, "FXP") else FXP.format(ARCTIS), fx.EFX).data == fx.CLSID
     assert reg.get(fx.AUDIO, fx.PROTECT).data == 1
@@ -446,3 +446,106 @@ def test_the_default_file_is_next_to_the_program(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "ArctisSoundManager.exe"))
     assert cli.dll_path() == str(tmp_path / "fx" / "asm_micfx.dll")
+
+
+# ── the VB-CABLE an earlier installer put there ──────────────────────────────
+
+def make_inf(folder, name, text, utf16=False):
+    (folder / name).write_bytes(text.encode("utf-16") if utf16 else text.encode("latin-1"))
+
+
+@pytest.fixture
+def driver_store(tmp_path):
+    inf = tmp_path / "INF"
+    inf.mkdir()
+    make_inf(inf, "oem12.inf", "[Version]\nSignature=$Windows NT$\n[Strings]\nServiceName=VBAudioVACWDM\n", utf16=True)
+    make_inf(inf, "oem3.inf", "[Strings]\nProvider=Some Other Vendor\n")
+    make_inf(inf, "oem7.inf", "[Strings]\nService=VBAudioVACWDM\nProvider=VB-Audio\n")             # the other encoding
+    make_inf(inf, "netrasa.inf", "VBAudioVACWDM")                                                  # not an oem package
+    return inf
+
+
+def test_the_cables_driver_packages_are_found_by_what_is_inside_them(driver_store):
+    from arctis_sound_manager.win.fx import legacy
+    assert legacy.find_packages(driver_store) == ["oem12.inf", "oem7.inf"]
+    assert legacy.find_packages(driver_store / "nowhere") == []
+
+
+def test_only_a_cable_the_earlier_installer_brought_is_removed(driver_store, tmp_path):
+    from arctis_sound_manager.win.fx import legacy
+    app = tmp_path / "app"
+    app.mkdir()
+    ran = []
+    assert "not installed by ASM" in legacy.remove(app, driver_store, run=lambda *a, **k: ran.append(a))["skipped"]
+    assert ran == []                                                           # the person's own VB-CABLE stays
+    (app / "vbcable").mkdir()
+    (app / "vbcable" / "VBCABLE_Setup_x64.exe").write_bytes(b"MZ")
+    assert legacy.remove(app, driver_store, run=lambda *a, **k: ran.append(a), keep=True) == {"skipped": "kept on request"}
+    assert ran == [] and (app / "vbcable").exists()
+
+
+def test_the_driver_packages_and_the_pack_are_removed(driver_store, tmp_path):
+    from arctis_sound_manager.win.fx import legacy
+    app = tmp_path / "app"
+    (app / "vbcable").mkdir(parents=True)
+    (app / "vbcable" / "VBCABLE_Setup_x64.exe").write_bytes(b"MZ")
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 3010 if cmd[2] == "oem7.inf" else 0, stdout="", stderr="")
+    done = legacy.remove(app, driver_store, run=run)
+    assert done == {"removed": ["oem12.inf", "oem7.inf"], "failed": []}
+    assert seen[0] == ["pnputil", "/delete-driver", "oem12.inf", "/uninstall", "/force"]
+    assert not (app / "vbcable").exists()
+
+
+def test_the_pack_stays_when_a_package_could_not_be_removed(driver_store, tmp_path):
+    from arctis_sound_manager.win.fx import legacy
+    app = tmp_path / "app"
+    (app / "vbcable").mkdir(parents=True)
+
+    def run(cmd, **kw):
+        if cmd[2] == "oem7.inf":
+            raise OSError("no pnputil")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    done = legacy.remove(app, driver_store, run=run)
+    assert done == {"removed": ["oem12.inf"], "failed": ["oem7.inf"]} and (app / "vbcable").exists()
+
+
+def test_the_command_line_hands_the_work_to_the_module(tmp_path, monkeypatch, capsys):
+    import json
+    from arctis_sound_manager.win.fx import legacy
+    monkeypatch.setattr(cli, "program_path", lambda: str(tmp_path / "ArctisSoundManager.exe"))
+    monkeypatch.setattr(legacy, "find_packages", lambda *a, **k: [])
+    assert cli.main(["remove-old-cable"]) == 0 and "skipped" in json.loads(capsys.readouterr().out)
+    (tmp_path / "vbcable").mkdir()
+    assert cli.main(["remove-old-cable"]) == 0 and json.loads(capsys.readouterr().out) == {"removed": [], "failed": []}
+    assert not (tmp_path / "vbcable").exists()
+
+
+def test_the_daemons_background_task_asks_now_and_then_and_survives_trouble():
+    import asyncio
+    calls = []
+
+    class Fake:
+        def tick(self):
+            calls.append(len(calls))
+            if len(calls) == 2:
+                raise OSError("registry unreadable")
+            return None
+
+    async def go():
+        waited = []
+
+        async def sleep(seconds):
+            waited.append(seconds)
+            if len(waited) > 4:
+                raise asyncio.CancelledError
+        try:
+            await state.maintain(Fake(), interval_s=60.0, sleep=sleep)
+        except asyncio.CancelledError:
+            pass
+        return waited
+    waited = asyncio.run(go())
+    assert waited[:3] == [20.0, 60.0, 60.0] and len(calls) == 4               # the failed look did not end the task

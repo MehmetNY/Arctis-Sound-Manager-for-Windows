@@ -181,52 +181,88 @@ PROVIDERS = [("{AE4BD3BE-F36F-45B6-8D21-BDD6FB832853}", "0xffffffffffffffff", "0
              ("{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}", "0x40", "0xff")]                    # Microsoft-Windows-Kernel-Process: image loads
 
 
+def audio_provider_lines() -> list[tuple[str, str, str]]:
+    """Every ETW provider on this machine that has to do with audio: (name, guid, level)."""
+    out = subprocess.run(["logman", "query", "providers"], capture_output=True, text=True, timeout=60).stdout
+    found = []
+    for line in out.splitlines():
+        m = re.match(r"^(?P<name>.+?)\s+(?P<guid>\{[0-9A-Fa-f-]{36}\})\s*$", line.strip())
+        if m and re.search(r"audio|mmdevice|sound", m.group("name"), re.I) and "Kernel" not in m.group("name"):
+            found.append((m.group("guid"), "0xffffffffffffffff", "0xff", m.group("name").strip()))
+    return found[:14]
+
+
 def etw(start: bool) -> None:
-    """Windows' own trace around a case: which registry keys the audio engine reads (does it ever look at the effect?),
-    which DLLs the audio engine loads, and what the audio engine itself says."""
+    """Windows' own trace around a case: which registry keys the audio engine reads (does it ever look at the effect, and
+    what exactly does it ask for?), which DLLs the audio engine loads, and what the audio providers themselves say."""
     try:
         if start:
             sh(["logman", "stop", "asmaudio", "-ets"], lines=2)
             pf = ETL.with_suffix(".providers")
-            pf.write_text("\n".join(" ".join(p) for p in PROVIDERS) + "\n", encoding="ascii")
+            audio = audio_provider_lines()
+            log("   audio providers traced:", "; ".join(f"{p[3]} {p[0]}" for p in audio) or "(none found)")
+            lines = [" ".join(p[:3]) for p in PROVIDERS] + [" ".join(p[:3]) for p in audio if p[0].upper() not in {q[0].upper() for q in PROVIDERS}]
+            pf.write_text("\n".join(lines) + "\n", encoding="ascii")
             sh(["logman", "start", "asmaudio", "-pf", str(pf), "-o", str(ETL), "-ets", "-bs", "1024", "-nb", "64", "256"])
             return
         sh(["logman", "stop", "asmaudio", "-ets"])
-        csv = ETL.with_suffix(".csv")
-        sh(["tracerpt", str(ETL), "-o", str(csv), "-of", "CSV", "-y"], timeout=300, lines=6)
-        import re
-        wanted = re.compile(r"A998FC6D|asm_micfx|ArctisSoundManager", re.I)
-        about_endpoint = re.compile(r"FxProperties|AudioProcessingObjects|" + re.escape(ENDPOINT["guid"].strip("{}")), re.I)
-        pid_text = "0x%08x" % AUDIODG["pid"] if AUDIODG["pid"] else None
-        total = hits = 0
-        audiodg_images: list[str] = []
-        audiodg_reads: list[str] = []
-        readers: dict[str, int] = {}
-        with open(csv, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
+        csv_path = ETL.with_suffix(".csv")
+        sh(["tracerpt", str(ETL), "-o", str(csv_path), "-of", "CSV", "-y"], timeout=300, lines=6)
+        import csv as csvmod
+        wanted = re.compile(r"A998FC6D|asm_micfx", re.I)
+        interesting = re.compile(r"A998FC6D|FxProperties|AudioProcessingObjects|" + re.escape(ENDPOINT["guid"].strip("{}")), re.I)
+        pid_hex = "0x%08x" % AUDIODG["pid"] if AUDIODG["pid"] else None
+        pid_dec = str(AUDIODG["pid"]) if AUDIODG["pid"] else None
+        total = 0
+        paths: dict[str, str] = {}                  # key object -> path, learnt from the opens
+        reads: list[str] = []                       # what every process but our own tools asked of the effect / the endpoint
+        audio_events: list[str] = []
+        images: list[str] = []
+        with open(csv_path, encoding="utf-8", errors="replace", newline="") as handle:
+            for row in csvmod.reader(handle):
                 total += 1
-                low = line.lower()
-                if wanted.search(line):
-                    hits += 1
-                    if hits <= 40:
-                        log("   * " + re.sub(r"\s+", " ", line)[:400])
-                mine = pid_text is not None and pid_text in low
-                if mine and "imageload" in low.replace(" ", "") and len(audiodg_images) < 80:
-                    audiodg_images.append(re.sub(r"\s+", " ", line)[-160:].strip())
-                elif mine and "kernel-registry" in low and about_endpoint.search(line) and len(audiodg_reads) < 60:
-                    audiodg_reads.append(re.sub(r"\s+", " ", line)[-230:].strip())
-                if "kernel-registry" in low and about_endpoint.search(line):
-                    who = next((m for m in re.findall(r"0x[0-9a-f]{8}", low)[:3]), "?")
-                    readers[who] = readers.get(who, 0) + 1
-        log(f"   {total} trace events, {hits} mention the effect; audiodg is {pid_text}")
-        log("   processes that touched the endpoint's effect keys or the registrations (hex pid: events): "
-            + ", ".join(f"{k}: {v}" for k, v in sorted(readers.items(), key=lambda kv: -kv[1])[:12]))
-        log("   registry reads of audiodg about the endpoint (first 60):")
-        for line in audiodg_reads:
+                if len(row) < 2:
+                    continue
+                provider, event = row[0].strip(), row[1].strip()
+                text = ",".join(row)
+                if provider.startswith("Microsoft-Windows-Kernel-Registry") and len(row) > 24:
+                    pid = row[9].strip().lower()
+                    name = row[24].strip().strip('"') if event != "QueryValueKey" else row[24].strip().strip('"')
+                    if event in ("OpenKey", "CreateKey"):
+                        base = paths.get(row[19].strip(), "")
+                        paths[row[20].strip()] = (base + "\\" + name) if base and not name.upper().startswith(("\\REGISTRY", "\\Registry".upper())) else name
+                        shown = paths[row[20].strip()]
+                        status = row[21].strip()
+                    elif event in ("QueryValueKey", "SetValueKey", "EnumerateValueKey", "DeleteValueKey"):
+                        shown = paths.get(row[19].strip(), "?") + "  VALUE " + name
+                        status = row[20].strip()
+                    else:
+                        continue
+                    if event in ("CreateKey", "SetValueKey", "DeleteValueKey") and wanted.search(shown) and pid != pid_hex:
+                        continue                                                # our own tools writing the registration
+                    if interesting.search(shown) and len(reads) < 400 and "ArctisSoundManager\\MicFx" not in shown:
+                        if pid_hex and pid == pid_hex:
+                            who = "AUDIODG"
+                        else:
+                            who = "pid " + pid
+                        if "Render" in shown and not wanted.search(shown):
+                            continue
+                        reads.append(f"{who:12} {event:16} {status:11} {shown[-170:]}")
+                elif provider.startswith("Microsoft-Windows-Kernel-Process") and "image" in event.lower():
+                    if (pid_hex and pid_hex in text.lower()) or (pid_dec and re.search(r"(^|,)\s*" + pid_dec + r"\s*(,|$)", text)):
+                        images.append(re.sub(r"\s+", " ", text)[-170:])
+                elif not provider.startswith("Microsoft-Windows-Kernel") and len(audio_events) < 150:
+                    audio_events.append(re.sub(r"\s+", " ", text)[:260])
+        log(f"   {total} trace events; audiodg is {pid_hex}")
+        log("   what the audio engine and others read about the effect and the endpoint (our own writes left out):")
+        for line in reads:
             log("   r " + line)
-        log("   DLLs loaded by audiodg during the case (first 80):")
-        for line in audiodg_images:
+        log(f"   image loads of audiodg: {len(images)}")
+        for line in images[:100]:
             log("   > " + line)
+        log(f"   events of the audio providers: {len(audio_events)} (first 150)")
+        for line in audio_events:
+            log("   a " + line)
     except Exception as exc:                                              # noqa: BLE001 — a diagnosis must never end the test
         log("   (trace failed: %r)" % exc)
 
@@ -401,8 +437,8 @@ VARIANTS = [
     # only the raw mode, so the list has to say "raw" there; the product adds raw to the list in the same situation).
     ("EFX + modes (the plan)", ["--slots", "efx"], True),
     ("SFX + modes", ["--slots", "sfx"], True),
-    ("MFX + modes", ["--slots", "mfx"], True),
-    ("EFX + modes, endpoint builder restarted too", ["--slots", "efx", "--builder"], True),
+    ("SFX + MFX + EFX + modes, endpoint builder restarted too", ["--slots", "sfx,mfx,efx", "--builder"], True),
+    ("LFX + GFX (the old pair)", ["--slots", "lfx,gfx"], True),
     ("EFX + modes, audio protection left alone", ["--slots", "efx"], False),
 ]
 

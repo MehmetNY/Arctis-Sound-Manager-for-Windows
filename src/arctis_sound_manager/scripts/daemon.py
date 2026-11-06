@@ -288,10 +288,14 @@ async def main_async():
         from arctis_sound_manager.win.power_watcher import PowerWatcher
         dbus_awake_loop = asyncio.create_task(PowerWatcher.get_instance().start(core_engine), name='power-watcher')
         watchdog_loop = None  # PipeWire loopback watchdog: no loopbacks on Windows
+        # keeps the microphone effect attached (headset plugged in later, a driver update that rewrote the device's keys)
+        from arctis_sound_manager.win.fx.state import maintain as maintain_microphone_effect
+        mic_effect_loop = asyncio.create_task(maintain_microphone_effect(), name='mic-effect')
     else:
         dbus_awake_loop = asyncio.create_task(DbusAwake.get_instance().start(core_engine), name='dbus-awake')
         watchdog_loop = asyncio.create_task(core_engine._loopback_watchdog(), name='loopback-watchdog')
-    background_tasks = [t for t in (core_loop, dbus_awake_loop, watchdog_loop) if t is not None]
+        mic_effect_loop = None
+    background_tasks = [t for t in (core_loop, dbus_awake_loop, watchdog_loop, mic_effect_loop) if t is not None]
 
     # Wire SIGINT/SIGTERM into the asyncio loop so the handler can both flip
     # the stop flags AND cancel the long-lived tasks. Plain signal.signal()

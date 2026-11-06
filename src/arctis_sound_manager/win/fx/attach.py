@@ -72,9 +72,11 @@ PROTECT = "DisableProtectedAudioDG"
 STATE = r"SOFTWARE\ArctisSoundManager\MicFx"
 COM_KEY = rf"SOFTWARE\Classes\CLSID\{CLSID}"
 APO_KEY = rf"SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\{CLSID}"
-# IAudioProcessingObject, IAudioProcessingObjectConfiguration, IAudioProcessingObjectRT: what the effect implements
+# IAudioProcessingObject, IAudioProcessingObjectConfiguration, IAudioProcessingObjectRT and IAudioSystemEffects: what the
+# effect implements. The last one is what marks an APO as a *system effect*: without it in the registration Windows' audio
+# engine reads the registration of an effect named in an endpoint's FxProperties and then never creates it.
 APO_INTERFACES = ("{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}", "{0E5ED805-ABA6-49C3-8F9A-2B8C889C4FA8}",
-                  "{9E1D6A6D-DDBC-4E95-A4C7-AD64BA37846C}")
+                  "{9E1D6A6D-DDBC-4E95-A4C7-AD64BA37846C}", "{5FA00F27-ADD6-499A-8A9D-6B98521FA75B}")
 
 # Names that mark a microphone as the headset's (looked for in the endpoint's own properties) and names that rule a
 # device out (SteelSeries GG's Sonar adds virtual microphones with the vendor's name).

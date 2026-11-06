@@ -2,7 +2,7 @@
 #   ./installer/build.ps1                -> build\ASM-Setup-<version>.exe   (the version of pyproject.toml)
 #   ./installer/build.ps1 -Version 1.7.0 -> the same for that version (pyproject.toml is rewritten to match: release builds)
 # Needs: Python 3.13 with the packages in installer\requirements.txt, MSVC (for the native helper), Inno Setup 6.
-param([string]$Version = "", [switch]$SkipVbCable)
+param([string]$Version = "")
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
@@ -42,19 +42,11 @@ Copy-Item LICENSE $app\LICENSE.txt -Force
 $rn = python -c "import importlib.util, pathlib; s = importlib.util.find_spec('pyrnnoise'); print(next((str(p) for d in (s.submodule_search_locations if s else []) for p in pathlib.Path(d).glob('*rnnoise*.dll')), ''))"
 if ($rn) { Copy-Item $rn "$app\rnnoise.dll" -Force; Write-Host "rnnoise: $rn" } else { Write-Warning "no rnnoise.dll found: noise cancelling will be unavailable" }
 
-# 5. VB-CABLE driver pack, unmodified (donationware; see installer\THIRD-PARTY-NOTICES.txt)
-if (-not $SkipVbCable) {
-    $vb = Join-Path $root "build\vbcable"; New-Item -ItemType Directory -Force $vb | Out-Null
-    $zip = Join-Path $vb "pack.zip"
-    foreach ($n in "VBCABLE_Driver_Pack45.zip", "VBCABLE_Driver_Pack44.zip") {
-        try { Invoke-WebRequest -UserAgent "Mozilla/5.0" -Uri "https://download.vb-audio.com/Download_CABLE/$n" -OutFile $zip; Write-Host "downloaded $n"; break } catch { Write-Host "could not download $n" }
-    }
-    if (-not (Test-Path $zip)) { throw "VB-CABLE pack could not be downloaded" }
-    Remove-Item "$vb\x" -Recurse -Force -ErrorAction SilentlyContinue
-    Expand-Archive -Force $zip "$vb\x"
-    $dest = "$app\vbcable"; New-Item -ItemType Directory -Force $dest | Out-Null
-    Copy-Item "$vb\x\*" $dest -Recurse -Force
-}
+# 5. the microphone effect: the audio processing object that Windows' audio engine loads into the headset's microphone
+#    (built by ci/build_native.ps1 above; the installer registers it, nothing is downloaded or installed from anyone else)
+if (-not (Test-Path build\asm_micfx.dll)) { throw "build\asm_micfx.dll is missing: the microphone effect was not built" }
+New-Item -ItemType Directory -Force "$app\fx" | Out-Null
+Copy-Item build\asm_micfx.dll "$app\fx\asm_micfx.dll" -Force
 
 # 6. the installer
 $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source

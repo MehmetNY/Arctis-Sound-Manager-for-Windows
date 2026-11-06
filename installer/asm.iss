@@ -26,7 +26,8 @@ DisableDirPage=auto
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-; the virtual-microphone driver (VB-CABLE) can only be installed by an administrator
+; an administrator registers the microphone effect with Windows' audio engine and creates the scheduled tasks that let
+; the program keep it attached later without asking again
 OutputDir={#OutDir}
 OutputBaseFilename=ASM-Setup-{#AppVersion}
 SetupIconFile=asm.ico
@@ -46,12 +47,12 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 [CustomMessages]
 english.AutostartTask=Start {#AppName} with Windows (quietly, in the background)
 turkish.AutostartTask={#AppName} Windows ile birlikte (sessizce, arka planda) başlasın
-english.InstallingCable=Installing the virtual microphone driver (VB-CABLE)...
-turkish.InstallingCable=Sanal mikrofon sürücüsü (VB-CABLE) kuruluyor...
+english.SettingUpMicrophone=Setting up the microphone effect...
+turkish.SettingUpMicrophone=Mikrofon efekti hazırlanıyor...
+english.RemovingOldCable=Removing the virtual cable an earlier version installed...
+turkish.RemovingOldCable=Önceki sürümün kurduğu sanal kablo kaldırılıyor...
 english.LaunchApp=Open {#AppName}
 turkish.LaunchApp={#AppName} uygulamasını aç
-english.RemoveCable=Also remove the VB-CABLE virtual microphone driver? (Other programs may use it.)
-turkish.RemoveCable=VB-CABLE sanal mikrofon sürücüsü de kaldırılsın mı? (Başka programlar kullanıyor olabilir.)
 
 [Tasks]
 Name: "autostart"; Description: "{cm:AutostartTask}"
@@ -65,8 +66,16 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--s
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--show"; Tasks: desktopicon
 
 [Run]
-; the virtual microphone: VB-Audio's own silent installation (-i -h), only when it is not there yet
-Filename: "{app}\vbcable\VBCABLE_Setup_x64.exe"; Parameters: "-i -h"; WorkingDir: "{app}\vbcable"; StatusMsg: "{cm:InstallingCable}"; Flags: waituntilterminated runhidden; Check: CableMissing
+; Everything below runs elevated (the installer is). Nothing is downloaded and no third-party driver is installed.
+; 1. an earlier version of this program installed VB-CABLE (a virtual audio cable); the sound panel should show the headset only.
+;    Only that one is removed (the folder it left here proves it was ours); /KEEPCABLE=1 keeps it.
+Filename: "{app}\{#AppExe}"; Parameters: "--fx remove-old-cable"; StatusMsg: "{cm:RemovingOldCable}"; Flags: waituntilterminated runhidden; Check: RemoveOldCable
+; 2. the three scheduled tasks through which the program (running as the person) asks for the following steps again later
+Filename: "{app}\{#AppExe}"; Parameters: "--fx tasks-install"; StatusMsg: "{cm:SettingUpMicrophone}"; Flags: waituntilterminated runhidden
+; 3. register the microphone effect and attach it to the headset's microphone (Windows' audio service restarts once)
+Filename: "{app}\{#AppExe}"; Parameters: "--fx attach"; StatusMsg: "{cm:SettingUpMicrophone}"; Flags: waituntilterminated runhidden
+; the audio service must be running in the end, whatever the steps above found (it is a no-op when it is)
+Filename: "{sys}\net.exe"; Parameters: "start audiosrv"; Flags: waituntilterminated runhidden
 ; Start with Windows, for the person who is installing (not for the administrator account that may have been used)
 Filename: "{app}\{#AppExe}"; Parameters: "--enable-autostart"; Flags: runasoriginaluser runhidden waituntilterminated; Tasks: autostart
 Filename: "{app}\{#AppExe}"; Parameters: "--show"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent runasoriginaluser
@@ -75,8 +84,15 @@ Filename: "{app}\{#AppExe}"; Parameters: "--show"; Flags: nowait runasoriginalus
 
 [UninstallRun]
 Filename: "{app}\{#AppExe}"; Parameters: "--quit-all"; Flags: runhidden waituntilterminated; RunOnceId: "QuitAll"
+; Windows goes back to how it was: the microphone without the effect, the audio protection setting as it was, the effect unregistered
+Filename: "{app}\{#AppExe}"; Parameters: "--fx detach"; Flags: runhidden waituntilterminated; RunOnceId: "DetachMicrophoneEffect"
+Filename: "{app}\{#AppExe}"; Parameters: "--fx tasks-remove"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveTasks"
 Filename: "{app}\{#AppExe}"; Parameters: "--disable-autostart"; Flags: runhidden waituntilterminated; RunOnceId: "NoAutostart"
 Filename: "{app}\asm-audiotap.exe"; Parameters: "--restore"; Flags: runhidden waituntilterminated; RunOnceId: "RestoreVolumes"
+Filename: "{sys}\net.exe"; Parameters: "start audiosrv"; Flags: runhidden waituntilterminated; RunOnceId: "AudioServiceUp"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{commonappdata}\ArctisSoundManager"
 
 [Code]
 function Relaunch(): Boolean;
@@ -84,12 +100,10 @@ begin
   Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
 end;
 
-function CableMissing(): Boolean;
+function RemoveOldCable(): Boolean;
 begin
-  { the driver files VB-CABLE puts in System32\drivers (names differ between pack versions) }
-  Result := not (FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64_win10.sys')) or
-                 FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64_win7.sys')) or
-                 FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64.sys')));
+  { only the cable that an earlier version of this installer brought (its pack folder is still here) }
+  Result := DirExists(ExpandConstant('{app}\vbcable')) and (ExpandConstant('{param:KEEPCABLE|0}') <> '1');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -99,16 +113,9 @@ begin
   { an earlier version may be running: let it put the programs' volumes back and go away }
   if FileExists(ExpandConstant('{app}\{#AppExe}')) then
     Exec(ExpandConstant('{app}\{#AppExe}'), '--quit-all', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  { and its microphone effect must leave Windows' audio engine (which has the DLL open) before the new files can replace it;
+    the installation attaches the new one in a moment }
+  if FileExists(ExpandConstant('{app}\fx\asm_micfx.dll')) then
+    Exec(ExpandConstant('{app}\{#AppExe}'), '--fx detach', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
-end;
-
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  Code: Integer;
-begin
-  if CurUninstallStep = usUninstall then
-  begin
-    if (not UninstallSilent) and (MsgBox(CustomMessage('RemoveCable'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
-      Exec(ExpandConstant('{app}\vbcable\VBCABLE_Setup_x64.exe'), '-u -h', ExpandConstant('{app}\vbcable'), SW_HIDE, ewWaitUntilTerminated, Code);
-  end;
 end;

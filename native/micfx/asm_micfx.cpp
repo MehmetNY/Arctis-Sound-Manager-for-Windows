@@ -186,7 +186,7 @@ public:
     STDMETHOD(GetRegistrationProperties)(APO_REG_PROPERTIES** ppRegProps) override {
         if (!ppRegProps) return E_POINTER;
         Trace("GetRegistrationProperties");
-        const size_t bytes = sizeof(APO_REG_PROPERTIES) + 2 * sizeof(IID);
+        const size_t bytes = sizeof(APO_REG_PROPERTIES) + 3 * sizeof(IID);       // the struct holds one id already
         APO_REG_PROPERTIES* p = (APO_REG_PROPERTIES*)CoTaskMemAlloc(bytes);
         if (!p) return E_OUTOFMEMORY;
         memset(p, 0, bytes);
@@ -201,10 +201,11 @@ public:
         p->u32MinOutputConnections = 1;
         p->u32MaxOutputConnections = 1;
         p->u32MaxInstances = 0xffffffff;
-        p->u32NumAPOInterfaces = 3;
+        p->u32NumAPOInterfaces = 4;
         p->iidAPOInterfaceList[0] = __uuidof(IAudioProcessingObject);
         (&p->iidAPOInterfaceList[0])[1] = __uuidof(IAudioProcessingObjectConfiguration);
         (&p->iidAPOInterfaceList[0])[2] = __uuidof(IAudioProcessingObjectRT);
+        (&p->iidAPOInterfaceList[0])[3] = __uuidof(IAudioSystemEffects);          // what marks an APO as a system effect (SFX/MFX/EFX)
         *ppRegProps = p;
         return S_OK;
     }

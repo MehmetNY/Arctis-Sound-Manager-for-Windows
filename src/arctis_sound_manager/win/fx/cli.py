@@ -8,6 +8,7 @@
     guard                                  detach for good if the audio engine crashed in the effect (administrator)
     status [--json]                        what is in place (anyone)
     tasks-install | tasks-remove           the three scheduled tasks that let the program ask for the above (administrator)
+    remove-old-cable [--keep]              remove the VB-CABLE an earlier installer put there (administrator; installer only)
     run attach|detach|guard                start one of those tasks (anyone)
 """
 from __future__ import annotations
@@ -87,6 +88,11 @@ def main(args: list[str]) -> int:
     if command == "tasks-remove":
         tasks.remove()
         return 0
+    if command == "remove-old-cable":
+        from arctis_sound_manager.win.fx import legacy
+        done = legacy.remove(Path(program_path()).parent, keep="--keep" in rest)
+        print(json.dumps(done))
+        return 1 if done.get("failed") else 0
     if command == "run":
         ok = bool(rest) and tasks.start(rest[0])
         print("started" if ok else "could not start")
