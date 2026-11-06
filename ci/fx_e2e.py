@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -195,29 +196,51 @@ def etw(start: bool) -> None:
         sh(["tracerpt", str(ETL), "-o", str(csv), "-of", "CSV", "-y"], timeout=300, lines=6)
         import re
         wanted = re.compile(r"A998FC6D|asm_micfx|ArctisSoundManager", re.I)
+        about_endpoint = re.compile(r"FxProperties|AudioProcessingObjects|" + re.escape(ENDPOINT["guid"].strip("{}")), re.I)
+        pid_text = "0x%08x" % AUDIODG["pid"] if AUDIODG["pid"] else None
         total = hits = 0
-        audiodg_images = []
+        audiodg_images: list[str] = []
+        audiodg_reads: list[str] = []
+        readers: dict[str, int] = {}
         with open(csv, encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 total += 1
+                low = line.lower()
                 if wanted.search(line):
                     hits += 1
                     if hits <= 40:
                         log("   * " + re.sub(r"\s+", " ", line)[:400])
-                elif "audiodg" in line.lower() and "ImageLoad" in line and len(audiodg_images) < 60:
-                    audiodg_images.append(re.sub(r"\s+", " ", line)[:200])
-        log(f"   {total} trace events, {hits} mention the effect")
-        log("   DLLs loaded by audiodg during the case (first 60):")
+                mine = pid_text is not None and pid_text in low
+                if mine and "imageload" in low.replace(" ", "") and len(audiodg_images) < 80:
+                    audiodg_images.append(re.sub(r"\s+", " ", line)[-160:].strip())
+                elif mine and "kernel-registry" in low and about_endpoint.search(line) and len(audiodg_reads) < 60:
+                    audiodg_reads.append(re.sub(r"\s+", " ", line)[-230:].strip())
+                if "kernel-registry" in low and about_endpoint.search(line):
+                    who = next((m for m in re.findall(r"0x[0-9a-f]{8}", low)[:3]), "?")
+                    readers[who] = readers.get(who, 0) + 1
+        log(f"   {total} trace events, {hits} mention the effect; audiodg is {pid_text}")
+        log("   processes that touched the endpoint's effect keys or the registrations (hex pid: events): "
+            + ", ".join(f"{k}: {v}" for k, v in sorted(readers.items(), key=lambda kv: -kv[1])[:12]))
+        log("   registry reads of audiodg about the endpoint (first 60):")
+        for line in audiodg_reads:
+            log("   r " + line)
+        log("   DLLs loaded by audiodg during the case (first 80):")
         for line in audiodg_images:
             log("   > " + line)
     except Exception as exc:                                              # noqa: BLE001 — a diagnosis must never end the test
         log("   (trace failed: %r)" % exc)
 
 
+AUDIODG: dict = {"pid": None}
+
+
 @safe
 def snapshot_audiodg() -> None:
     """While the streams are open: what the audio engine process has loaded."""
     log("--- audiodg while a stream is open")
+    out = sh(["tasklist", "/fi", "imagename eq audiodg.exe", "/fo", "csv", "/nh"], lines=3)
+    found = re.search(r'"audiodg\.exe","(\d+)"', out or "", re.I)
+    AUDIODG["pid"] = int(found.group(1)) if found else None
     ps("(Get-Process audiodg).Modules | ForEach-Object { $_.ModuleName } | Sort-Object | Out-String -Width 250", 60)
     ps("$p = (Get-Process audiodg).Id; 'audiodg pid ' + $p; Get-ProcessMitigation -Id $p | Out-String -Width 200", 60)
 
@@ -374,14 +397,13 @@ def check(levels: dict) -> dict:
 
 VARIANTS = [
     # (title, arguments of "attach", does it use the product's way of switching Windows' audio protection off)
-    ("EFX, audio service restarted (the plan)", ["--slots", "efx"], True),
-    ("EFX, endpoint builder restarted too", ["--slots", "efx", "--builder"], True),
-    ("SFX (stream effect)", ["--slots", "sfx"], True),
-    ("SFX + MFX + EFX", ["--slots", "sfx,mfx,efx", "--builder"], True),
-    ("MFX (mode effect)", ["--slots", "mfx"], True),
-    ("LFX (old pre-mix)", ["--slots", "lfx"], True),
-    ("LFX + GFX (old pre- and post-mix)", ["--slots", "lfx,gfx", "--builder"], True),
-    ("EFX, audio protection left alone", ["--slots", "efx"], False),
+    # Every case also writes the list of signal processing modes the effect works in (the CI's stand-in microphone offers
+    # only the raw mode, so the list has to say "raw" there; the product adds raw to the list in the same situation).
+    ("EFX + modes (the plan)", ["--slots", "efx"], True),
+    ("SFX + modes", ["--slots", "sfx"], True),
+    ("MFX + modes", ["--slots", "mfx"], True),
+    ("EFX + modes, endpoint builder restarted too", ["--slots", "efx", "--builder"], True),
+    ("EFX + modes, audio protection left alone", ["--slots", "efx"], False),
 ]
 
 
@@ -390,7 +412,7 @@ def case(title: str, extra: list[str], protect: bool) -> dict:
     log(f"########## {title}")
     fx("detach")
     trace_text()
-    deep = title.startswith(("EFX, audio service", "SFX + MFX"))                # the full diagnosis for two of the cases
+    deep = title.startswith(("EFX + modes (the plan)", "SFX + modes"))         # the full diagnosis for two of the cases
     if deep:
         etw(True)
     fx("attach", "--match", "CABLE Output", *extra, *(() if protect else ("--no-protect",)))

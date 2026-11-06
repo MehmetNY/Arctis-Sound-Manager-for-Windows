@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """``ArctisSoundManager.exe --fx <command>``: the microphone effect from the command line.
 
-    attach [--match WORD ...] [--force] [--no-protect] [--slots efx,sfx,...] [--builder]
+    attach [--match WORD ...] [--force] [--no-protect] [--slots efx,sfx,...] [--modes default,raw,...] [--builder]
                                            register the effect and attach it to the headset's microphone (administrator)
     detach [--reason TEXT]                 take it away again and put Windows back as it was (administrator)
     guard                                  detach for good if the audio engine crashed in the effect (administrator)
@@ -71,9 +71,10 @@ def main(args: list[str]) -> int:
         if "--force" in rest:
             fx.clear_marker()
         slots = tuple(w for w in (_option(rest, "--slots") or "").split(",") if w in fx.SLOTS) or fx.DEFAULT_SLOTS
+        modes = tuple(w for w in (_option(rest, "--modes") or "").split(",") if w in fx.MODES) or None
         builder = "--builder" in rest
         return _print(fx.attach(system_registry(), dll_path(), fx.selector(_words(rest)), force="--force" in rest,
-                                protect="--no-protect" not in rest, slots=slots,
+                                protect="--no-protect" not in rest, slots=slots, modes=modes,
                                 restart=lambda: fx.restart_audio_service(builder=builder)))
     if command == "detach":
         return _print(fx.detach(system_registry(), reason=_option(rest, "--reason") or ""))

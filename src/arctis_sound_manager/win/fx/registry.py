@@ -4,7 +4,7 @@
 (:mod:`.attach`) is the same code in the tests (an in-memory registry) and on Windows (HKEY_LOCAL_MACHINE).
 
 All paths are relative to HKEY_LOCAL_MACHINE and use backslashes. Values are ``Value(data, kind)`` with ``kind`` the
-registry's own type number (``REG_SZ`` = 1, ``REG_DWORD`` = 4).
+registry's own type number (``REG_SZ`` = 1, ``REG_BINARY`` = 3, ``REG_DWORD`` = 4, ``REG_MULTI_SZ`` = 7).
 """
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 REG_SZ = 1
+REG_BINARY = 3
 REG_DWORD = 4
+REG_MULTI_SZ = 7
 
 
 @dataclass(frozen=True)

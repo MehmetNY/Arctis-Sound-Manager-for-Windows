@@ -25,11 +25,12 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
 
-from arctis_sound_manager.win.fx.registry import REG_DWORD, REG_SZ, Registry
+from arctis_sound_manager.win.fx.registry import REG_BINARY, REG_DWORD, REG_MULTI_SZ, REG_SZ, Registry
 
 _log = logging.getLogger(__name__)
 
@@ -46,8 +47,26 @@ DEFAULT_SLOTS = ("efx",)                                           # PKEY_FX_End
 EFX = f"{FX_GUID},{SLOTS['efx']}"
 
 
+
+
 def slot_key(name: str) -> str:
     return f"{FX_GUID},{SLOTS[name]}"
+
+
+# Which signal processing modes an effect works in (PKEY_SFX/MFX/EFX_ProcessingModes_Supported_For_Streaming: a list of
+# mode ids next to the effect's class id). Windows' audio engine only puts an effect into a stream of a mode that is on
+# the list, and an effect without a list is taken to be for the default mode only. A driver that offers nothing but the
+# raw mode (some virtual devices, the CI's stand-in microphone) therefore never gets an effect without the list.
+MODES_FMTID = "{d3993a3f-99c2-4402-b5ec-a92a0367664b}"
+MODE_SLOTS = {"sfx": 5, "mfx": 6, "efx": 7}
+MODES = {"default": "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}", "raw": "{9E90EA20-B493-4FD1-A1A8-7E1361A956CF}",
+         "communications": "{98951333-B9CD-48B1-A0A3-FF40682D73F7}", "media": "{4780004E-7133-41D8-8C74-660DADD2C0EE}",
+         "movie": "{B26FEB0D-EC94-477C-9494-D1AB8E753F6E}"}
+PRODUCT_MODES = ("default", "communications", "media", "movie")       # raw means "do not touch the sound": added only when it is all there is
+
+
+def mode_key(name: str) -> str:
+    return f"{MODES_FMTID},{MODE_SLOTS[name]}"
 AUDIO = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Audio"
 PROTECT = "DisableProtectedAudioDG"
 STATE = r"SOFTWARE\ArctisSoundManager\MicFx"
@@ -236,6 +255,36 @@ def attached_guids(reg: Registry, slots: Sequence[str] | None = None) -> list[st
     return [ep.guid for ep in endpoints(reg) if carries(reg, ep, slots)]
 
 
+def supported_modes(reg: Registry, ep: Endpoint) -> set[str]:
+    """The modes (names in :data:`MODES`) the driver mentions anywhere in the endpoint's own properties."""
+    blobs = [bytes(v.data) for v in reg.values(ep.path + r"\Properties").values()
+             if v.kind == REG_BINARY and isinstance(v.data, (bytes, bytearray))]
+    return {name for name, guid in MODES.items() if any(uuid.UUID(guid).bytes_le in blob for blob in blobs)}
+
+
+def mode_guids(reg: Registry, ep: Endpoint, requested: Sequence[str] | None = None) -> list[str]:
+    """The mode list to write: what the caller named, else the usual modes - plus raw when raw is all the driver offers."""
+    if requested:
+        names = [n for n in requested if n in MODES]
+    else:
+        names = list(PRODUCT_MODES)
+        found = supported_modes(reg, ep)
+        if "raw" in found and "default" not in found:
+            names.append("raw")
+    return [MODES[n] for n in dict.fromkeys(names)] or [MODES["default"]]
+
+
+def _same_modes(value, wanted: Sequence[str]) -> bool:
+    if value is None or not isinstance(value.data, (list, tuple)):
+        return False
+    return sorted(str(x).upper() for x in value.data) == sorted(g.upper() for g in wanted)
+
+
+def has_modes(reg: Registry, ep: Endpoint, slots: Sequence[str] | None = None) -> bool:
+    """Every mode-aware slot that carries the effect also carries its mode list."""
+    return all(reg.get(ep.fx_path, mode_key(n)) is not None for n in carries(reg, ep, slots) if n in MODE_SLOTS)
+
+
 # ── attach / detach ──────────────────────────────────────────────────────────
 
 def disabled_reason(marker_dir: Path | None = None) -> str | None:
@@ -248,7 +297,8 @@ def disabled_reason(marker_dir: Path | None = None) -> str | None:
 
 def attach(reg: Registry, dll: str, select: Callable[[Endpoint], bool] = is_headset_microphone,
            restart: Callable[[], bool] | None = restart_audio_service, marker_dir: Path | None = None,
-           force: bool = False, protect: bool = True, slots: Sequence[str] = DEFAULT_SLOTS) -> Result:
+           force: bool = False, protect: bool = True, slots: Sequence[str] = DEFAULT_SLOTS,
+           modes: Sequence[str] | None = None) -> Result:
     """Everything described in the module docstring. Safe to repeat: it changes (and restarts audio) only when needed."""
     result = Result()
     reason = None if force else disabled_reason(marker_dir)
@@ -271,15 +321,28 @@ def attach(reg: Registry, dll: str, select: Callable[[Endpoint], bool] = is_head
         return result
     for ep in chosen:
         try:
+            record = f"{STATE}\\Endpoints\\{ep.guid}"
+            wanted_modes = mode_guids(reg, ep, modes)
             for name in slots:
                 key = slot_key(name)
                 have = reg.get(ep.fx_path, key)
-                if have is not None and str(have.data).upper() == CLSID:
-                    continue
-                if reg.get(f"{STATE}\\Endpoints\\{ep.guid}", f"Before_{name}") is None:
-                    reg.set(f"{STATE}\\Endpoints\\{ep.guid}", f"Before_{name}", "" if have is None else str(have.data), REG_SZ)
-                _write_protected(reg, ep.fx_path, key, CLSID, REG_SZ)
-                result.changed = True
+                if have is None or str(have.data).upper() != CLSID:
+                    if reg.get(record, f"Before_{name}") is None:
+                        reg.set(record, f"Before_{name}", "" if have is None else str(have.data), REG_SZ)
+                    _write_protected(reg, ep.fx_path, key, CLSID, REG_SZ)
+                    result.changed = True
+                if name in MODE_SLOTS:
+                    mkey = mode_key(name)
+                    have_modes = reg.get(ep.fx_path, mkey)
+                    if not _same_modes(have_modes, wanted_modes):
+                        if reg.get(record, f"BeforeModes_{name}") is None:
+                            if have_modes is None:
+                                reg.set(record, f"BeforeModes_{name}", "absent", REG_SZ)
+                            else:
+                                old = list(have_modes.data) if isinstance(have_modes.data, (list, tuple)) else [str(have_modes.data)]
+                                reg.set(record, f"BeforeModes_{name}", old, REG_MULTI_SZ)
+                        _write_protected(reg, ep.fx_path, mkey, list(wanted_modes), REG_MULTI_SZ)
+                        result.changed = True
             result.attached.append(ep.guid)
         except OSError as exc:
             result.fail(f"cannot attach to {ep.guid}: {exc}")
@@ -306,6 +369,15 @@ def detach(reg: Registry, restart: Callable[[], bool] | None = restart_audio_ser
                     else:
                         _delete_protected(reg, fx_path, key)
                     result.changed = True
+            for name in MODE_SLOTS:
+                before = reg.get(f"{state_endpoints}\\{guid}", f"BeforeModes_{name}")
+                if before is None:
+                    continue
+                if isinstance(before.data, (list, tuple)):
+                    _write_protected(reg, fx_path, mode_key(name), list(before.data), REG_MULTI_SZ)
+                else:
+                    _delete_protected(reg, fx_path, mode_key(name))
+                result.changed = True
             result.attached.append(guid)
         except OSError as exc:
             result.fail(f"cannot restore {guid}: {exc}")
@@ -374,8 +446,10 @@ def status(reg: Registry, dll: str = "", select: Callable[[Endpoint], bool] = is
     out.com_registered = current is not None and (not dll or str(current.data).lower() == dll.lower()) and reg.exists(APO_KEY)
     out.protection_off = audio_protection(reg) == 1
     out.attached = attached_guids(reg)
-    out.wanted = [ep.guid for ep in endpoints(reg) if select(ep)]
-    out.missing = [g for g in out.wanted if g not in out.attached]
+    chosen = [ep for ep in endpoints(reg) if select(ep)]
+    out.wanted = [ep.guid for ep in chosen]
+    stale = [ep.guid for ep in chosen if ep.guid in out.attached and not has_modes(reg, ep)]     # attached by an older build
+    out.missing = [g for g in out.wanted if g not in out.attached or g in stale]
     out.disabled = disabled_reason(marker_dir)
     return out
 
