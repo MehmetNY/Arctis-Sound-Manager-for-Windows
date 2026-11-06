@@ -83,7 +83,7 @@ def main(args: list[str]) -> int:
         return _print(fx.guard(system_registry()))
     if command == "tasks-install":
         ok = tasks.install(program_path())
-        print("ok" if ok else "failed")
+        print("ok" if ok else "failed: " + tasks.last_error)
         return 0 if ok else 1
     if command == "tasks-remove":
         tasks.remove()

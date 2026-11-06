@@ -36,6 +36,7 @@ APP = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Arctis Sound 
 EXE = APP / "ArctisSoundManager.exe"
 CONFIG_DIR = Path.home() / ".config" / "arctis_manager"
 PROGRAMS_ENDPOINT = "CABLE Input"
+MIC_ENDPOINT = "CABLE Output"       # the stand-in for the headset's microphone
 HEADSET = "CABLE Input"      # the programs play to it too, exactly like a headset that is also Windows' default output
 FAILS: list[str] = []
 
@@ -89,14 +90,15 @@ class EngineClient:
         return self.request("mute", channel=channel, muted=muted)
 
 
-def write_config(mic_input: str = "", mic_output: str = "", playback: bool = True) -> None:
+def write_config(playback: bool = True, mic: bool = False) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     taps = {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"}
     (CONFIG_DIR / "win_audio_engine.json").write_text(json.dumps({
+        "schema": 3,
         "latency": "balanced",
         "inputs": taps if playback else {ch: "" for ch in taps},
         "outputs": {"headset": HEADSET} if playback else {},
-        "mic": {"input": mic_input, "output": mic_output},
+        "mic": {"fx": mic},
         "master_limiter": True}, indent=2), encoding="utf-8")
 
 
@@ -190,18 +192,39 @@ def tail_logs() -> None:
                     log("    " + line[:300])
 
 
-def microphone_phase(client: "EngineClient") -> None:
-    """Microphone -> the engine's microphone chain -> the virtual microphone, with and without noise cancelling.
+def record_mic(secs: float = 2.5) -> float:
+    """RMS of what a program that records the (stand-in) microphone in Windows' shared mode receives."""
+    out = ap("record", "--device", MIC_ENDPOINT, "--secs", str(secs), timeout=secs + 40)
+    m = re.search(r"ch1_rms=([0-9.eE+-]+)", out)
+    if not m:
+        log("   recorder said:", out[:300])
+        return -1.0
+    return float(m[1])
 
-    The runner has no microphone and only one virtual cable, so the cable plays every part: what a program plays into
-    "CABLE Input" is what "CABLE Output" records. The engine reads "CABLE Output" as its microphone and plays the
-    result into "CABLE Input" again (microphone only, no headset: a valid set-up). White noise stands in for the room.
-    * noise cancelling off: the engine adds what it hears to the wire (and hears that again...): the wire gets louder
-      than the noise alone;
-    * noise cancelling on: RNNoise removes noise completely, the engine adds nothing: the wire carries the noise alone.
+
+def recording(secs: float) -> subprocess.Popen:
+    return subprocess.Popen([str(BUILD / "audioprobe.exe"), "record", "--device", MIC_ENDPOINT, "--secs", str(secs)],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+
+def rms_of(proc: subprocess.Popen) -> float:
+    out, _ = proc.communicate(timeout=120)
+    m = re.search(r"ch1_rms=([0-9.eE+-]+)", out or "")
+    return float(m[1]) if m else -1.0
+
+
+def microphone_phase(client: "EngineClient") -> None:
+    """The microphone, the effect inside Windows' audio engine, the ASM engine, and the program that records.
+
+    The runner has no headset: the CI's VB-CABLE stands in for the headset's microphone ("CABLE Output" records what a
+    program plays into "CABLE Input"; white noise from a program stands in for the room). The installed program's own
+    commands attach the effect to it, the installed audio engine is the one that processes, and a recorder in Windows'
+    shared mode - the way Discord and OBS record - is the program that listens.
+    * nothing enabled: the engine leaves the microphone alone, the recorder hears the noise as it is;
+    * noise cancelling on: RNNoise removes the noise, the recorder hears (almost) nothing, and the engine says it is
+      processing.
     The noise source is called obs64.exe: recorders are never turned down by the helper."""
-    log("== the microphone chain: microphone -> noise cancelling -> virtual microphone")
-    wire = "CABLE Input"
+    log("== the microphone: stand-in microphone -> effect in Windows' audio engine -> ASM engine -> recording program")
     state = CONFIG_DIR / "sonar_micro_state.json"
 
     def micro_state(noise_cancelling: bool) -> None:
@@ -215,25 +238,36 @@ def microphone_phase(client: "EngineClient") -> None:
         except EngineUnavailable:
             return {}
 
+    def mic_block() -> dict:
+        return status().get("microphone") or {}
+
     source = None
     try:
         source = Fake("obs64", 0.3, 0.0, noise=True)
         time.sleep(2.5)
-        alone = level(wire, 2.5)
-        check("C10.1 the noise source is heard on the cable", alone > 0.05, f"{alone:.4f}")
+        alone = record_mic(2.5)
+        check("C10.1 the noise source is heard on the stand-in microphone", alone > 0.05, f"{alone:.4f}")
+
+        done = subprocess.run([str(EXE), "--fx", "attach", "--match", MIC_ENDPOINT], capture_output=True, text=True, timeout=300)
+        log("   attach:", (done.stdout + done.stderr).strip()[-400:])
+        check("C10.1b the effect attaches to that microphone", done.returncode == 0)
+        time.sleep(2.0)
 
         micro_state(False)
-        write_config("CABLE Output", "CABLE Input", playback=False)
+        write_config(playback=False, mic=True)
         subprocess.Popen([str(EXE), "--background"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        check("C10.2 the engine runs with only a microphone configured", wait_for(lambda: bool(status().get("running")), 240, 1.0))
-        st = status()
-        log("   endpoints:", json.dumps(st.get("endpoints", {}))[:900])
-        bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
-        check("C10.3 the microphone's devices are open", not bad and set(st.get("endpoints") or {}) == {"mic:in", "mic:out"},
-              f"{sorted((st.get('endpoints') or {}))} {json.dumps(bad)[:300]} {st.get('problems')}")
-        # What a real machine's log showed: a rebuild right after another one answered AUDCLNT_E_DEVICE_IN_USE (the cable
-        # is let go of slowly) and the engine stayed dead. Ask for rebuilds in a burst, the way the GUI and the daemon do
-        # while somebody clicks through the settings, and see that every device ends up open and nothing stays failed.
+        check("C10.2 the engine runs with only the microphone configured", wait_for(lambda: bool(status().get("running")), 240, 1.0))
+
+        # a program records for a while; the engine must see the effect come alive
+        rec = recording(14.0)
+        alive = wait_for(lambda: mic_block().get("state") in ("bypass", "processing"), 25, 0.5)
+        check("C10.3 the engine and the effect find each other while a program records", alive, json.dumps(mic_block())[:300])
+        plain = rms_of(rec)
+        check("C10.4 with nothing enabled the program hears the microphone as it is", 0.8 * alone < plain < 1.2 * alone,
+              f"{plain:.4f} vs {alone:.4f} without the effect")
+
+        # What a real machine's log showed once: a rebuild right after another one left the engine dead. Ask for rebuilds
+        # in a burst, the way the GUI and the daemon do while somebody clicks through the settings.
         slow = EngineClient(CONFIG_DIR, timeout=90.0)
         t0 = time.time()
         replies = []
@@ -245,34 +279,29 @@ def microphone_phase(client: "EngineClient") -> None:
                 log("   reconfigure unavailable:", exc)
             time.sleep(0.1)
         log(f"   8 forced rebuilds in a burst took {time.time() - t0:.1f} s; replies {replies}")
-        settled = wait_for(lambda: bool(status().get("running")) and all(
-            v.get("state") == "running" for v in (status().get("endpoints") or {}).values()) and bool(status().get("endpoints")), 30, 0.5)
-        st = status()
-        bad = {k: v for k, v in (st.get("endpoints") or {}).items() if v.get("state") != "running"}
-        check("C10.3b after a burst of rebuilds every device of the engine is open again", settled and not bad,
-              f"{json.dumps(bad)[:300]} {st.get('error')}")
-        check("C10.3c and the engine did not give up (it answered every request and is running)", all(replies) and bool(st.get("running")),
-              f"{replies} {st.get('error')}")
-        time.sleep(3.0)
-        plain = level(wire, 2.5)
-        check("C10.4 without noise cancelling the microphone's sound is passed on (the cable is louder than the noise alone)",
-              plain > 1.3 * alone, f"{plain:.4f} vs {alone:.4f} alone")
+        check("C10.5 the engine did not give up after the burst (it answered every request and is running)",
+              all(replies) and bool(status().get("running")), f"{replies} {status().get('error')}")
 
         micro_state(True)
         log("   reload:", json.dumps(client.request("reload"))[:200])
-        time.sleep(5.0)
-        cancelled = level(wire, 2.5)
-        engine_in_use = (status().get("microphone") or {}).get("noise_engine")
-        check("C10.5 noise cancelling is running (RNNoise)", engine_in_use == "rnnoise", str(engine_in_use))
-        check("C10.6 and takes the noise out: the engine adds nothing to the cable any more",
-              0.85 * alone < cancelled < 1.15 * alone, f"{cancelled:.4f} vs {alone:.4f} alone")
-        log(f"   cable level: noise alone {alone:.4f}   engine without noise cancelling {plain:.4f}   with it {cancelled:.4f}")
+        time.sleep(3.0)
+        rec = recording(8.0)
+        engaged = wait_for(lambda: mic_block().get("state") == "processing", 25, 0.5)
+        info = mic_block()
+        check("C10.6 noise cancelling is running (RNNoise) and the effect is carrying the sound",
+              engaged and info.get("noise_engine") == "rnnoise", json.dumps(info)[:400])
+        time.sleep(1.0)
+        cancelled = rms_of(rec)
+        check("C10.7 and the program hears the noise taken out (a fraction of what it heard before)",
+              0 <= cancelled < 0.5 * alone, f"{cancelled:.4f} vs {alone:.4f} before")
+        log(f"   level the recording program hears: noise alone {alone:.4f}   nothing enabled {plain:.4f}   noise cancelling on {cancelled:.4f}")
     finally:
         if source is not None:
             source.kill()
         subprocess.run([str(EXE), "--quit-all"], capture_output=True, timeout=120)
         time.sleep(2.0)
-        check("C10.7 nothing of ASM is left running after the microphone test", not processes("ArctisSoundManager.exe") and not processes("asm-audiotap.exe"))
+        subprocess.run([str(EXE), "--fx", "detach"], capture_output=True, text=True, timeout=300)
+        check("C10.8 nothing of ASM is left running after the microphone test", not processes("ArctisSoundManager.exe") and not processes("asm-audiotap.exe"))
 
 
 def run_key() -> str | None:
@@ -457,8 +486,8 @@ def main() -> int:
         tasks = subprocess.run(["schtasks", "/query", "/fo", "LIST"], capture_output=True, text=True, timeout=60).stdout
         check("C9.4 Windows is back to how it was: the effect is unregistered and its scheduled tasks are gone",
               not registered and "ASM microphone effect" not in tasks, f"registered={registered}")
-        drivers = [p.name for p in (Path(os.environ.get("windir", r"C:\Windows")) / "System32" / "drivers").glob("vbaudio*")]
-        check("C9.5 and a VB-CABLE that is not ASM's (the CI fixture) was left alone", bool(drivers), str(drivers))
+        left = [line.strip() for line in ap("list").splitlines() if "CABLE" in line]
+        check("C9.5 and a VB-CABLE that is not ASM's (the CI fixture) was left alone", any("CABLE Output" in l for l in left), str(left[:3]))
 
     log("== logs of the programs")
     tail_logs()

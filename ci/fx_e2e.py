@@ -510,6 +510,23 @@ def passed(summary: dict) -> bool:
     return bool(verdict) and all(v["ok"] for v in verdict.values())
 
 
+@safe
+def scheduled_tasks() -> None:
+    """The three SYSTEM tasks the installer creates: they must be created, and a standard user must be allowed to start them."""
+    log("")
+    log("########## the scheduled tasks")
+    code = ("import sys; from arctis_sound_manager.win.fx import tasks; ok = tasks.install(sys.executable); "
+            "print('install ->', ok, tasks.last_error); print('installed ->', tasks.installed())")
+    env = {"PYTHONPATH": str(ROOT / "src")}
+    out = sh([sys.executable, "-c", code], timeout=180, lines=40, env=env)
+    ok = "install -> True" in out and "installed -> True" in out
+    sh(["schtasks", "/query", "/tn", "ASM microphone effect - attach", "/v", "/fo", "list"], lines=40)
+    ps("(New-Object -ComObject 'Schedule.Service').GetFolder('\\').GetTask('ASM microphone effect - attach').GetSecurityDescriptor(4)")
+    sh([sys.executable, "-c", "from arctis_sound_manager.win.fx import tasks; tasks.remove(); print('removed ->', not tasks.installed())"], lines=10, env=env)
+    if not ok:
+        FAILS.append("the scheduled tasks could not be created")
+
+
 def main() -> int:
     if not BUILT.is_file():
         log("build\\asm_micfx.dll is missing")
@@ -524,6 +541,7 @@ def main() -> int:
         summaries.append(case(title, extra, protect))
         if passed(summaries[-1]) and len(summaries) >= 2 and not protect:
             break
+    scheduled_tasks()
     log("")
     log("========== SUMMARY")
     for s in summaries:

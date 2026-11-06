@@ -387,7 +387,7 @@ def test_three_tasks_exist_and_a_standard_user_may_only_start_them():
         "ASM microphone effect - attach", "ASM microphone effect - detach", "ASM microphone effect - guard"]
     script = tasks._script(r"C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe")
     assert "'--fx ' + $t.a" in script and "ArctisSoundManager.exe" in script
-    assert "(A;;GRGX;;;IU)" in script and "(A;;FA;;;SY)" in script           # users: read and execute (= start); no write
+    assert "(A;;FRFX;;;IU)" in script and "(A;;FA;;;SY)" in script           # users: read and execute (= start); no write
     assert "'it''s'" in tasks._script("it's") or "it''s" in tasks._script("it's")      # a quote in the path cannot break out
 
 

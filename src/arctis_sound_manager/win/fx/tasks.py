@@ -21,7 +21,8 @@ TASK_PREFIX = "ASM microphone effect - "
 ACTIONS = ("attach", "detach", "guard")
 
 # D:  SYSTEM and administrators: everything; signed-in users (IU): read and execute, which is what starting a task needs
-_SDDL = "D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;IU)"
+# (a task is a file for Windows' permissions: FR/FX are the file rights Task Scheduler's own tasks carry)
+_SDDL = "D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;IU)"
 
 
 def task_name(action: str) -> str:
@@ -63,17 +64,26 @@ def _powershell(script: str, run: Callable = subprocess.run, timeout: float = 90
                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+#: Why the last :func:`install` failed (for the command line to print; there is no log there)
+last_error = ""
+
+
 def install(exe: str, run: Callable = subprocess.run) -> bool:
     """Create (or replace) the three tasks. Needs administrator rights."""
+    global last_error
+    last_error = ""
     if sys.platform != "win32":
+        last_error = "not Windows"
         return False
     try:
         done = _powershell(_script(exe), run)
     except (OSError, subprocess.SubprocessError) as exc:
+        last_error = f"could not run PowerShell: {exc}"
         _log.warning("could not create the scheduled tasks: %s", exc)
         return False
     if done.returncode != 0 or "ok" not in (done.stdout or ""):
-        _log.warning("creating the scheduled tasks failed: %s", (done.stderr or done.stdout or "").strip()[:400])
+        last_error = (done.stderr or done.stdout or f"exit code {done.returncode}").strip()[:600]
+        _log.warning("creating the scheduled tasks failed: %s", last_error)
         return False
     return True
 
