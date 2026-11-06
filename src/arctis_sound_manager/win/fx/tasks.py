@@ -33,6 +33,7 @@ def _script(exe: str) -> str:
     tasks = ", ".join(f"@{{n='{task_name(a)}'; a='{a}'}}" for a in ACTIONS)
     return f"""
 $ErrorActionPreference = 'Stop'
+trap {{ [Console]::Error.WriteLine('task script failed: ' + $_.Exception.Message); exit 1 }}
 $exe = '{exe.replace("'", "''")}'
 $svc = New-Object -ComObject 'Schedule.Service'
 $svc.Connect()
@@ -59,9 +60,24 @@ foreach ($t in @({tasks})) {{
 
 
 def _powershell(script: str, run: Callable = subprocess.run, timeout: float = 90) -> subprocess.CompletedProcess:
-    return run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
-               input=script, capture_output=True, text=True, timeout=timeout,
-               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    """Run a script with Windows PowerShell. It goes through a file (``-File``): reading it from the standard input
+    (``-Command -``) ran nothing at all on a real machine, without a word."""
+    import os
+    import tempfile
+    folder = tempfile.mkdtemp(prefix="asm-fx-")
+    path = os.path.join(folder, "task.ps1")
+    try:
+        with open(path, "w", encoding="utf-8-sig") as fh:                       # the byte-order mark: PowerShell 5 reads UTF-8 with it
+            fh.write(script)
+        return run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path],
+                   capture_output=True, text=True, timeout=timeout,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    finally:
+        try:
+            os.remove(path)
+            os.rmdir(folder)
+        except OSError:
+            pass
 
 
 #: Why the last :func:`install` failed (for the command line to print; there is no log there)
