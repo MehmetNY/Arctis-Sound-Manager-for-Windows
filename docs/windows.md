@@ -39,8 +39,9 @@ states for it, and runs it. Windows asks for the administrator's permission once
 the installer then ends every ASM process, replaces the files and opens the program again. Nothing is installed
 without that click.
 
-To publish an update, push a tag such as `v1.7.0` (the number must be higher than the one shown in the window's corner):
-the `windows-release` workflow builds the installer with that version and attaches it to a new release. Until the
+To publish an update, push a tag such as `v1.7.0` (the number must be higher than the one shown in the window's corner)
+or publish a release by hand on GitHub: the `windows-release` workflow builds the installer with that version and attaches
+it to the release (it creates the release from `installer/release-notes/<tag>.md` when you pushed the tag). Until the
 installer is attached, the release is not announced to anybody. The version number of builds that were not made from a
 tag is only a label; releases are what people are told about.
 

@@ -3,9 +3,14 @@ name: windows-release
 # release: ASM-Setup-<version>.exe. Programs that are already installed see the release through the GitHub API, and
 # offer the update once the installer is attached (src/arctis_sound_manager/win/updates.py).
 #
-#   1. Releases > Draft a new release > choose a tag such as v1.7.0 (target: the windows branch) > Publish release
-#   2. about ten minutes later the installer is attached to it
+# Two ways to publish, the result is the same:
+#   a. Releases > Draft a new release > choose a tag such as v1.7.0 (target: the windows branch) > Publish release
+#   b. push the tag:  git tag v1.7.0 && git push fork v1.7.0  - the release is created here, from
+#      installer/release-notes/v1.7.0.md when that file exists
+# about ten minutes later the installer is attached to it
 on:
+  push:
+    tags: ["v[0-9]*"]
   release:
     types: [published]
   workflow_dispatch:
@@ -16,11 +21,11 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: windows-release-${{ github.event.release.tag_name || inputs.tag }}
+  group: windows-release-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   installer:
-    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -28,7 +33,7 @@ jobs:
         id: rel
         shell: bash
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
         run: |
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -53,6 +58,26 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: ./ci/smoke_frozen.ps1 -AppDir build\dist\ArctisSoundManager
+      - name: Create the release (a pushed tag has none yet)
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists"
+          else
+            notes="installer/release-notes/$TAG.md"
+            title="Arctis Sound Manager for Windows ${TAG#v}"
+            if [ -f "$notes" ]; then
+              head -n 1 "$notes" | grep -q '^# ' && title="$(head -n 1 "$notes" | sed 's/^# *//')"
+              tail -n +2 "$notes" > release-body.md
+              gh release create "$TAG" --verify-tag --title "$title" --notes-file release-body.md
+            else
+              gh release create "$TAG" --verify-tag --title "$title" --generate-notes
+            fi
+          fi
       - name: Attach the installer to the release
         shell: bash
         env:
