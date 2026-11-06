@@ -153,14 +153,40 @@ static void RingRead(const float* ring, uint64_t position, float* dst, uint32_t 
 class MicFx final : public IAudioProcessingObject, public IAudioProcessingObjectRT,
                     public IAudioProcessingObjectConfiguration, public IAudioSystemEffects {
 public:
-    MicFx() : m_refs(1) { InterlockedIncrement(&g_objects); Trace("MicFx created"); }
+    // The Windows audio engine creates its effects AGGREGATED (CoCreateInstance with a controlling IUnknown, and asks for
+    // IUnknown): the interfaces of this object then answer to that outer object, while the object's own lifetime and
+    // the query for IUnknown go through the "inner" IUnknown below. Refusing the aggregation (CLASS_E_NOAGGREGATION) makes
+    // the engine drop the effect without a word, which is how the first versions of this effect never got to run.
+    explicit MicFx(IUnknown* outer)
+        : m_refs(0), m_outer(outer ? outer : static_cast<IUnknown*>(&m_inner)) {
+        m_inner.self = this;
+        InterlockedIncrement(&g_objects);
+        Trace("MicFx created%s", outer ? " (aggregated)" : "");
+    }
     ~MicFx() { InterlockedDecrement(&g_objects); Trace("MicFx destroyed"); }
 
-    // IUnknown
-    STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override {
+    struct Inner final : IUnknown {
+        MicFx* self = nullptr;
+        STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { return self->InnerQueryInterface(riid, ppv); }
+        STDMETHOD_(ULONG, AddRef)() override { return (ULONG)InterlockedIncrement(&self->m_refs); }
+        STDMETHOD_(ULONG, Release)() override {
+            MicFx* object = self;
+            LONG n = InterlockedDecrement(&object->m_refs);
+            if (n == 0) delete object;
+            return (ULONG)n;
+        }
+    };
+    Inner m_inner;
+
+    HRESULT InnerQueryInterface(REFIID riid, void** ppv) {
         if (!ppv) return E_POINTER;
         *ppv = nullptr;
-        if (riid == __uuidof(IUnknown) || riid == __uuidof(IAudioProcessingObject))
+        if (riid == __uuidof(IUnknown)) {
+            *ppv = static_cast<IUnknown*>(&m_inner);
+            m_inner.AddRef();
+            return S_OK;
+        }
+        if (riid == __uuidof(IAudioProcessingObject))
             *ppv = static_cast<IAudioProcessingObject*>(this);
         else if (riid == __uuidof(IAudioProcessingObjectRT))
             *ppv = static_cast<IAudioProcessingObjectRT*>(this);
@@ -173,15 +199,14 @@ public:
             Trace("QueryInterface refused %s", Guid(riid, g));
             return E_NOINTERFACE;
         }
-        AddRef();
+        AddRef();                                                 // an interface of the object counts on the outer object
         return S_OK;
     }
-    STDMETHOD_(ULONG, AddRef)() override { return (ULONG)InterlockedIncrement(&m_refs); }
-    STDMETHOD_(ULONG, Release)() override {
-        LONG n = InterlockedDecrement(&m_refs);
-        if (n == 0) delete this;
-        return (ULONG)n;
-    }
+
+    // IUnknown of the interfaces: everything goes to the controlling object (the object itself when not aggregated)
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppv) override { return m_outer->QueryInterface(riid, ppv); }
+    STDMETHOD_(ULONG, AddRef)() override { return m_outer->AddRef(); }
+    STDMETHOD_(ULONG, Release)() override { return m_outer->Release(); }
 
     // IAudioProcessingObject
     STDMETHOD(Reset)() override { return S_OK; }
@@ -445,6 +470,7 @@ private:
     }
 
     volatile LONG m_refs;
+    IUnknown* m_outer;
     uint32_t m_id = 0;
     uint32_t m_channels = 0;
     uint32_t m_rate = 0;
@@ -477,11 +503,11 @@ public:
         Trace("CreateInstance %s%s", Guid(riid, g), outer ? " (aggregated)" : "");
         if (!ppv) return E_POINTER;
         *ppv = nullptr;
-        if (outer) return CLASS_E_NOAGGREGATION;
-        MicFx* fx = new (std::nothrow) MicFx();
+        if (outer && riid != __uuidof(IUnknown)) return CLASS_E_NOAGGREGATION;     // the rule of aggregation
+        MicFx* fx = new (std::nothrow) MicFx(outer);
         if (!fx) return E_OUTOFMEMORY;
-        HRESULT hr = fx->QueryInterface(riid, ppv);
-        fx->Release();
+        HRESULT hr = fx->m_inner.QueryInterface(riid, ppv);                        // the first reference
+        if (FAILED(hr)) delete fx;
         Trace("CreateInstance -> %08lx", (unsigned long)hr);
         return hr;
     }
