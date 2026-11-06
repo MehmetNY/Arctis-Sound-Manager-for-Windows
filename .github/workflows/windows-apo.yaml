@@ -1,0 +1,53 @@
+name: windows-apo
+on:
+  push:
+    branches: [exp-apo, windows]
+    paths:
+      - "native/micfx/**"
+      - "src/arctis_sound_manager/win/fx/**"
+      - "ci/fx_*.py"
+      - "ci/build_native.ps1"
+      - ".github/workflows/windows-apo.yaml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: windows-apo-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apo:
+    # Does Windows' audio engine load ASM's microphone effect, and does a recording through it come back processed?
+    # See ci/fx_e2e.py. The runner has no sound card: VB-CABLE is installed as a test fixture only (it is not part of ASM).
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install numpy sounddevice
+      - name: Build the native tools (including the microphone effect)
+        shell: pwsh
+        run: ./ci/build_native.ps1 2>&1 | Tee-Object -FilePath build_native.log
+      - name: Test endpoints (VB-CABLE, test fixture) and microphone consent
+        shell: pwsh
+        timeout-minutes: 8
+        run: ./ci/setup_audio.ps1
+      - name: The effect inside the Windows audio engine
+        shell: pwsh
+        timeout-minutes: 12
+        run: python ci/fx_e2e.py
+        continue-on-error: true
+      - name: Annotate
+        if: always()
+        shell: pwsh
+        run: ./ci/annotate.ps1 -Files fx_e2e.log,build_native.log
+      - name: Publish
+        if: always()
+        shell: bash
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: ./ci/publish.sh ci-logs-apo fx_e2e.log fx_e2e.json build_native.log setup.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: micfx
+          path: build/asm_micfx.dll

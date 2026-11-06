@@ -1,0 +1,4 @@
+LIBRARY asm_micfx
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

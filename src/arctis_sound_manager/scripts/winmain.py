@@ -16,6 +16,7 @@ with a different first argument:
     --disable-autostart     remove it again (the uninstaller runs this)
     --restore-volumes       give every program the volume the audio helper turned down back (the uninstaller, crashes)
     --quit-all              stop the engine politely, end every other ASM process, restore volumes (installer / uninstaller)
+    --fx <command>          the microphone effect: attach / detach / guard / status / tasks-install / tasks-remove / run
     --version
 
 The same names work from a source checkout (``py -m arctis_sound_manager.scripts.winmain --daemon``).
@@ -127,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         return _quit_all()
     if mode == "--version":
         return _version()
+    if mode == "--fx":
+        from arctis_sound_manager.win.fx import cli
+        return cli.main(rest)
     from arctis_sound_manager.scripts import winstart      # --background, --show, and anything the tray understands
     return winstart.main(args)
 
