@@ -12,6 +12,7 @@ from arctis_sound_manager.win.audio.backend import BackendError, DeviceInfo, Fak
 from arctis_sound_manager.win.audio.control import ControlServer, EngineClient
 from arctis_sound_manager.win.audio.engine_config import EngineConfig, save_config
 from arctis_sound_manager.win.audio.host import EngineHost, subprocess_probe
+from arctis_sound_manager.win.audio.tap import tap_devices
 
 
 def dev(index, name, ins=0, outs=0):
@@ -19,9 +20,7 @@ def dev(index, name, ins=0, outs=0):
 
 
 DEVICES = [
-    dev(1, "CABLE-A Output (VB-Audio Cable A)", ins=2), dev(2, "CABLE-A Input (VB-Audio Cable A)", outs=2),
-    dev(3, "CABLE-B Output (VB-Audio Cable B)", ins=2), dev(4, "CABLE-B Input (VB-Audio Cable B)", outs=2),
-    dev(5, "CABLE-C Output (VB-Audio Cable C)", ins=2), dev(6, "CABLE-C Input (VB-Audio Cable C)", outs=2),
+    *tap_devices(),
     dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
     dev(8, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1),
     dev(9, "Speakers (Realtek(R) Audio)", outs=2),
@@ -29,9 +28,8 @@ DEVICES = [
 
 
 def good_config():
-    return EngineConfig(inputs={"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                        outputs={"headset": "Arctis Nova Pro"}, mic_input="Microphone (Arctis",
-                        mic_output="CABLE-C Input", latency="low")
+    return EngineConfig(inputs={"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "", "aux": ""},
+                        outputs={"headset": "Arctis Nova Pro"}, latency="low")
 
 
 @pytest.fixture
@@ -75,7 +73,7 @@ def test_the_probe_parses_the_other_processes_listing(monkeypatch):
 def test_without_a_configuration_the_host_idles_and_says_why(host):
     assert host.reconfigure() != []
     st = host.status()
-    assert st["running"] is False and "no headset output device is chosen" in st["problems"]
+    assert st["running"] is False and any("waiting for the headset" in p for p in st["problems"])
     assert host.engine is None and "waiting for a configuration" in st["notes"]
     json.dumps(st)
 
@@ -85,16 +83,16 @@ def test_the_assistant_can_list_devices_and_ask_for_a_guess_while_idle(host):
     listing = host.handle({"cmd": "devices"})
     assert len(listing["devices"]) == len(DEVICES) and listing["missing"] == []
     guess = host.handle({"cmd": "suggest"})["config"]
-    assert guess["outputs"]["headset"].startswith("Headset Earphone") and guess["inputs"]["game"].startswith("CABLE-A")
+    assert guess["outputs"]["headset"].startswith("Headset Earphone") and guess["inputs"]["game"] == "ASM Tap game"
 
 
 def test_the_device_list_says_which_configured_devices_cannot_be_found(host, tmp_path):
     cfg = good_config()
-    cfg.inputs["media"] = "CABLE-Q Output"
+    cfg.inputs["media"] = "Source Q"
     save_config(cfg, tmp_path)
     host.reconfigure()
     reply = host.handle({"cmd": "devices"})
-    assert reply["missing"] == ["media: no capture device matching 'CABLE-Q Output'"]
+    assert reply["missing"] == ["media: no capture device matching 'Source Q'"]
 
 
 def test_commands_sent_while_idle_are_remembered_and_replayed(host, tmp_path):
@@ -117,7 +115,7 @@ def test_a_good_configuration_starts_the_engine(host, tmp_path):
     assert host.reconfigure() == []
     st = host.status()
     assert st["running"] and st["playback"]["active"] and st["version"].startswith("win-engine")
-    assert set(st["endpoints"]) == {"in:game", "in:chat", "out:headset", "mic:in", "mic:out"}
+    assert set(st["endpoints"]) == {"in:game", "in:chat", "out:headset"}
 
 
 def test_reconfigure_rebuilds_the_engine_from_the_changed_file(host, tmp_path):
@@ -126,12 +124,11 @@ def test_reconfigure_rebuilds_the_engine_from_the_changed_file(host, tmp_path):
     first = host.engine
     host.handle({"cmd": "volume", "channel": "game", "pct": 20})
     cfg = good_config()
-    cfg.inputs["media"] = "CABLE-C Output"
-    cfg.mic_input = cfg.mic_output = ""
+    cfg.inputs["media"] = "ASM Tap media"
     save_config(cfg, tmp_path)
     reply = host.handle({"cmd": "reconfigure"})
     assert reply["ok"] and reply["problems"] == []
-    assert host.engine is not first and "in:media" in host.engine.endpoints and "mic:in" not in host.engine.endpoints
+    assert host.engine is not first and "in:media" in host.engine.endpoints
     assert host.engine.volumes["game"] == 20.0                                 # the volume survived the rebuild
     assert not any(t.is_alive() for t in first._threads)                       # the old engine really stopped
 
@@ -244,65 +241,20 @@ def test_the_benchmark_runs_the_real_graph_and_reports_load(tmp_path):
     assert "playback_worst_load" in result and "mic_load" in result
 
 
-def test_cable_check_hears_the_tone_it_sent(tmp_path):
-    backend = FakeBackend(DEVICES)
-    capture, render = DEVICES[0], DEVICES[1]
-    started = time.perf_counter()
-    sent = {"frames": 0}
-
-    def pump():
-        # the fake cable: whatever the render end is asked for arrives at the capture end
-        want = int((time.perf_counter() - started) * 48000) - sent["frames"]
-        if want >= 480:
-            want = (want // 480) * 480
-            try:
-                data = backend.stream("CABLE-A Input", "output").collect(want)
-                backend.stream("CABLE-A Output", "input").deliver(data)
-                sent["frames"] += want
-            except KeyError:
-                pass
-
-    r = engine_main.check_cable(backend, capture, render, seconds=1.0, pump=pump)
-    assert r["ok"] and r["tone_hz"] == pytest.approx(1000, abs=5) and r["level"] == pytest.approx(r["expected"], rel=0.02)
-    assert r["rate_ratio"] == pytest.approx(1.0, abs=0.1)
-
-
-def test_a_dead_cable_is_reported(tmp_path):
-    backend = FakeBackend(DEVICES)
-    r = engine_main.check_cable(backend, DEVICES[0], DEVICES[1], seconds=0.3)
-    assert r["ok"] is False and "nothing came back" in r["error"]
-
-
 def test_selftest_reports_every_stage_and_the_result(tmp_path):
     save_config(good_config(), tmp_path)
     lines = []
-    backend = FakeBackend(DEVICES)
-    t0 = time.perf_counter()
-    sent = {}
-
-    def pump():
-        for cable in ("CABLE-A", "CABLE-B"):
-            try:
-                out = backend.stream(f"{cable} Input", "output")
-                inp = backend.stream(f"{cable} Output", "input")
-            except KeyError:
-                continue
-            done = sent.get(cable, 0)
-            want = int((time.perf_counter() - t0) * 48000) - done
-            if want >= 480:
-                want = (want // 480) * 480
-                inp.deliver(out.collect(want))
-                sent[cable] = done + want
-
-    code = engine_main.selftest(tmp_path, backend, out=lines.append, seconds=0.6, pump=pump)
+    code = engine_main.selftest(tmp_path, FakeBackend(DEVICES), out=lines.append, seconds=0.6)
     text = "\n".join(lines)
-    assert "== 1. Configuration" in text and "== 2. Devices" in text and "== 3. Cable loopback" in text
-    assert "== 4. Processing speed" in text and "game" in text and "ok" in text
+    assert "== 1. Configuration" in text and "== 2. Devices" in text and "== 3. The microphone effect" in text
+    assert "== 4. Processing speed" in text and "ASM Tap game" in text or "game" in text
+    assert "CABLE" not in text and "cable" not in text.lower()
     assert code in (0, 1)                                                      # 1 only if this machine is too slow for the bench
 
 
 def test_selftest_with_an_empty_configuration_explains_what_to_do(tmp_path):
     lines = []
+    save_config(EngineConfig(mic_fx=False), tmp_path)
     code = engine_main.selftest(tmp_path, FakeBackend(DEVICES), out=lines.append, seconds=0.2)
     text = "\n".join(lines)
     assert code == 1 and "PROBLEM: no headset output device is chosen" in text and "--suggest" in text
@@ -310,11 +262,11 @@ def test_selftest_with_an_empty_configuration_explains_what_to_do(tmp_path):
 
 def test_selftest_names_missing_devices(tmp_path):
     cfg = good_config()
-    cfg.inputs["game"] = "CABLE-Z Output"
+    cfg.inputs["game"] = "Source Z"
     save_config(cfg, tmp_path)
     lines = []
     assert engine_main.selftest(tmp_path, FakeBackend(DEVICES), out=lines.append, seconds=0.2) == 1
-    assert any("MISSING: game: no capture device matching 'CABLE-Z Output'" in l for l in lines)
+    assert any("MISSING: game: no capture device matching 'Source Z'" in l for l in lines)
 
 
 def test_main_reports_a_missing_sounddevice_package(tmp_path, capsys, monkeypatch):
@@ -432,7 +384,7 @@ def test_a_first_run_writes_a_configuration_by_itself(host, tmp_path):
     cfg = load_config(tmp_path)
     assert cfg.auto and not cfg.problems()
     assert "Arctis" in cfg.outputs["headset"]
-    assert cfg.mic_input and "Arctis" in cfg.mic_input and cfg.mic_output
+    assert cfg.mic_fx and "CABLE" not in json.dumps(cfg.to_dict())             # the microphone needs no device of its own
 
 
 def test_start_sets_up_and_runs_the_engine_without_anybody_configuring(host):
@@ -450,7 +402,7 @@ def test_a_configuration_the_user_saved_is_never_touched(host, tmp_path):
 
 def test_an_automatic_configuration_is_redone_when_its_devices_are_gone(host, tmp_path):
     from arctis_sound_manager.win.audio.engine_config import load_config
-    stale = EngineConfig(inputs={"game": "CABLE-Z Output", "chat": "", "media": "", "aux": ""},
+    stale = EngineConfig(inputs={"game": "Source Z", "chat": "", "media": "", "aux": ""},
                          outputs={"headset": "Some Old Headset"}, auto=True)
     save_config(stale, tmp_path)
     assert host.autoconfigure()
@@ -469,12 +421,12 @@ def test_an_automatic_configuration_that_still_works_is_left_alone(host, tmp_pat
 def test_a_file_of_an_older_build_is_redone_even_though_the_user_saved_it(host, tmp_path):
     from arctis_sound_manager.win.audio.engine_config import config_path, load_config
     old = config_path(tmp_path)
-    old.write_text(json.dumps({"latency": "low", "inputs": {"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
+    old.write_text(json.dumps({"latency": "low", "inputs": {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "", "aux": ""},
                                "outputs": {"headset": "Arctis Nova Pro"}, "mic": {"input": "Microphone (Arctis", "output": "CABLE-C Input"}}))
     assert load_config(tmp_path).schema == 1
     assert host.autoconfigure()
     cfg = load_config(tmp_path)
-    assert cfg.schema == 2 and cfg.auto and "Arctis" in cfg.outputs["headset"]
+    assert cfg.schema == 3 and cfg.auto and "Arctis" in cfg.outputs["headset"]
     assert old.with_name(old.name + ".old-build").exists()                       # the old one is kept beside it
     stamp = old.stat().st_mtime_ns
     assert not host.autoconfigure() and old.stat().st_mtime_ns == stamp           # and only once

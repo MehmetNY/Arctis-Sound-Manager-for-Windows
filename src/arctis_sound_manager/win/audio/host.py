@@ -121,7 +121,8 @@ class EngineHost:
             legacy = path.exists() and current.schema < EngineConfig().schema
             if path.exists() and not current.auto and not legacy:
                 return False
-            if path.exists() and not legacy and not current.problems() and not self._missing(current):
+            if (path.exists() and not legacy and not current.problems() and not self._missing(current)
+                    and current.playback_enabled):
                 return False                                          # still fine as it is
             try:
                 backend = self._backend_factory(current)
@@ -130,8 +131,8 @@ class EngineHost:
                 _log.info("auto-setup: no device list yet (%s)", exc)
                 return False
             guess = suggest_config(devices)
-            if guess.problems():
-                _log.info("auto-setup: not enough devices yet (%s)", "; ".join(guess.problems()))
+            if not guess.playback_enabled:                            # no headset (or no audio helper) to build on yet
+                _log.info("auto-setup: not enough devices yet (%s)", "; ".join(guess.problems()) or "no headset")
                 return False
             guess.auto = True
             if path.exists() and guess.to_dict() == current.to_dict():
@@ -145,6 +146,14 @@ class EngineHost:
             save_config(guess, self.config_dir)
             _log.info("auto-setup: configuration written (headset %r)", guess.outputs.get("headset"))
             return True
+
+    def _problems(self) -> list[str]:
+        """What keeps the engine from starting. A computer that has never been set up waits for the headset to appear
+        (the microphone alone is a valid set-up, but only one somebody chose)."""
+        problems = self.config.problems()
+        if not problems and not config_path(self.config_dir).exists():
+            problems = ["no configuration yet: waiting for the headset to be found"]
+        return problems
 
     def _missing(self, cfg: EngineConfig) -> list[str]:
         try:
@@ -181,7 +190,7 @@ class EngineHost:
             had_engine = engine is not None
             self._stop_engine()
             self.config = wanted
-            problems = self.config.problems()
+            problems = self._problems()
             self.error = ""
             if problems:
                 _log.info("not starting the engine yet: %s", "; ".join(problems))
@@ -229,7 +238,7 @@ class EngineHost:
         engine = self.engine
         base = {"version": VERSION, "uptime": round(time.time() - self.started, 1), "config": self.config.to_dict()}
         if engine is None:
-            problems = self.config.problems()
+            problems = self._problems()
             notes = ["waiting for a configuration"] if problems else []
             if fast.is_warming():
                 notes.append("compiling the audio kernels (first start on this computer only)")

@@ -56,7 +56,7 @@ def log(*parts) -> None:
     LOG.flush()
 
 
-def sh(cmd: list[str], timeout: float = 120.0, env: dict | None = None) -> str:
+def sh(cmd: list[str], timeout: float = 120.0, env: dict | None = None, lines: int = 60) -> str:
     log("$", " ".join(cmd))
     try:
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env={**os.environ, **(env or {})})
@@ -64,7 +64,7 @@ def sh(cmd: list[str], timeout: float = 120.0, env: dict | None = None) -> str:
         log("   failed:", repr(exc))
         return ""
     out = ((done.stdout or "") + (done.stderr or "")).strip()
-    for line in out.splitlines()[:60]:
+    for line in out.splitlines()[:lines]:
         log("   " + line)
     return out
 
@@ -102,7 +102,7 @@ def diagnose(label: str) -> None:
     log(f"--- diagnosis: {label}")
     guid = ENDPOINT["guid"]
     base = rf"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\{guid}"
-    sh(["reg", "query", base + r"\FxProperties"])
+    sh(["reg", "query", base, "/s"], lines=150)
     sh(["reg", "query", r"HKLM\SOFTWARE\Classes\CLSID\{A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808}", "/s"])
     sh(["reg", "query", r"HKLM\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\{A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808}"])
     sh(["reg", "query", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio", "/v", "DisableProtectedAudioDG"])
@@ -116,6 +116,86 @@ def diagnose(label: str) -> None:
        "Get-WinEvent -FilterHashtable @{LogName=$n; StartTime=(Get-Date).AddMinutes(-3)} -ErrorAction SilentlyContinue "
        "| Where-Object { $_.ProviderName -match 'Audio|audiodg|Application Error|Windows Error' -or $_.Message -match 'audiodg|asm_micfx|APO' } "
        "| Select-Object -First 12 | ForEach-Object { $n + ' ' + $_.TimeCreated.ToString('HH:mm:ss') + ' id ' + $_.Id + ' ' + $_.ProviderName + ': ' + ($_.Message -replace '\\s+',' ').Substring(0, [Math]::Min(300, $_.Message.Length)) } }")
+
+
+COM_PROBE = r"""
+import ctypes, sys
+from ctypes import wintypes
+class GUID(ctypes.Structure):
+    _fields_ = [("a", ctypes.c_uint32), ("b", ctypes.c_uint16), ("c", ctypes.c_uint16), ("d", ctypes.c_ubyte * 8)]
+def guid(text):
+    import uuid
+    u = uuid.UUID(text)
+    g = GUID()
+    g.a, g.b, g.c = u.time_low, u.time_mid, u.time_hi_version
+    for i, byte in enumerate(u.bytes[8:]):
+        g.d[i] = byte
+    return g
+ole = ctypes.OleDLL("ole32")
+ole.CoInitializeEx(None, 0)
+iface = ctypes.c_void_p()
+try:
+    ole.CoCreateInstance.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    ole.CoCreateInstance.restype = ctypes.c_long
+    hr = ole.CoCreateInstance(ctypes.byref(guid("A998FC6D-EC01-4F8A-BB8F-B20F8F4A5808")), None, 1, ctypes.byref(guid("FD7F2B29-24D0-4B5C-B177-592C39F9CA10")), ctypes.byref(iface))
+    print("CoCreateInstance hr=0x%08x object=%s" % (hr & 0xFFFFFFFF, bool(iface.value)))
+    if iface.value:
+        vtbl = ctypes.cast(ctypes.cast(iface, ctypes.POINTER(ctypes.c_void_p))[0], ctypes.POINTER(ctypes.c_void_p))
+        release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtbl[2])
+        print("Release ->", release(iface))
+except Exception as exc:
+    print("COM probe failed:", repr(exc))
+"""
+
+
+def probe_com() -> None:
+    """Can any process create the effect through COM, with the registration the product writes? (Then a failure to load
+    it in the audio engine is about the audio engine, not the DLL or the registration.)"""
+    log("--- COM activation from an ordinary process")
+    sh([sys.executable, "-c", COM_PROBE])
+    for line in trace_text().splitlines()[:20]:
+        log("   | " + line)
+
+
+ETL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Temp" / "asmaudio.etl"
+
+
+def etw(start: bool) -> None:
+    """Windows' own trace of its audio engine around a case: it names what it does with every effect it meets."""
+    if start:
+        sh(["logman", "stop", "asmaudio", "-ets"])
+        sh(["logman", "start", "asmaudio", "-p", "{AE4BD3BE-F36F-45B6-8D21-BDD6FB832853}", "0xffffffffffffffff", "0xff",
+            "-o", str(ETL), "-ets"])
+        return
+    sh(["logman", "stop", "asmaudio", "-ets"])
+    xml = ETL.with_suffix(".xml")
+    sh(["tracerpt", str(ETL), "-o", str(xml), "-of", "XML", "-y", "-summary", str(ETL.with_suffix(".txt"))])
+    try:
+        text = xml.read_text(encoding="utf-16", errors="replace")
+    except OSError:
+        try:
+            text = xml.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            log("   (no trace: %r)" % exc)
+            return
+    import re
+    events = re.findall(r"<Event .*?</Event>", text, flags=re.S)
+    log(f"   {len(events)} audio events; the ones that mention effects:")
+    shown = 0
+    for e in events:
+        if re.search(r"APO|[Ee]ffect|A998FC6D|asm_micfx|CLSID|SFX|EFX|MFX|Fx", e):
+            flat = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e))
+            log("   * " + flat[:300])
+            shown += 1
+            if shown >= 40:
+                break
+
+
+def snapshot_audiodg() -> None:
+    """While the streams are open: what the audio engine process has loaded."""
+    log("--- audiodg while a stream is open")
+    ps("(Get-Process audiodg).Modules | ForEach-Object { $_.ModuleName } | Sort-Object | Out-String -Width 250", 60)
+    sh(["tasklist", "/m", "/fi", "imagename eq audiodg.exe"], lines=40)
 
 
 def install_dll() -> None:
@@ -194,7 +274,7 @@ def rms(samples: np.ndarray, start_s: float, end_s: float) -> float:
     return float(np.sqrt(np.mean(part ** 2))) if part.size else float("nan")
 
 
-def timeline(quick: bool = True) -> dict:
+def timeline(quick: bool = True, snapshot=None) -> dict:
     import sounddevice as sd
     mic, play = find_devices()
     log(f"devices: capture {mic} playback {play}")
@@ -235,6 +315,8 @@ def timeline(quick: bool = True) -> dict:
                     time.sleep(0.05)
                 if engine.report["mapping_seen_s"] is None:
                     log("   the effect never showed itself: cutting this case short")
+                    if snapshot is not None:
+                        snapshot()
                     result["aborted"] = True
                     break
     engine.ctl["stop"] = True
@@ -284,17 +366,24 @@ def case(title: str, extra: list[str], protect: bool) -> dict:
     log(f"########## {title}")
     fx("detach")
     trace_text()
+    deep = title.startswith(("EFX, audio service", "SFX + MFX"))                # the full diagnosis for two of the cases
+    if deep:
+        etw(True)
     fx("attach", "--match", "CABLE Output", *extra, *(() if protect else ("--no-protect",)))
     fx("status", "--match", "CABLE Output")
+    if deep:
+        probe_com()
     time.sleep(3)
     summary: dict = {"title": title, "protect": protect, "args": extra}
     try:
-        result = timeline()
+        result = timeline(snapshot=snapshot_audiodg if deep else None)
         summary.update(result)
         summary["verdict"] = check(result["levels"]) if result.get("levels") else {}
     except Exception as exc:                                              # noqa: BLE001
         log("   timeline failed:", repr(exc))
         summary["error"] = repr(exc)
+    if deep:
+        etw(False)
     diagnose(title)
     fx("detach")
     return summary

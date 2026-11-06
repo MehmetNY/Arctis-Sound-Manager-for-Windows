@@ -7,7 +7,7 @@ import pytest
 
 from arctis_sound_manager.win.audio.backend import DeviceInfo
 from arctis_sound_manager.win.audio.tap import tap_devices
-from arctis_sound_manager.win.audio.engine_config import (PROFILES, EngineConfig, load_config, resolve, save_config,
+from arctis_sound_manager.win.audio.engine_config import (PROFILES, EngineConfig, is_virtual, load_config, resolve, save_config,
                                                           suggest_config)
 
 
@@ -15,31 +15,27 @@ def dev(index, name, ins=0, outs=0, host="Windows WASAPI", default_in=False, def
     return DeviceInfo(index, name, host, ins, outs, 48000.0, default_in, default_out)
 
 
-def cable_pair(i, label, suffix):
-    """A cable's capture end ('... Output') and render end ('... Input')."""
-    return [dev(i, f"{label} Output ({suffix})", ins=2), dev(i + 1, f"{label} Input ({suffix})", outs=2)]
-
-
 # ── the file ─────────────────────────────────────────────────────────────────
 
 def test_defaults_do_nothing_until_devices_are_chosen():
     cfg = EngineConfig()
-    assert not cfg.playback_enabled and not cfg.mic_enabled
+    assert not cfg.playback_enabled and cfg.mic_enabled and cfg.schema == 3          # the microphone effect needs no device
     assert cfg.latency == "balanced" and cfg.playback_block == 960 and cfg.microphone_block == 480
     assert all(bus == "headset" for bus in cfg.routing.values()) and cfg.master_limiter
 
 
 def test_round_trip_through_json(tmp_path):
     cfg = EngineConfig(latency="low", block=1440, mic_block=960, device_latency=0.02,
-                       inputs={"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                       outputs={"headset": "Arctis", "stream": "CABLE-D Input"},
+                       inputs={"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "", "aux": ""},
+                       outputs={"headset": "Arctis", "stream": "Second headset"},
                        routing={"game": "headset", "chat": "stream", "media": "headset", "aux": "headset"},
-                       mic_input="Microphone (Arctis", mic_output="CABLE-C Input", master_limiter=False)
+                       mic_fx=False, master_limiter=False)
     path = save_config(cfg, tmp_path)
     assert path.name == "win_audio_engine.json" and not list(tmp_path.glob("*.tmp"))
     again = load_config(tmp_path)
     assert again == cfg
-    assert again.playback_block == 1440 and again.microphone_block == 960 and again.playback_enabled and again.mic_enabled
+    assert again.playback_block == 1440 and again.microphone_block == 960 and again.playback_enabled and not again.mic_enabled
+    assert json.loads(path.read_text())["mic"] == {"fx": False}
 
 
 def test_a_missing_file_gives_defaults(tmp_path):
@@ -55,16 +51,23 @@ def test_junk_never_raises_and_never_changes_the_defaults(tmp_path, junk):
 def test_bad_values_are_dropped_one_by_one():
     cfg = EngineConfig.from_dict({
         "latency": "turbo", "block": 500, "mic_block": True, "device_latency": "slow",
-        "inputs": {"game": " CABLE-A Output ", "chat": 3, "bogus": "x"},
+        "inputs": {"game": " ASM Tap game ", "chat": 3, "bogus": "x"},
         "outputs": {"headset": "Arctis", "speakers": "Realtek"},
         "routing": {"game": "nowhere", "chat": "stream"},
-        "mic": {"input": "mic", "output": None},
+        "mic": {"fx": "yes"},
         "master_limiter": "yes"})
     assert cfg.latency == "balanced" and cfg.block is None and cfg.mic_block is None and cfg.device_latency == "low"
-    assert cfg.inputs["game"] == "CABLE-A Output" and cfg.inputs["chat"] == "" and "bogus" not in cfg.inputs
+    assert cfg.inputs["game"] == "ASM Tap game" and cfg.inputs["chat"] == "" and "bogus" not in cfg.inputs
     assert cfg.outputs == {"headset": "Arctis"}
     assert cfg.routing["game"] == "headset" and cfg.routing["chat"] == "stream"
-    assert cfg.mic_input == "mic" and cfg.mic_output == "" and cfg.master_limiter is True
+    assert cfg.mic_fx is True and cfg.master_limiter is True
+
+
+def test_the_microphone_of_an_older_build_named_devices_and_is_forgotten():
+    cfg = EngineConfig.from_dict({"schema": 2, "mic": {"input": "Microphone (Arctis", "output": "CABLE-C Input"},
+                                  "inputs": {"game": "ASM Tap game"}, "outputs": {"headset": "Arctis"}})
+    assert cfg.schema == 2 and cfg.mic_fx is True and not hasattr(cfg, "mic_output")
+    assert "CABLE" not in json.dumps(cfg.to_dict())                                   # nothing of the cable survives a save
 
 
 def test_block_sizes_must_be_multiples_of_the_rnnoise_frame():
@@ -83,8 +86,9 @@ def test_profiles_trade_latency_for_safety():
 
 
 def test_problems_are_spelled_out():
-    assert EngineConfig().problems() == ["no headset output device is chosen",
-                                          "no virtual cable is assigned to any channel"]
+    assert EngineConfig().problems() == []                                      # the microphone alone is a set-up
+    assert EngineConfig(mic_fx=False).problems() == ["no headset output device is chosen",
+                                          "no source is assigned to any channel (the audio helper asm-audiotap.exe is missing)"]
     ok = EngineConfig(inputs={"game": "A", "chat": "B", "media": "", "aux": ""}, outputs={"headset": "H"})
     assert ok.problems() == []
     ok.routing["chat"] = "stream"
@@ -92,123 +96,59 @@ def test_problems_are_spelled_out():
     ok.routing["chat"] = "headset"
     ok.inputs["media"] = "A"
     assert any("two channels" in p for p in ok.problems())
-    ok.inputs["media"] = ""
-    ok.mic_input = "mic"
-    assert any("no virtual cable to send it to" in p for p in ok.problems())
 
 
-def test_playing_into_a_cable_the_engine_reads_would_loop():
-    cfg = EngineConfig(inputs={"game": "CABLE-A Output (VB-Audio Cable A)", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                       outputs={"headset": "Headset Earphone"})
-    assert cfg.problems() == []
-    cfg.mic_output = "CABLE-A Input (VB-Audio Cable A)"                       # the other end of the game channel's cable
-    assert cfg.problems() == ["the processed microphone plays into the cable that the game channel reads from, "
-                              "so the sound would loop"]
-    cfg.mic_output = "CABLE-C Input"
-    cfg.outputs["stream"] = "CABLE-B Input (VB-Audio Cable B)"
-    assert cfg.problems() == ["the stream mix plays into the cable that the chat channel reads from, so the sound would loop"]
-    cfg.outputs["stream"] = "CABLE-C Input (VB-Audio Cable C)"
-    assert cfg.problems() == ["the processed microphone and the stream mix use the same device"]
-    cfg.outputs["stream"] = "CABLE-D Input"
-    assert cfg.problems() == []
-    cfg.outputs["headset"] = "CABLE-B Input"
-    assert len(cfg.problems()) == 1 and "headset" in cfg.problems()[0]
-
-
-def test_three_things_on_one_device_are_each_reported_against_the_first():
-    cfg = EngineConfig(inputs={"game": "CABLE-A Output", "chat": "", "media": "", "aux": ""},
-                       outputs={"headset": "CABLE-D Input", "stream": "CABLE-D Input (VB-Audio Cable D)"},
-                       mic_output="CABLE-D Input")
-    assert cfg.problems() == ["the stream mix and the headset use the same device",
-                              "the processed microphone and the headset use the same device"]
-
-
-def test_unnamed_endpoints_are_not_mistaken_for_loops():
-    cfg = EngineConfig(inputs={"game": "", "chat": "", "media": "CABLE Output (VB-Audio Virtual Cable)", "aux": ""},
-                       outputs={"headset": "Headset Earphone"}, mic_output="CABLE-A Input (VB-Audio Cable A)")
-    assert cfg.problems() == []                                                # 'CABLE' is not 'CABLE-A'
-    cfg.mic_input = ""
-    cfg.outputs["stream"] = ""
-    assert cfg.problems() == []
+def test_a_microphone_alone_is_a_valid_setup():
+    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={})
+    assert cfg.mic_enabled and not cfg.playback_enabled and cfg.problems() == []
+    cfg.outputs = {"headset": "Arctis"}                                         # a headset without any channel is still unfinished
+    assert len(cfg.problems()) == 1 and "channel" in cfg.problems()[0]
+    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_fx=False)
+    assert len(cfg.problems()) == 2                                             # nothing at all: still reported
 
 
 # ── resolving names ──────────────────────────────────────────────────────────
 
 def test_resolve_finds_devices_and_lists_what_is_missing():
-    devices = [*cable_pair(1, "CABLE-A", "VB-Audio Cable A"), dev(5, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
-               dev(6, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1)]
-    cfg = EngineConfig(inputs={"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                       outputs={"headset": "Arctis", "stream": "nothing here"},
-                       mic_input="Microphone (Arctis", mic_output="CABLE-A Input")
+    devices = [*tap_devices(), dev(5, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2)]
+    cfg = EngineConfig(inputs={"game": "ASM Tap game", "chat": "CABLE-B Output", "media": "", "aux": ""},
+                       outputs={"headset": "Arctis", "stream": "nothing here"})
     r = resolve(cfg, devices)
-    assert r.inputs["game"].index == 1 and "chat" not in r.inputs
+    assert "game" in r.inputs and "chat" not in r.inputs
     assert r.outputs["headset"].index == 5 and "stream" not in r.outputs
-    assert r.mic_input.index == 6 and r.mic_output.index == 2
     assert len(r.missing) == 2 and "chat" in r.missing[0] and "stream" in r.missing[1]
-
-
-def test_resolve_ignores_a_mic_with_only_half_configured():
-    r = resolve(EngineConfig(mic_input="mic"), [dev(1, "Some Mic", ins=1)])
-    assert r.mic_input is None and r.missing == []
 
 
 # ── the first-run guess ──────────────────────────────────────────────────────
 
-def five_cables():
-    devices = [*cable_pair(10, "CABLE", "VB-Audio Virtual Cable")]
-    for i, letter in enumerate("ABCD"):
-        devices += cable_pair(20 + 2 * i, f"CABLE-{letter}", f"VB-Audio Cable {letter}")
-    devices += [dev(40, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
-                dev(41, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1, default_in=True),
-                dev(42, "Speakers (Realtek(R) Audio)", outs=2, default_out=True),
-                dev(43, "SteelSeries Sonar - Gaming (SteelSeries Sonar Virtual Audio Device)", outs=2)]
-    return devices
+def machine(extra=()):
+    return [*tap_devices(),
+            dev(40, "Kulaklıklar (Arctis Nova Pro Wireless)", outs=2),
+            dev(41, "Mikrofon (Arctis Nova Pro Wireless)", ins=1, default_in=True),
+            dev(42, "Speakers (Realtek(R) Audio)", outs=2, default_out=True),
+            dev(43, "SteelSeries Sonar - Gaming (SteelSeries Sonar Virtual Audio Device)", outs=2), *extra]
 
 
-def test_five_cables_become_four_channels_and_a_microphone_output():
-    cfg = suggest_config(five_cables())
-    assert cfg.inputs == {"game": "CABLE Output (VB-Audio Virtual Cable)", "chat": "CABLE-A Output (VB-Audio Cable A)",
-                          "media": "CABLE-B Output (VB-Audio Cable B)", "aux": "CABLE-C Output (VB-Audio Cable C)"}
-    assert cfg.mic_output == "CABLE-D Input (VB-Audio Cable D)"
-    assert cfg.outputs["headset"] == "Headset Earphone (Arctis Nova Pro Wireless)"
-    assert cfg.mic_input == "Headset Microphone (Arctis Nova Pro Wireless)"
-    assert cfg.problems() == []
+def test_the_guess_is_the_taps_four_channels_and_the_real_headset():
+    cfg = suggest_config(machine())
+    assert [cfg.inputs[c] for c in ("game", "chat", "media", "aux")] == [f"ASM Tap {c}" for c in ("game", "chat", "media", "aux")]
+    assert cfg.outputs["headset"] == "Kulaklıklar (Arctis Nova Pro Wireless)"
+    assert cfg.mic_fx and cfg.problems() == []
 
 
-def test_a_sixth_cable_takes_the_stream_mix_and_never_the_microphones_cable():
-    devices = five_cables() + cable_pair(60, "CABLE-E", "VB-Audio Cable E")
-    cfg = suggest_config(devices)
-    assert cfg.mic_output == "CABLE-D Input (VB-Audio Cable D)"                  # unchanged by the extra cable
-    assert cfg.outputs["stream"] == "CABLE-E Input (VB-Audio Cable E)"
-    assert cfg.inputs["aux"] == "CABLE-C Output (VB-Audio Cable C)"
-    assert cfg.problems() == []
+def test_a_virtual_cable_on_the_pc_is_never_used_or_offered():
+    cable = [dev(10, "CABLE Output (VB-Audio Virtual Cable)", ins=2), dev(11, "CABLE Input (VB-Audio Virtual Cable)", outs=2),
+             dev(12, "CABLE In 16ch (VB-Audio Virtual Cable)", outs=2)]
+    cfg = suggest_config(cable + machine())
+    assert cfg.outputs["headset"] == "Kulaklıklar (Arctis Nova Pro Wireless)"
+    assert "CABLE" not in json.dumps(cfg.to_dict())
+    assert suggest_config([d for d in machine() if "Arctis" not in d.name] + cable).outputs["headset"] == "Speakers (Realtek(R) Audio)"
 
 
-def test_without_a_spare_cable_no_stream_output_is_suggested():
-    for devices in (five_cables(), [d for d in five_cables() if "CABLE-D" not in d.name],
-                    [d for d in five_cables() if not any(x in d.name for x in ("CABLE-C", "CABLE-D"))]):
-        assert "stream" not in suggest_config(devices).outputs
-
-
-def test_with_fewer_cables_the_last_one_carries_the_microphone():
-    devices = [d for d in five_cables() if not any(x in d.name for x in ("CABLE-C", "CABLE-D"))]
-    cfg = suggest_config(devices)
-    assert [cfg.inputs[c] for c in ("game", "chat", "media", "aux")] == [
-        "CABLE Output (VB-Audio Virtual Cable)", "CABLE-A Output (VB-Audio Cable A)", "", ""]
-    assert cfg.mic_output == "CABLE-B Input (VB-Audio Cable B)"
-
-
-def test_one_cable_serves_a_channel_and_there_is_no_microphone_output():
-    devices = [*cable_pair(10, "CABLE", "VB-Audio Virtual Cable"), dev(40, "Speakers (Realtek(R) Audio)", outs=2, default_out=True)]
-    cfg = suggest_config(devices)
-    assert cfg.inputs["game"].startswith("CABLE Output") and cfg.inputs["chat"] == ""
-    assert cfg.mic_output == "" and cfg.mic_input == ""
-    assert cfg.outputs["headset"] == "Speakers (Realtek(R) Audio)"                # falls back to the default output
-
-
-def test_a_cable_with_only_one_end_is_not_a_cable():
-    devices = [dev(1, "CABLE Output (VB-Audio Virtual Cable)", ins=2), dev(2, "Speakers", outs=2, default_out=True)]
-    assert suggest_config(devices).inputs == EngineConfig().inputs
+def test_without_the_audio_helper_there_are_no_channels_and_the_problem_says_so():
+    cfg = suggest_config([d for d in machine() if not d.name.startswith("ASM Tap")])
+    assert cfg.inputs == EngineConfig().inputs
+    assert any("asm-audiotap.exe" in p for p in cfg.problems())
 
 
 def test_sonar_virtual_devices_are_not_mistaken_for_the_headset():
@@ -222,25 +162,14 @@ def test_no_devices_no_guess():
 
 
 def test_non_wasapi_listings_are_used_only_when_there_is_nothing_else():
-    mme = [dev(i, d.name, d.max_inputs, d.max_outputs, host="MME") for i, d in enumerate(cable_pair(1, "CABLE", "VB-Audio Virtual Cable"))]
-    assert suggest_config(mme).inputs["game"].startswith("CABLE Output")
+    mme = [dev(1, "Headphones (Arctis Nova Pro Wireless)", outs=2, host="MME")]
+    assert suggest_config(mme).outputs["headset"] == "Headphones (Arctis Nova Pro Wireless)"
+    both = [*mme, dev(2, "Kulaklıklar (Arctis Nova Pro Wireless)", outs=2)]
+    assert suggest_config(both).outputs["headset"] == "Kulaklıklar (Arctis Nova Pro Wireless)"
 
 
-def test_a_microphone_alone_is_a_valid_setup():
-    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_input="Microphone (Arctis", mic_output="CABLE Input")
-    assert cfg.mic_enabled and not cfg.playback_enabled and cfg.problems() == []
-    cfg.outputs = {"headset": "Arctis"}                                         # a headset without any channel is still unfinished
-    assert cfg.problems() == ["no virtual cable is assigned to any channel"]
-    cfg = EngineConfig(inputs={ch: "" for ch in ("game", "chat", "media", "aux")}, outputs={}, mic_input="", mic_output="")
-    assert len(cfg.problems()) == 2                                             # nothing at all: still reported
-
-
-def test_the_16ch_end_of_vb_cable_is_the_same_cable_and_never_the_preferred_end():
-    cfg = EngineConfig(outputs={"headset": "CABLE Input"}, mic_input="Microphone", mic_output="CABLE In 16ch (VB-Audio Virtual Cable)")
-    assert any("same device" in p for p in cfg.problems())                       # they are one cable: only one can be open
-    for order in (("CABLE Input", "CABLE In 16ch"), ("CABLE In 16ch", "CABLE Input")):
-        devices = [dev(1, "CABLE Output (VB-Audio Virtual Cable)", ins=2)] + [
-            dev(2 + i, f"{name} (VB-Audio Virtual Cable)", outs=2) for i, name in enumerate(order)] + [
-            dev(9, "Speakers (Arctis Nova Pro Wireless)", outs=2), dev(10, "Microphone (Arctis Nova Pro Wireless)", ins=1)] + tap_devices()
-        guess = suggest_config(devices)
-        assert guess.mic_output == "CABLE Input (VB-Audio Virtual Cable)"
+def test_virtual_means_somebody_elses_audio_software():
+    for name in ("CABLE Input (VB-Audio Virtual Cable)", "Voicemeeter Input", "SteelSeries Sonar - Chat", "Virtual Speakers"):
+        assert is_virtual(name)
+    for name in ("Kulaklıklar (Arctis Nova Pro Wireless)", "Speakers (Realtek(R) Audio)", "ASM Tap game".replace("ASM Tap", "Headset")):
+        assert not is_virtual(name)

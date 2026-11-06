@@ -12,6 +12,8 @@ from arctis_sound_manager.win.audio.backend import DeviceInfo, FakeBackend
 from arctis_sound_manager.win.audio.engine_config import EngineConfig
 from arctis_sound_manager.win.audio.graph import CHANNELS, chatmix_gain, volume_gain
 from arctis_sound_manager.win.audio.runtime import (Engine, EngineState, StateWatcher, to_channels, SnapshotBox)
+from arctis_sound_manager.win.fx import shared as fxshared
+from tests.fx_effect import Effect
 
 RATE = 48000
 CHUNK = 480
@@ -22,9 +24,7 @@ def dev(index, name, ins=0, outs=0):
 
 
 DEVICES = [
-    dev(1, "CABLE-A Output (VB-Audio Cable A)", ins=2), dev(2, "CABLE-A Input (VB-Audio Cable A)", outs=2),
-    dev(3, "CABLE-B Output (VB-Audio Cable B)", ins=2), dev(4, "CABLE-B Input (VB-Audio Cable B)", outs=2),
-    dev(5, "CABLE-C Output (VB-Audio Cable C)", ins=2), dev(6, "CABLE-C Input (VB-Audio Cable C)", outs=2),
+    dev(1, "Source A", ins=2), dev(3, "Source B", ins=2), dev(5, "Source C", ins=2),         # what the per-application tap offers
     dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
     dev(8, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1),
     dev(9, "Speakers (Realtek(R) Audio)", outs=2),
@@ -32,9 +32,8 @@ DEVICES = [
 
 
 def config(**kw):
-    cfg = EngineConfig(inputs={"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                       outputs={"headset": "Arctis Nova Pro"},
-                       mic_input="Microphone (Arctis", mic_output="CABLE-C Input", latency="low")
+    cfg = EngineConfig(inputs={"game": "Source A", "chat": "Source B", "media": "", "aux": ""},
+                       outputs={"headset": "Arctis Nova Pro"}, latency="low")
     for k, v in kw.items():
         setattr(cfg, k, v)
     return cfg
@@ -52,16 +51,24 @@ def spatial_off(path):
 class Rig:
     """Drives an Engine in simulated time: 10 ms device ticks, then one pass of the engine's loops."""
 
-    def __init__(self, tmp_path, cfg=None, devices=None, probe=None, hotplugged=()):
+    def __init__(self, tmp_path, cfg=None, devices=None, probe=None, hotplugged=(), mic_channels=1):
         self.tmp = tmp_path
         self.backend = FakeBackend(devices or DEVICES)
         self.backend.hotplugged = list(hotplugged)
         self.t = 0
+        # the microphone effect inside Windows' audio engine, as far as the engine can tell (see tests/fx_effect.py)
+        self.fx = fxshared.LocalMemory()
+        self.effect = Effect(self.fx, channels=mic_channels)
+        self.effect_on = True                                          # a program is recording from the headset's microphone
         # the ports measure the devices' pace with a clock: here the rig's own, so a loaded test machine cannot skew it
         self.engine = Engine(cfg or config(), self.backend, config_dir=tmp_path, probe=probe,
-                             port_clock=lambda: self.t / RATE)
+                             port_clock=lambda: self.t / RATE,
+                             fx_link=lambda: fxshared.FxLink(self.fx, clock=self.now_ms, pid=777))
         self.out = {"headset": [], "mic": []}
-        self.sources = {"game": None, "chat": None, "mic": None}      # callables (frame index array) -> (frames, ch)
+        self.sources = {"game": None, "chat": None, "mic": None}      # callables (frame index array, channels) -> (frames, ch)
+
+    def now_ms(self):
+        return 1000 + self.t * 1000 // RATE
 
     def start(self):
         self.engine.start(threaded=False)
@@ -73,7 +80,7 @@ class Rig:
         idx = np.arange(self.t, self.t + CHUNK)
         for _ in range(ticks):
             idx = np.arange(self.t, self.t + CHUNK)
-            for name, key in (("CABLE-A Output", "game"), ("CABLE-B Output", "chat"), ("Microphone", "mic")):
+            for name, key in (("Source A", "game"), ("Source B", "chat")):
                 try:
                     s = self.stream(name, "input")
                 except KeyError:
@@ -82,15 +89,23 @@ class Rig:
                     continue
                 src = self.sources[key]
                 s.deliver(src(idx, s.channels) if src else np.zeros((CHANNELS_FRAMES, s.channels)))
-            for name, key in (("Arctis", "headset"), ("CABLE-C Input", "mic")):
-                try:
-                    s = self.stream(name, "output")
-                except KeyError:
-                    continue
-                if s.running:
-                    self.out[key].append(s.collect(CHUNK))
+            try:
+                s = self.stream("Arctis", "output")
+            except KeyError:
+                s = None
+            if s is not None and s.running:
+                self.out["headset"].append(s.collect(CHUNK))
+            if self.effect_on:                                         # what Windows' audio engine does with the microphone
+                self.effect.put("apo_tick_ms", self.now_ms())
+                src = self.sources["mic"]
+                self.effect.push(src(idx, self.effect.channels) if src else np.zeros((CHUNK, self.effect.channels), np.float32))
             self.engine.playback.step()
-            self.engine.mic.step()
+            if self.engine.config.mic_enabled:
+                self.engine.mic.step()
+            if self.effect_on:
+                pending = self.engine.mic.link.pending() if self.engine.mic.link is not None else 0
+                if pending:
+                    self.out["mic"].append(self.effect.take(pending))
             self.t += CHUNK
 
     def heard(self, seconds=0.5, key="headset"):
@@ -120,13 +135,12 @@ def test_start_opens_the_devices_and_fills_the_headset_before_the_first_callback
     rig.start()
     status = rig.engine.status()
     states = {k: v["state"] for k, v in status["endpoints"].items()}
-    assert states == {"in:game": "running", "in:chat": "running", "out:headset": "running", "mic:in": "running",
-                      "mic:out": "running"}
-    assert status["endpoints"]["in:game"]["channels"] == 2 and status["endpoints"]["mic:in"]["channels"] == 1
+    assert states == {"in:game": "running", "in:chat": "running", "out:headset": "running"}     # no device for the microphone
+    assert status["endpoints"]["in:game"]["channels"] == 2
     headset = rig.engine.playback.master()
-    assert headset.fill >= headset.target and rig.engine.mic.master().fill >= rig.engine.mic.master().target
-    assert status["running"] and status["playback"]["active"] and status["microphone"]["active"]
-    assert status["problems"] == []
+    assert headset.fill >= headset.target and rig.engine.mic.master() is None
+    assert status["running"] and status["playback"]["active"] and status["microphone"]["state"] == "waiting for the effect"
+    assert not status["microphone"]["active"] and status["problems"] == []
 
 
 def test_a_tone_comes_out_of_the_headset_unchanged_when_nothing_is_switched_on(tmp_path):
@@ -325,25 +339,119 @@ def test_enabling_spatial_audio_from_the_files_virtualises_the_game_channel(tmp_
 
 # ── microphone ───────────────────────────────────────────────────────────────
 
-def test_the_microphone_goes_through_the_mic_chain_to_the_virtual_cable(tmp_path):
-    write(tmp_path, "sonar_micro_state.json", {"bands": [], "basses_db": 0, "voix_db": 6.0, "aigus_db": 0, "boost_db": 0})
+def micro_state(tmp_path, voix_db=6.0, **kw):
+    write(tmp_path, "sonar_micro_state.json", {"bands": [], "basses_db": 0, "voix_db": voix_db, "aigus_db": 0, "boost_db": 0, **kw})
+
+
+def test_the_microphone_goes_through_the_mic_chain_inside_windows_audio_engine(tmp_path):
+    micro_state(tmp_path)
     rig = Rig(tmp_path)
     rig.sources["mic"] = tone(2000, 0.05)
     rig.start()
     rig.tick(150)
     y = rig.heard(0.5, "mic")
-    assert y.shape[1] == 2 and np.allclose(y[:, 0], y[:, 1])
+    assert y.shape[1] == 1                                                      # the effect hands the engine the headset's own format
     gain_db = 20 * np.log10(level(y[:, 0]) / (0.05 / np.sqrt(2)))
     assert gain_db == pytest.approx(6.0, abs=0.3)                              # the "Voix" macro, on the real mic path
-    assert rig.engine.status()["endpoints"]["mic:out"]["underruns"] == 0
+    status = rig.engine.status()["microphone"]
+    assert status["state"] == "processing" and status["active"] and status["effect"]["engine_owns"]
+    assert status["effect"]["apo_alive"] and status["errors"] == 0
+    assert set(rig.engine.status()["endpoints"]) == {"in:game", "in:chat", "out:headset"}   # no cable endpoint, ever
 
 
-def test_without_a_microphone_configured_there_is_no_mic_pipeline(tmp_path):
-    cfg = config(mic_input="", mic_output="")
-    rig = Rig(tmp_path, cfg)
+def test_a_stereo_microphone_is_averaged_and_handed_back_in_the_same_shape(tmp_path):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path, mic_channels=2)
+    left = tone(2000, 0.1)
+    rig.sources["mic"] = lambda idx, ch: np.stack([left(idx, 1)[:, 0], np.zeros(len(idx))], axis=1).astype(np.float32)
     rig.start()
-    assert "mic:in" not in rig.engine.status()["endpoints"] and not rig.engine.status()["microphone"]["active"]
+    rig.tick(150)
+    y = rig.heard(0.3, "mic")
+    assert y.shape[1] == 2 and np.allclose(y[:, 0], y[:, 1])
+    gain_db = 20 * np.log10(level(y[:, 0]) / (0.05 / np.sqrt(2)))               # (0.1 + 0) / 2, then the 6 dB of "Voix"
+    assert gain_db == pytest.approx(6.0, abs=0.3)
+
+
+def test_with_nothing_switched_on_the_effect_is_told_to_pass_the_microphone_on_untouched(tmp_path):
+    rig = Rig(tmp_path)                                                         # no sonar_micro_state.json: every stage off
+    rig.sources["mic"] = tone(2000, 0.05)
+    rig.start()
+    rig.tick(40)
+    st = rig.engine.status()["microphone"]
+    assert st["state"] == "bypass" and not st["wants"] and rig.heard(0.2, "mic").size == 0
+    assert rig.effect.get("engine_wants") == 0 and rig.effect.get("engine_pid") == 777       # alive, and saying "leave it"
+    micro_state(tmp_path)                                                       # a stage is switched on: the engine takes over
+    rig.engine.reload()
+    rig.tick(100)
+    assert rig.engine.status()["microphone"]["state"] == "processing" and rig.heard(0.2, "mic").size
+
+
+def test_a_microphone_that_nobody_records_costs_nothing_and_shows_idle(tmp_path):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path)
+    rig.effect_on = False                                                       # no program is recording: the effect is not running
+    rig.effect.put("apo_pid", 0)
+    rig.start()
+    rig.tick(20)
+    st = rig.engine.status()["microphone"]
+    assert st["state"] == "idle" and not st["active"] and rig.out["mic"] == []
+    assert rig.effect.get("engine_pid") == 777 and rig.effect.get("engine_tick_ms") > 0     # but it shows it is there
+
+
+def test_the_effect_not_being_loaded_is_waited_for_not_an_error(tmp_path):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path)
+    rig.engine.mic._open_link = lambda: None                                    # Windows has not loaded it (yet)
+    rig.start()
+    rig.tick(30)
+    st = rig.engine.status()["microphone"]
+    assert st["state"] == "waiting for the effect" and rig.engine.status()["problems"] == []
+    assert rig.engine.status()["playback"]["active"]                            # and the headset side does not care
+
+
+def test_stopping_the_engine_gives_the_microphone_back_untouched(tmp_path):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path)
+    rig.sources["mic"] = tone(2000, 0.05)
+    rig.start()
+    rig.tick(60)
+    assert rig.effect.get("engine_pid") == 777
+    rig.engine.stop()
+    assert rig.effect.get("engine_pid") == 0 and rig.effect.get("engine_wants") == 0
+
+
+def test_a_second_engine_does_not_take_the_effect_from_a_living_one(tmp_path):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path)
+    rig.start()
+    rig.tick(20)
+    other = fxshared.FxLink(rig.fx, clock=rig.now_ms, pid=888)
+    assert not other.claim()                                                    # the first one is alive
+    rig.t += RATE * 5                                                           # ... and five seconds without a sign of life
+    assert other.claim() and other.owns()
+
+
+def test_the_mic_chain_failing_never_silences_the_voice(tmp_path, monkeypatch):
+    micro_state(tmp_path)
+    rig = Rig(tmp_path)
+    rig.sources["mic"] = tone(2000, 0.05)
+    rig.start()
+    rig.tick(30)
+
+    def boom(block):
+        raise RuntimeError("a bug in a filter")
+    monkeypatch.setattr(rig.engine.graph, "process_mic", boom)
+    rig.tick(30)
+    y = rig.heard(0.2, "mic")
+    assert level(y[:, 0]) == pytest.approx(0.05 / np.sqrt(2), rel=0.05)         # the raw voice went on
+    assert rig.engine.mic.failed and rig.engine.status()["microphone"]["errors"] > 0
+
+
+def test_without_the_microphone_effect_wanted_it_is_left_alone(tmp_path):
+    rig = Rig(tmp_path, config(mic_fx=False))
+    rig.start()
     rig.tick(10)
+    assert rig.engine.mic.link is None and rig.effect.get("engine_pid") == 0 and rig.out["mic"] == []
 
 
 # ── devices coming and going ─────────────────────────────────────────────────
@@ -360,7 +468,7 @@ def test_a_device_that_stops_calling_back_is_closed_and_reopened(tmp_path):
     rig.tick(10)
     e.supervise(now + 1)                                                     # still alive
     assert e.endpoints["in:game"].state == "running"
-    rig.stream("CABLE-A Output", "input").running = False                    # the device goes quiet
+    rig.stream("Source A", "input").running = False                    # the device goes quiet
     for step in range(3):
         rig.tick(5)
         e.supervise(now + 2 + step)
@@ -460,7 +568,7 @@ def test_looks_for_a_missing_device_get_rarer_and_stop_at_two_minutes(tmp_path):
 def test_the_back_off_starts_over_once_everything_runs(tmp_path):
     shown = {"probe": []}
     probes = []
-    rig, headset = _absent_headset_rig(tmp_path, config(mic_input="", mic_output=""),
+    rig, headset = _absent_headset_rig(tmp_path, config(mic_fx=False),
                                        probe=lambda: probes.append(1) or shown["probe"])
     rig.start()
     e = rig.engine
@@ -546,21 +654,20 @@ def test_an_index_query_is_never_answered_by_the_name_listing(tmp_path):
     assert slow == [1] and quick == []
 
 
-def test_without_a_probe_a_blind_rebuild_never_interrupts_sound_someone_hears(tmp_path):
+def test_without_a_probe_a_blind_rebuild_never_interrupts_the_headset_someone_hears(tmp_path):
     spatial_off(tmp_path)
-    headset = dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2)
-    rig = Rig(tmp_path, devices=[d for d in DEVICES if "Arctis Nova Pro" not in d.name or d.max_inputs],
-              hotplugged=[headset])                                            # headset off, the mic cable is running
+    rig = Rig(tmp_path, hotplugged=[dev(11, "Second Source", ins=2)])
     rig.start()
+    assert rig.engine.endpoints["out:headset"].state == "running"
     rig.engine.supervise(100.0)
     rig.engine.supervise(200.0)
-    assert rig.backend.refreshes == 0 and rig.engine.endpoints["out:headset"].state == "waiting"
+    assert rig.backend.refreshes == 0                                           # the headset plays: nothing is rebuilt blindly
 
 
 def test_without_a_probe_and_with_nothing_audible_a_rebuild_looks_for_the_headset(tmp_path):
     spatial_off(tmp_path)
     headset = dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2)
-    rig = Rig(tmp_path, config(mic_input="", mic_output=""),
+    rig = Rig(tmp_path, config(mic_fx=False),
               devices=[d for d in DEVICES if "Arctis Nova Pro" not in d.name or d.max_inputs], hotplugged=[headset])
     rig.start()
     rig.engine.supervise(100.0)
@@ -590,15 +697,15 @@ def test_a_stream_that_will_not_start_does_not_take_the_engine_down_and_is_retri
     """The log of a real machine: starting right after another engine let go of the devices answered
     AUDCLNT_E_DEVICE_IN_USE, the exception left the whole engine dead and its other streams open."""
     rig = Rig(tmp_path)
-    rig.backend.fail_start = {"CABLE-C Input (VB-Audio Cable C)": 1}          # the microphone's cable is still held
+    rig.backend.fail_start = {"Source B": 1}                                  # a device that is still held by the engine that ended
     rig.start()                                                               # must not raise
     e = rig.engine
     assert e.running
     states = {k: ep.state for k, ep in e.endpoints.items()}
-    assert states["mic:out"] == "waiting" and "could not start" in e.endpoints["mic:out"].error
-    assert states["out:headset"] == "running" and states["in:game"] == "running" and states["mic:in"] == "running"
-    ep = e.endpoints["mic:out"]
-    assert rig.backend.stream("CABLE-C Input", "output").closed                # the half-open stream was let go
+    assert states["in:chat"] == "waiting" and "could not start" in e.endpoints["in:chat"].error
+    assert states["out:headset"] == "running" and states["in:game"] == "running"
+    ep = e.endpoints["in:chat"]
+    assert rig.backend.stream("Source B", "input").closed                      # the half-open stream was let go
     e.supervise(ep.next_try - 0.01)
     assert ep.state == "waiting"                                              # not before the pause is over
     e.supervise(ep.next_try + 0.01)
@@ -731,14 +838,16 @@ def test_a_stereo_headset_with_more_channels_gets_silence_on_the_extras(tmp_path
 
 def test_the_threaded_engine_runs_against_devices_on_a_wall_clock_and_stops_cleanly(tmp_path):
     spatial_off(tmp_path)
+    micro_state(tmp_path)
     backend = FakeBackend(DEVICES)
-    engine = Engine(config(), backend, config_dir=tmp_path)
+    memory = fxshared.LocalMemory()
+    effect = Effect(memory, channels=1)
+    effect.put("apo_tick_ms", fxshared.tick_ms())
+    engine = Engine(config(), backend, config_dir=tmp_path, fx_link=lambda: fxshared.FxLink(memory))
     engine.start(threaded=True)
-    game = backend.stream("CABLE-A Output", "input")
+    game = backend.stream("Source A", "input")
     headset = backend.stream("Arctis", "output")
-    mic_in = backend.stream("Microphone", "input")
-    cable = backend.stream("CABLE-C Input", "output")
-    heard, stop = [], threading.Event()
+    heard, voice, stop = [], [], threading.Event()
     sin = tone(1000, 0.1)
 
     def clock():
@@ -746,9 +855,13 @@ def test_the_threaded_engine_runs_against_devices_on_a_wall_clock_and_stops_clea
         while not stop.is_set():
             idx = np.arange(k * CHUNK, (k + 1) * CHUNK)
             game.deliver(sin(idx, game.channels))
-            mic_in.deliver(sin(idx, mic_in.channels))
+            effect.put("apo_tick_ms", fxshared.tick_ms())                    # Windows' audio engine hands over the microphone
+            effect.push(tone(2000, 0.05)(idx, 1))
+            memory.signal()
             heard.append(headset.collect(CHUNK))
-            cable.collect(CHUNK)
+            pending = int(effect.counter(fxshared.OFF_OUT_WRITE) - effect.counter(fxshared.OFF_OUT_READ))
+            if pending:
+                voice.append(effect.take(pending))
             k += 1
             wait = t + k * CHUNK / RATE - time.perf_counter()
             if wait > 0:
@@ -764,20 +877,12 @@ def test_the_threaded_engine_runs_against_devices_on_a_wall_clock_and_stops_clea
     assert time.perf_counter() - began < 3.0
     y = np.concatenate(heard)[-RATE // 2:]
     assert level(y[:, 0]) > 0.05                                             # the tone really went through the threads
+    v = np.concatenate(voice)[-RATE // 2:]
+    assert 20 * np.log10(level(v[:, 0]) / (0.05 / np.sqrt(2))) == pytest.approx(6.0, abs=0.5)    # and the voice came back processed
     st = engine.status()
     assert st["playback"]["blocks"] > 30 and st["playback"]["errors"] == 0
     assert not any(t.is_alive() for t in engine._threads)
-
-
-def test_a_stereo_microphone_is_averaged_to_mono(tmp_path):
-    devices = [dev(d.index, d.name, ins=2) if "Microphone" in d.name else d for d in DEVICES]
-    rig = Rig(tmp_path, devices=devices)
-    rig.backend.min_channels = {"Headset Microphone (Arctis Nova Pro Wireless)": 2}      # a mic that only opens as stereo
-    rig.start()
-    assert rig.engine.status()["endpoints"]["mic:in"]["channels"] == 2
-    rig.sources["mic"] = lambda idx, ch: np.stack([np.full(len(idx), 0.2), np.zeros(len(idx))], axis=1).astype(np.float32)
-    rig.tick(150)
-    assert level(rig.heard(0.3, "mic")[:, 0]) == pytest.approx(0.1, abs=0.005)       # (0.2 + 0) / 2, not 0.2 and not 0
+    assert effect.get("engine_pid") == 0                                     # let go of the effect on the way out
 
 
 def test_state_present_at_start_is_applied_before_the_first_block_is_made(tmp_path):
@@ -829,7 +934,7 @@ def test_every_port_uses_the_engines_port_clock(tmp_path):
     engine = Engine(config(), FakeBackend(DEVICES), config_dir=tmp_path, port_clock=fake_clock)
     engine.start(threaded=False)
     ports = [ep.port for ep in engine.endpoints.values()] + [engine.mic_tap]
-    assert len(ports) >= 5 and all(p is not None and p._clock is fake_clock for p in ports)
+    assert len(ports) >= 4 and all(p is not None and p._clock is fake_clock for p in ports)
     engine.stop()
     assert Engine(config(), FakeBackend(DEVICES), config_dir=tmp_path)._port_clock is time.perf_counter
 
@@ -848,7 +953,7 @@ def test_the_preset_wins_over_the_files_at_start(tmp_path):
 
 
 def test_a_microphone_alone_runs_without_any_playback(tmp_path):
-    write(tmp_path, "sonar_micro_state.json", {"bands": [], "basses_db": 0, "voix_db": 6.0, "aigus_db": 0, "boost_db": 0})
+    micro_state(tmp_path)
     cfg = config(inputs={"game": "", "chat": "", "media": "", "aux": ""}, outputs={})
     assert cfg.problems() == []
     rig = Rig(tmp_path, cfg)
@@ -856,6 +961,6 @@ def test_a_microphone_alone_runs_without_any_playback(tmp_path):
     rig.start()
     rig.tick(150)
     status = rig.engine.status()
-    assert set(status["endpoints"]) == {"mic:in", "mic:out"} and all(e["state"] == "running" for e in status["endpoints"].values())
+    assert status["endpoints"] == {} and status["microphone"]["state"] == "processing"
     y = rig.heard(0.5, "mic")
     assert 20 * np.log10(level(y[:, 0]) / (0.05 / np.sqrt(2))) == pytest.approx(6.0, abs=0.3)
