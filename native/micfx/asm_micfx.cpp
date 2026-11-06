@@ -192,7 +192,7 @@ public:
     // IAudioProcessingObjectConfiguration
     STDMETHOD(LockForProcess)(UINT32 numIn, APO_CONNECTION_DESCRIPTOR** in, UINT32 numOut,
                               APO_CONNECTION_DESCRIPTOR** out) override {
-        if (numIn != 1 || numOut != 1 || !in || !out || !in[0] || !in[0]->pFormat) return APOERR_INVALID_CONNECTION_COUNT;
+        if (numIn != 1 || numOut != 1 || !in || !out || !in[0] || !in[0]->pFormat) return E_INVALIDARG;
         UNCOMPRESSEDAUDIOFORMAT f = {};
         if (FAILED(in[0]->pFormat->GetUncompressedAudioFormat(&f))) return E_FAIL;
         m_channels = f.dwSamplesPerFrame;
