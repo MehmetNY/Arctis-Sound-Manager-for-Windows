@@ -243,15 +243,15 @@ def microphone_phase(client: "EngineClient") -> None:
 
     source = None
     try:
+        # Attaching restarts Windows' audio service, which ends every program's sound: the noise source starts after it.
+        done = subprocess.run([str(EXE), "--fx", "attach", "--match", MIC_ENDPOINT], capture_output=True, text=True, timeout=300)
+        log("   attach:", (done.stdout + done.stderr).strip()[-400:])
+        check("C10.1 the effect attaches to that microphone", done.returncode == 0)
+        time.sleep(3.0)
         source = Fake("obs64", 0.3, 0.0, noise=True)
         time.sleep(2.5)
         alone = record_mic(2.5)
-        check("C10.1 the noise source is heard on the stand-in microphone", alone > 0.05, f"{alone:.4f}")
-
-        done = subprocess.run([str(EXE), "--fx", "attach", "--match", MIC_ENDPOINT], capture_output=True, text=True, timeout=300)
-        log("   attach:", (done.stdout + done.stderr).strip()[-400:])
-        check("C10.1b the effect attaches to that microphone", done.returncode == 0)
-        time.sleep(2.0)
+        check("C10.1b with the effect attached and no engine running, a program hears the microphone as it is", alone > 0.05, f"{alone:.4f}")
 
         micro_state(False)
         write_config(playback=False, mic=True)
