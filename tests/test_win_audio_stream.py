@@ -12,6 +12,8 @@ from arctis_sound_manager.win.audio.engine_config import EngineConfig
 from arctis_sound_manager.win.audio.graph import (BLOCK, EngineGraph, StreamMix, to_stereo, volume_gain)
 from arctis_sound_manager.win.audio.params import StreamSpec, load_stream_spec
 from arctis_sound_manager.win.audio.runtime import Engine
+from arctis_sound_manager.win.fx import shared as fxshared
+from tests.fx_effect import Effect
 
 RATE = 48000
 CHUNK = 480
@@ -254,20 +256,16 @@ def dev(index, name, ins=0, outs=0):
 
 
 DEVICES = [
-    dev(1, "CABLE-A Output (VB-Audio Cable A)", ins=2), dev(2, "CABLE-A Input (VB-Audio Cable A)", outs=2),
-    dev(3, "CABLE-B Output (VB-Audio Cable B)", ins=2), dev(4, "CABLE-B Input (VB-Audio Cable B)", outs=2),
-    dev(5, "CABLE-C Output (VB-Audio Cable C)", ins=2), dev(6, "CABLE-C Input (VB-Audio Cable C)", outs=2),
-    dev(7, "CABLE-D Output (VB-Audio Cable D)", ins=2), dev(8, "CABLE-D Input (VB-Audio Cable D)", outs=2),
+    dev(1, "Source A", ins=2), dev(3, "Source B", ins=2),
     dev(9, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
-    dev(10, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1),
+    dev(10, "Second Interface (USB DAC)", outs=2),
 ]
 
 
 def config(stream=True, mic=True):
-    return EngineConfig(inputs={"game": "CABLE-A Output", "chat": "CABLE-B Output", "media": "", "aux": ""},
-                        outputs={"headset": "Arctis Nova Pro", **({"stream": "CABLE-D Input"} if stream else {})},
-                        mic_input="Microphone (Arctis" if mic else "", mic_output="CABLE-C Input" if mic else "",
-                        latency="low")
+    return EngineConfig(inputs={"game": "Source A", "chat": "Source B", "media": "", "aux": ""},
+                        outputs={"headset": "Arctis Nova Pro", **({"stream": "Second Interface"} if stream else {})},
+                        mic_fx=mic, latency="low")
 
 
 def tone(freq, amp):
@@ -288,8 +286,12 @@ class Rig:
         self.t = 0
         self.phase = phase                       # how late in a device chunk the engine runs (0 = right away)
         self.now = 0.0
+        # the microphone arrives through the effect inside Windows' audio engine (see tests/fx_effect.py)
+        self.fx = fxshared.LocalMemory()
+        self.effect = Effect(self.fx, channels=1)
         # the ports measure the devices' pace with a clock: here the rig's own, so a loaded test machine cannot skew it
-        self.engine = Engine(cfg or config(), self.backend, config_dir=tmp_path, port_clock=lambda: self.now)
+        self.engine = Engine(cfg or config(), self.backend, config_dir=tmp_path, port_clock=lambda: self.now,
+                             fx_link=lambda: fxshared.FxLink(self.fx, clock=lambda: 1000 + self.t * 1000 // RATE, pid=777))
         self.heard = {"headset": [], "stream": [], "mic": []}
         self.sources = {"game": None, "chat": None, "mic": None}
 
@@ -300,7 +302,7 @@ class Rig:
         for _ in range(ticks):
             idx = np.arange(self.t, self.t + CHUNK)
             self.now = self.t / RATE
-            for name, key in (("CABLE-A Output", "game"), ("CABLE-B Output", "chat"), ("Microphone", "mic")):
+            for name, key in (("Source A", "game"), ("Source B", "chat")):
                 try:
                     s = self.backend.stream(name, "input")
                 except KeyError:
@@ -308,7 +310,10 @@ class Rig:
                 src = self.sources[key]
                 if s.running:
                     s.deliver(src(idx, s.channels) if src else np.zeros((CHUNK, s.channels)))
-            for name, key in (("Arctis", "headset"), ("CABLE-C Input", "mic"), ("CABLE-D Input", "stream")):
+            mic = self.sources["mic"]
+            self.effect.put("apo_tick_ms", 1000 + self.t * 1000 // RATE)
+            self.effect.push(mic(idx, 1) if mic else np.zeros((CHUNK, 1), np.float32))
+            for name, key in (("Arctis", "headset"), ("Second Interface", "stream")):
                 try:
                     s = self.backend.stream(name, "output")
                 except KeyError:
@@ -317,7 +322,11 @@ class Rig:
                     self.heard[key].append(s.collect(CHUNK))
             self.now = (self.t + self.phase * CHUNK) / RATE
             self.engine.playback.step()
-            self.engine.mic.step()
+            if self.engine.config.mic_enabled:
+                self.engine.mic.step()
+                link = self.engine.mic.link
+                if link is not None and link.pending():
+                    self.effect.take(link.pending())                    # what programs recording the microphone would get
             self.t += CHUNK
 
     def last(self, key, seconds=0.4):
@@ -325,7 +334,7 @@ class Rig:
         return data[-int(seconds * RATE):]
 
 
-def test_with_streamer_mode_off_the_stream_cable_gets_silence(tmp_path):
+def test_with_streamer_mode_off_the_stream_output_gets_silence(tmp_path):
     write_state(tmp_path, False)
     rig = Rig(tmp_path)
     rig.sources["game"] = tone(1000, 0.2)
@@ -336,7 +345,7 @@ def test_with_streamer_mode_off_the_stream_cable_gets_silence(tmp_path):
 
 
 @pytest.mark.parametrize("phase", [0.0, 0.5, 1.0])
-def test_the_stream_cable_carries_game_and_microphone_while_the_headset_hears_only_the_game(tmp_path, phase):
+def test_the_stream_output_carries_game_and_microphone_while_the_headset_hears_only_the_game(tmp_path, phase):
     """``phase``: whether the devices' callbacks fall right after the engine's block or right before the next one."""
     write_state(tmp_path, True)
     rig = Rig(tmp_path, phase=phase)
@@ -425,7 +434,7 @@ def test_the_microphone_tap_stays_in_step_with_the_headset_clock(tmp_path):
     assert abs(tap.level - tap.target) < 2 * rig.engine.block + 480
 
 
-def test_streamer_mode_without_a_stream_cable_says_so_and_costs_nothing(tmp_path):
+def test_streamer_mode_without_a_stream_output_says_so_and_costs_nothing(tmp_path):
     write_state(tmp_path, True)
     rig = Rig(tmp_path, config(stream=False))
     rig.sources["game"] = tone(1000, 0.2)
@@ -448,7 +457,7 @@ def test_the_stream_mix_works_without_a_microphone(tmp_path):
     assert level(rig.last("stream")) == pytest.approx(0.2 / np.sqrt(2), rel=0.03)
 
 
-def test_the_stream_cable_is_a_slave_output_with_its_own_clock(tmp_path):
+def test_the_stream_output_is_a_slave_output_with_its_own_clock(tmp_path):
     write_state(tmp_path, True)
     rig = Rig(tmp_path)
     rig.start()
@@ -469,7 +478,7 @@ def test_the_tap_holds_a_microphone_block_plus_a_playback_block_in_every_profile
     assert tap.target >= engine.mic_block + engine.block
 
 
-def test_a_stream_cable_that_is_not_there_never_drains_the_microphone_tap(tmp_path):
+def test_a_stream_output_that_is_not_there_never_drains_the_microphone_tap(tmp_path):
     write_state(tmp_path, True)
     rig = Rig(tmp_path, config(stream=False))
     rig.sources["mic"] = tone(3000, 0.1)
@@ -478,11 +487,11 @@ def test_a_stream_cable_that_is_not_there_never_drains_the_microphone_tap(tmp_pa
     assert rig.engine.mic_tap.callbacks > 50 and not rig.engine.mic_tap.primed          # nobody pulled from it
 
 
-def test_a_stream_cable_that_turns_up_late_starts_from_the_microphone_as_it_is_now(tmp_path):
-    """While the cable was missing the tap filled up (up to a second of old microphone). It must not be played."""
+def test_a_stream_output_that_turns_up_late_starts_from_the_microphone_as_it_is_now(tmp_path):
+    """While the output was missing the tap filled up (up to a second of old microphone). It must not be played."""
     write_state(tmp_path, True)
     rig = Rig(tmp_path)
-    rig.backend.fail_open.add("CABLE-D Input (VB-Audio Cable D)")
+    rig.backend.fail_open.add("Second Interface (USB DAC)")
     rig.sources["mic"] = tone(3000, 0.1)
     rig.start()
     rig.tick(150)

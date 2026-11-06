@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 
 from arctis_sound_manager.win.audio.control import EngineClient
-from arctis_sound_manager.win.audio.engine_config import load_config
+from arctis_sound_manager.win.audio.engine_config import config_problems
 from arctis_sound_manager.win.audio.launcher import start_engine, stop_engine
 
 _started_by_us = False
@@ -38,7 +38,7 @@ def start_engine_for_daemon(logger: logging.Logger, config_dir: Path | None = No
     if client.available():
         logger.info("Windows: an audio engine is already running; leaving it as it is.")
         return True
-    problems = load_config(config_dir).problems()
+    problems = config_problems(config_dir)
     if problems:
         logger.info("Windows: the audio engine sets itself up when the devices are there (%s).", "; ".join(problems))
     up = start_engine(config_dir, wait=0.0, client=client, **kw)       # do not hold the daemon's start-up

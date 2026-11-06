@@ -414,7 +414,8 @@ def dev(index, name, ins=0, outs=0):
 
 
 DEVICES = [
-    dev(1, "CABLE Output (VB-Audio Virtual Cable)", ins=2), dev(2, "CABLE Input (VB-Audio Virtual Cable)", outs=2),
+    dev(1, "Source A", ins=2),
+    dev(2, "CABLE Input (VB-Audio Virtual Cable)", outs=2),        # somebody else's virtual cable: ASM never touches it
     dev(7, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
     dev(8, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1),
     dev(9, "Speakers (Realtek(R) Audio)", outs=2),
@@ -423,8 +424,7 @@ DEVICES = [
 
 def tap_config(**kw):
     cfg = EngineConfig(inputs={c: tap_device_name(c) for c in ("game", "chat", "media", "aux")},
-                       outputs={"headset": "Arctis Nova Pro"}, mic_input="Microphone (Arctis",
-                       mic_output="CABLE Input", latency="low")
+                       outputs={"headset": "Arctis Nova Pro"}, latency="low")
     for k, v in kw.items():
         setattr(cfg, k, v)
     return cfg
@@ -497,18 +497,20 @@ def test_programs_are_turned_down_only_while_the_engine_plays_to_the_headset(tmp
     rig = Rig(tmp_path)
     rig.start()
     sent = rig.commands()
-    # the headset, and the virtual cable's Input end for people who pick the cable as Windows' output
-    assert "engage\t1" in sent and "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)\tCABLE Input (VB-Audio Virtual Cable)" in sent
+    # the headset's own endpoint: the only one whose sound is taken over (no virtual device is ever named)
+    assert "engage\t1" in sent and "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)" in sent
     assert f"exclude\t{os.getpid()}" in sent                       # the engine's own sound is never captured back
     rig.engine.stop()
     assert "engage\t0" in rig.commands()
     rig.helper.stop()
 
 
-def test_the_cable_end_is_left_alone_when_tapping_cables_is_switched_off(tmp_path):
-    rig = Rig(tmp_path, tap_config(tap_cables=False))
+def test_a_virtual_cable_on_the_pc_is_never_part_of_what_is_taken_over(tmp_path):
+    rig = Rig(tmp_path)
     rig.start()
-    assert "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)" in rig.commands()
+    endpoint = [c for c in rig.commands() if c.startswith("endpoint\t")]
+    assert endpoint[-1] == "endpoint\tHeadset Earphone (Arctis Nova Pro Wireless)" and set(endpoint[:-1]) <= {"endpoint\tdefault"}
+    assert not any("CABLE" in c for c in rig.commands())
     rig.engine.stop()
     rig.helper.stop()
 
@@ -557,7 +559,7 @@ def test_routes_saved_earlier_are_in_force_at_the_next_start(tmp_path):
 
 
 def test_without_the_tap_routing_is_politely_refused(tmp_path):
-    engine = Engine(tap_config(inputs={"game": "CABLE Output"}), FakeBackend(DEVICES), config_dir=tmp_path)
+    engine = Engine(tap_config(inputs={"game": "Source A"}), FakeBackend(DEVICES), config_dir=tmp_path)
     assert engine.tap is None and engine.handle({"cmd": "route", "exe": "a.exe", "channel": "chat"})["ok"] is False
     assert engine.status()["tap"] is None
 
@@ -570,16 +572,16 @@ def test_the_engine_stops_cleanly_and_releases_the_helper(tmp_path):
     rig.helper.stop()
 
 
-def test_a_first_guess_uses_the_tap_for_channels_and_the_cable_for_the_microphone():
+def test_a_first_guess_uses_the_tap_for_channels_and_the_real_headset_and_nothing_virtual():
     cfg = suggest_config(DEVICES + tap_devices())
     assert cfg.inputs == {c: tap_device_name(c) for c in ("game", "chat", "media", "aux")}
-    assert cfg.mic_output == "CABLE Input (VB-Audio Virtual Cable)" and cfg.mic_input.startswith("Headset Microphone")
+    assert cfg.mic_fx and "CABLE" not in str(cfg.to_dict())
     assert cfg.outputs["headset"].startswith("Headset Earphone") and cfg.problems() == []
 
 
-def test_a_first_guess_without_the_tap_is_what_it_was():
+def test_a_first_guess_without_the_tap_has_no_channels_and_says_why():
     cfg = suggest_config(DEVICES)
-    assert cfg.inputs["game"].startswith("CABLE Output") and cfg.inputs["chat"] == ""
+    assert cfg.inputs == EngineConfig().inputs and any("asm-audiotap.exe" in p for p in cfg.problems())
 
 
 # ── a quick look at the devices (instead of a new Python process) ────────────
@@ -592,16 +594,16 @@ def _listing(*lines, code=0):
 def test_the_endpoint_listing_becomes_device_infos():
     run = _listing({"name": "Speakers (Realtek(R) Audio)", "flow": "render", "default": True},
                    {"name": "Microphone (Arctis Nova Pro Wireless)", "flow": "capture", "default": False},
-                   {"name": "CABLE Input (VB-Audio Virtual Cable)", "flow": "render", "default": False},
+                   {"name": "Second Interface (USB DAC)", "flow": "render", "default": False},
                    {"end": True})
     devices = tapmod.list_endpoints("helper.exe", run=run)
     assert [d.name for d in devices] == ["Speakers (Realtek(R) Audio)", "Microphone (Arctis Nova Pro Wireless)",
-                                         "CABLE Input (VB-Audio Virtual Cable)"]
+                                         "Second Interface (USB DAC)"]
     assert [d.max_outputs for d in devices] == [2, 0, 2] and [d.max_inputs for d in devices] == [0, 2, 0]
     assert devices[0].default_output and not devices[1].default_input
     assert all(d.wasapi for d in devices)
     from arctis_sound_manager.win.audio.backend import find_device
-    assert find_device(devices, "CABLE Input", "output").name.startswith("CABLE Input")
+    assert find_device(devices, "Second Interface", "output").name.startswith("Second Interface")
     assert find_device(devices, "Arctis", "input").name.startswith("Microphone")
     assert find_device(devices, "Arctis", "output") is None
 

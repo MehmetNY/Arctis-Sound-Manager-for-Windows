@@ -43,6 +43,8 @@ class Effect:
         self.put("generation", self.get("generation") + 1)
 
     def push(self, block):                              # the raw microphone
+        if not self.get("engine_wants"):                # the engine said "leave it": the real effect passes the sound on and writes nothing
+            return
         write = self.counter(shared.OFF_IN_WRITE)
         ring = np.frombuffer(self.mem.buf, dtype=np.float32, count=shared.RING_FRAMES * 2, offset=shared.OFF_IN_DATA)
         for k, frame in enumerate(block.reshape(-1, self.channels)):

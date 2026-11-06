@@ -26,8 +26,8 @@ from typing import Callable
 from arctis_sound_manager.win.audio import fast
 from arctis_sound_manager.win.audio.backend import (BackendError, DeviceInfo, SoundDeviceBackend, device_from_dict,
                                                     device_to_dict)
-from arctis_sound_manager.win.audio.engine_config import (EngineConfig, config_path, load_config, resolve, save_config,
-                                                          suggest_config)
+from arctis_sound_manager.win.audio.engine_config import (EngineConfig, config_path, config_problems, load_config, resolve,
+                                                          save_config, suggest_config)
 from arctis_sound_manager.win.audio.graph import CHANNELS, CONTROLS
 from arctis_sound_manager.win.audio.params import default_config_dir
 from arctis_sound_manager.win.audio.runtime import Engine
@@ -148,12 +148,7 @@ class EngineHost:
             return True
 
     def _problems(self) -> list[str]:
-        """What keeps the engine from starting. A computer that has never been set up waits for the headset to appear
-        (the microphone alone is a valid set-up, but only one somebody chose)."""
-        problems = self.config.problems()
-        if not problems and not config_path(self.config_dir).exists():
-            problems = ["no configuration yet: waiting for the headset to be found"]
-        return problems
+        return config_problems(self.config_dir, self.config)
 
     def _missing(self, cfg: EngineConfig) -> list[str]:
         try:

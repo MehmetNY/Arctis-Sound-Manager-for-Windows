@@ -22,7 +22,7 @@ import arctis_sound_manager.gui.theme as _theme
 from arctis_sound_manager.gui.qt_widgets.q_dual_state import QDualState
 from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.win.audio.bridge import shared_bridge
-from arctis_sound_manager.win.audio.engine_config import load_config
+from arctis_sound_manager.win.audio.engine_config import config_problems
 from arctis_sound_manager.win.audio.service import engine_enabled
 from arctis_sound_manager.win.audio.strings import t
 from arctis_sound_manager.win.audio.summary import EngineState, engine_state
@@ -131,7 +131,7 @@ class EngineCard(QWidget):
 
     def refresh(self) -> EngineState:
         try:
-            configured = not load_config(self._config_dir).problems()
+            configured = not config_problems(self._config_dir)
         except Exception:                                        # noqa: BLE001
             configured = False
         self._state = engine_state(self._bridge.status(), enabled=self.enabled, configured=configured,

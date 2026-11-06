@@ -200,6 +200,18 @@ def load_config(config_dir: Path | None = None) -> EngineConfig:
         return EngineConfig(schema=1)
 
 
+NO_CONFIGURATION = "no configuration yet: waiting for the headset to be found"
+
+
+def config_problems(config_dir: Path | None = None, cfg: EngineConfig | None = None) -> list[str]:
+    """What keeps the engine from starting with the saved configuration. A computer that was never set up has no file
+    yet and waits for the headset to be found (the microphone alone is a valid set-up, but only one somebody chose)."""
+    problems = (cfg or load_config(config_dir)).problems()
+    if not problems and not config_path(config_dir).exists():
+        problems = [NO_CONFIGURATION]
+    return problems
+
+
 def save_config(cfg: EngineConfig, config_dir: Path | None = None) -> Path:
     path = config_path(config_dir)
     path.parent.mkdir(parents=True, exist_ok=True)

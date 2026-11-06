@@ -229,6 +229,12 @@ class FxLink:
         self._counter["out_write"][0] = self._counter["out_read"][0]
         return True
 
+    def discard(self) -> int:
+        """Drop whatever raw microphone is waiting (the chain starts from the microphone as it is now). Returns the frames."""
+        write, read = int(self._counter["in_write"][0]), int(self._counter["in_read"][0])
+        self._counter["in_read"][0] = write
+        return max(0, write - read)
+
     def available(self) -> int:
         write, read = int(self._counter["in_write"][0]), int(self._counter["in_read"][0])
         if write < read:                                               # the effect reset its side

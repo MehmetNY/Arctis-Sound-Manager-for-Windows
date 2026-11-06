@@ -252,6 +252,7 @@ class FxMicPipeline(Pipeline):
         self.state = "waiting for the effect"
         self._next_open = 0.0
         self._last_period = 480
+        self._was_wanted = False
 
     # nothing here is paced by an output device
     def master(self) -> OutputPort | None:
@@ -313,6 +314,10 @@ class FxMicPipeline(Pipeline):
         link.heartbeat(wants, self.lead_frames())
         if link.sync():
             self.graph.mic.reset()
+        if wants and not self._was_wanted:                          # starting to process: from the microphone as it is now
+            link.discard()
+            self.graph.mic.reset()
+        self._was_wanted = wants
         rate, channels = link.format()
         if not link.apo_alive():
             self.state = "idle"                                     # no program is recording

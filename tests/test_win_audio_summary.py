@@ -51,7 +51,7 @@ def test_turkish_texts_exist_for_every_english_key():
 
 
 def test_every_text_formats_with_its_own_fields():
-    fields = {"profile": "p", "latency": 1, "problem": "x", "error": "e", "name": "n", "ms": 5, "problems": "q"}
+    fields = {"profile": "p", "latency": 1, "problem": "x", "error": "e", "name": "n", "ms": 5, "problems": "q", "reason": "r"}
     for table in strings._TABLES.values():
         for key, text in table.items():
             text.format(**fields)                                    # no stray {braces}, no unknown fields

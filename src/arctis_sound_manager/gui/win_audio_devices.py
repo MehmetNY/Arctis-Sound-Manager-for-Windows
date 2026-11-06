@@ -30,7 +30,7 @@ from arctis_sound_manager.i18n import I18n
 from arctis_sound_manager.win.audio.backend import DeviceInfo
 from arctis_sound_manager.win.audio.bridge import shared_bridge
 from arctis_sound_manager.win.audio.control import EngineClient
-from arctis_sound_manager.win.audio.engine_config import (CHANNELS, PROFILES, EngineConfig, is_virtual, load_config,
+from arctis_sound_manager.win.audio.engine_config import (CHANNELS, PROFILES, EngineConfig, config_problems, is_virtual, load_config,
                                                           save_config, suggest_config)
 from arctis_sound_manager.win.audio.host import subprocess_probe
 from arctis_sound_manager.win.audio.launcher import start_engine
@@ -341,7 +341,7 @@ class AudioDevicesDialog(QDialog):
 
     def refresh_state(self) -> None:
         status = self._bridge.status()
-        cfg_ok = not load_config(self._config_dir).problems()
+        cfg_ok = not config_problems(self._config_dir)
         state = engine_state(status, configured=cfg_ok, lang=self._lang)
         lines = endpoint_lines(status)
         self._state_lbl.setText(state.text + ("\n" + "  |  ".join(lines) if lines else ""))
