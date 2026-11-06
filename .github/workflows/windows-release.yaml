@@ -3,20 +3,23 @@ name: windows-release
 # release: ASM-Setup-<version>.exe. Programs that are already installed see the release through the GitHub API, and
 # offer the update once the installer is attached (src/arctis_sound_manager/win/updates.py).
 #
-# Two ways to publish, the result is the same:
+# Three ways to publish, the result is the same:
 #   a. Releases > Draft a new release > choose a tag such as v1.7.0 (target: the windows branch) > Publish release
-#   b. push the tag:  git tag v1.7.0 && git push fork v1.7.0  - the release is created here, from
-#      installer/release-notes/v1.7.0.md when that file exists
-# about ten minutes later the installer is attached to it
+#   b. push the tag:  git tag v1.7.0 && git push fork v1.7.0
+#   c. push a branch named after it:  git push fork windows:refs/heads/release/v1.7.0   (where tags cannot be pushed)
+#   d. run this workflow by hand with the tag as its input
+# In b, c and d the release is created here (the tag too, on the commit that was pushed or the branch it was run on), with
+# installer/release-notes/v1.7.0.md as its text when that file exists. About ten minutes later the installer is attached.
 on:
   push:
     tags: ["v[0-9]*"]
+    branches: ["release/v[0-9]*"]
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag of an existing release to build the installer for again"
+        description: "Tag (such as v1.7.0) to build the installer for; the release is created when there is none"
         required: true
 permissions:
   contents: write
@@ -33,13 +36,20 @@ jobs:
         id: rel
         shell: bash
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          TAG_INPUT: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
+          TAG="$TAG_INPUT"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME#release/}"; fi
+          # an existing tag is built as it is; a release that is about to be created is built from the commit that started this run
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then REF="$TAG"; else REF="$GITHUB_SHA"; fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "release $TAG from $REF"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.rel.outputs.tag }}
+          ref: ${{ steps.rel.outputs.ref }}
       - uses: actions/setup-python@v5
         with: { python-version: "3.13", cache: pip, cache-dependency-path: installer/requirements.txt }
       - name: Python packages
@@ -58,8 +68,8 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: ./ci/smoke_frozen.ps1 -AppDir build\dist\ArctisSoundManager
-      - name: Create the release (a pushed tag has none yet)
-        if: github.event_name == 'push'
+      - name: Create the release (a pushed tag or branch, or a manual run, has none yet)
+        if: github.event_name != 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,9 +83,9 @@ jobs:
             if [ -f "$notes" ]; then
               head -n 1 "$notes" | grep -q '^# ' && title="$(head -n 1 "$notes" | sed 's/^# *//')"
               tail -n +2 "$notes" > release-body.md
-              gh release create "$TAG" --verify-tag --title "$title" --notes-file release-body.md
+              gh release create "$TAG" --target "$GITHUB_SHA" --title "$title" --notes-file release-body.md
             else
-              gh release create "$TAG" --verify-tag --title "$title" --generate-notes
+              gh release create "$TAG" --target "$GITHUB_SHA" --title "$title" --generate-notes
             fi
           fi
       - name: Attach the installer to the release
