@@ -382,6 +382,7 @@ def timeline(quick: bool = True, snapshot=None) -> dict:
     extra = sd.WasapiSettings(auto_convert=True)
     phase = [0]
     chunks: list[np.ndarray] = []
+    chunks_b: list[np.ndarray] = []                                       # a second program recording the same microphone
 
     def out_cb(outdata, frames, _t, _status):
         t = (phase[0] + np.arange(frames)) / RATE
@@ -391,12 +392,16 @@ def timeline(quick: bool = True, snapshot=None) -> dict:
     def in_cb(indata, _frames, _t, _status):
         chunks.append(indata[:, 0].copy())
 
+    def in_cb_b(indata, _frames, _t, _status):
+        chunks_b.append(indata[:, 0].copy())
+
     engine = Engine()
     engine.start()
     started = time.monotonic()
     result: dict = {}
     with sd.OutputStream(device=play, samplerate=RATE, channels=2, dtype="float32", callback=out_cb, extra_settings=extra), \
-         sd.InputStream(device=mic, samplerate=RATE, channels=2, dtype="float32", callback=in_cb, extra_settings=extra):
+         sd.InputStream(device=mic, samplerate=RATE, channels=2, dtype="float32", callback=in_cb, extra_settings=extra), \
+         sd.InputStream(device=mic, samplerate=RATE, channels=1, dtype="float32", callback=in_cb_b, extra_settings=extra):
         steps = [(TIMELINE["engine_on"], lambda: engine.ctl.update(run=True, wants=True)),
                  (TIMELINE["bypass_on"], lambda: engine.ctl.update(wants=False)),
                  (TIMELINE["bypass_off"], lambda: engine.ctl.update(wants=True)),
@@ -433,6 +438,14 @@ def timeline(quick: bool = True, snapshot=None) -> dict:
         "processing_2": rms(recording, 15.0, 17.0),
         "engine_gone": rms(recording, 19.5, 21.5),
     }
+    recording_b = np.concatenate(chunks_b) if chunks_b else np.zeros(0)
+    result["levels_b"] = {                                                # the second program must be processed too
+        "b_no_engine": rms(recording_b, 1.5, 3.5),
+        "b_processing_1": rms(recording_b, 6.0, 9.0),
+        "b_bypass": rms(recording_b, 11.0, 13.0),
+        "b_processing_2": rms(recording_b, 15.0, 17.0),
+        "b_engine_gone": rms(recording_b, 19.5, 21.5),
+    }
     result["engine"] = engine.report
     return result
 
@@ -442,7 +455,7 @@ def check(levels: dict) -> dict:
     quarter = full * GAIN
     verdict = {}
     for name, level in levels.items():
-        want = quarter if name.startswith("processing") else full
+        want = quarter if name.startswith(("processing", "b_processing")) else full
         verdict[name] = {"level": round(level, 4), "expected": round(want, 4), "ok": bool(want * 0.7 <= level <= want * 1.3)}
     return verdict
 
@@ -451,11 +464,15 @@ VARIANTS = [
     # (title, arguments of "attach", does it use the product's way of switching Windows' audio protection off)
     # Every case also writes the list of signal processing modes the effect works in (the CI's stand-in microphone offers
     # only the raw mode, so the list has to say "raw" there; the product adds raw to the list in the same situation).
-    ("EFX + modes (the plan)", ["--slots", "efx"], True),
-    ("SFX + modes", ["--slots", "sfx"], True),
-    ("SFX + MFX + EFX + modes, endpoint builder restarted too", ["--slots", "sfx,mfx,efx", "--builder"], True),
+    # Every case records the microphone with two programs at once: both must get the processed sound.
+    ("SFX (stream effect)", ["--slots", "sfx"], True),
+    ("MFX (mode effect)", ["--slots", "mfx"], True),
+    ("GFX (global effect)", ["--slots", "gfx"], True),
+    ("LFX (local effect)", ["--slots", "lfx"], True),
     ("LFX + GFX (the old pair)", ["--slots", "lfx,gfx"], True),
-    ("EFX + modes, audio protection left alone", ["--slots", "efx"], False),
+    ("EFX (endpoint effect)", ["--slots", "efx"], True),
+    ("SFX + MFX + EFX, endpoint builder restarted too", ["--slots", "sfx,mfx,efx", "--builder"], True),
+    ("SFX, audio protection left alone", ["--slots", "sfx"], False),
 ]
 
 
@@ -464,7 +481,7 @@ def case(title: str, extra: list[str], protect: bool) -> dict:
     log(f"########## {title}")
     fx("detach")
     trace_text()
-    deep = title.startswith(("EFX + modes (the plan)", "SFX + modes"))         # the full diagnosis for two of the cases
+    deep = title.startswith(("SFX (stream effect)", "EFX (endpoint effect)"))         # the full diagnosis for two of the cases
     if deep:
         etw(True)
     fx("attach", "--match", "CABLE Output", *extra, *(() if protect else ("--no-protect",)))
@@ -476,7 +493,11 @@ def case(title: str, extra: list[str], protect: bool) -> dict:
     try:
         result = timeline(snapshot=snapshot_audiodg if deep else None)
         summary.update(result)
-        summary["verdict"] = check(result["levels"]) if result.get("levels") else {}
+        summary["verdict"] = check({**result["levels"], **result.get("levels_b", {})}) if result.get("levels") else {}
+        text = trace_text(clear=False)
+        summary["owners"] = text.count("LockForProcess done, owner=1")
+        summary["followers"] = text.count("LockForProcess done, owner=0")
+        summary["follows"] = text.count("follower starts")
     except Exception as exc:                                              # noqa: BLE001
         log("   timeline failed:", repr(exc))
         summary["error"] = repr(exc)
@@ -514,15 +535,15 @@ def main() -> int:
         log(f"[{'PASS' if passed(s) else 'fail'}] {s['title']}: "
             + ("; ".join(f"{k} {v['level']} (want {v['expected']}) {'ok' if v['ok'] else 'WRONG'}" for k, v in verdict.items())
                or s.get("error") or "the effect never loaded")
-            + (f"  (shared memory after {seen} s)" if seen is not None else ""))
+            + (f"  (shared memory after {seen} s)" if seen is not None else "")
+            + (f"  [instances: {s.get('owners')} owner, {s.get('followers')} follower; {s.get('follows')} follows]" if "owners" in s else ""))
         samples = s.get("engine", {}).get("samples") or []
         if samples:
             log("      last report from the effect:", json.dumps(samples[-1]))
     working = [s for s in summaries if passed(s)]
     if not working:
         FAILS.append("no way of attaching the effect worked")
-    elif not passed(summaries[0]):
-        log("NOTE: the plan (first case) did not work but another did:", "; ".join(s["title"] for s in working))
+    log("Ways that worked:", "; ".join(s["title"] for s in working) or "none")
     protected = [s for s in summaries if not s["protect"]]
     if protected:
         log("Windows loads the effect without switching the audio protection off: " + ("YES" if passed(protected[-1]) else "no"))

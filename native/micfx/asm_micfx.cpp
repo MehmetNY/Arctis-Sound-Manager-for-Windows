@@ -272,6 +272,7 @@ public:
         const bool shared_ok = OpenShared();
         Trace("LockForProcess: %u channels, %u Hz, float=%d, supported=%d, shared memory %s (error %lu)", m_channels,
               m_rate, (int)m_float, (int)m_supported, shared_ok ? "open" : "NOT open", shared_ok ? 0ul : GetLastError());
+        m_cursor_valid = false;
         if (shared_ok) {
             AsmFxHeader* h = g_shared.header;
             if (m_id == 0) {
@@ -279,26 +280,9 @@ public:
                 m_id = (GetCurrentProcessId() << 8) ^ (uint32_t)n ^ 0x1u;
                 if (m_id == 0) m_id = 1;
             }
-            ULONGLONG now = GetTickCount64();
-            uint32_t owner = h->instance;
-            bool stale = owner != 0 && owner != m_id && now - h->apo_tick_ms > 3000;
-            if (owner == 0 || owner == m_id || stale) {
-                if (InterlockedCompareExchange((volatile LONG*)&h->instance, (LONG)m_id, (LONG)owner) == (LONG)owner) {
-                    m_owner = true;
-                    h->apo_pid = GetCurrentProcessId();
-                    h->rate = m_rate;
-                    h->channels = m_channels;
-                    h->dll_build = ASMFX_DLL_BUILD;
-                    h->apo_tick_ms = now;
-                    // start empty: whatever the engine still had pending belongs to a stream that is gone
-                    *Counter(ASMFX_OFF_IN_WRITE) = *Counter(ASMFX_OFF_IN_READ);
-                    *Counter(ASMFX_OFF_OUT_READ) = *Counter(ASMFX_OFF_OUT_WRITE);
-                    MemoryBarrier();
-                    h->generation = h->generation + 1;
-                    h->apo_state = m_supported ? ASMFX_STATE_PRIMING : ASMFX_STATE_FORMAT;
-                }
-            }
-            if (!m_owner) h->apo_state = h->apo_state;   // the owner keeps reporting; this instance only passes through
+            // the first instance owns the rings; the others (the same microphone recorded by a second program, or the
+            // same effect used by two stages of the audio engine's chain) follow it - see Process()
+            TakeOver(h, GetTickCount64(), 3000);
         }
         m_locked = true;
         Trace("LockForProcess done, owner=%d", (int)m_owner);
@@ -373,21 +357,101 @@ private:
         return S_OK;
     }
 
+    // The rings have one writer (the owner). Another instance - a second program recording the same microphone gets its own
+    // instance of a stream effect - does not push audio to the engine but reads the same processed audio, with a cursor of
+    // its own. When the owner goes away, a follower takes the rings over.
+    bool BecomeOwner(AsmFxHeader* h, uint32_t expected, ULONGLONG now) {
+        if (InterlockedCompareExchange((volatile LONG*)&h->instance, (LONG)m_id, (LONG)expected) != (LONG)expected) return false;
+        m_owner = true;
+        m_primed = false;
+        m_misses = 0;
+        h->apo_pid = GetCurrentProcessId();
+        h->rate = m_rate;
+        h->channels = m_channels;
+        h->dll_build = ASMFX_DLL_BUILD;
+        h->apo_tick_ms = now;
+        // start empty: whatever the engine still had pending belongs to a stream that is gone
+        *Counter(ASMFX_OFF_IN_WRITE) = *Counter(ASMFX_OFF_IN_READ);
+        *Counter(ASMFX_OFF_OUT_READ) = *Counter(ASMFX_OFF_OUT_WRITE);
+        MemoryBarrier();
+        h->generation = h->generation + 1;
+        h->apo_state = m_supported ? ASMFX_STATE_PRIMING : ASMFX_STATE_FORMAT;
+        return true;
+    }
+
+    bool TakeOver(AsmFxHeader* h, ULONGLONG now, ULONGLONG stale_ms) {
+        const uint32_t owner = h->instance;
+        const bool stale = owner != 0 && owner != m_id && now - h->apo_tick_ms > stale_ms;
+        if (owner != 0 && owner != m_id && !stale) return false;
+        return BecomeOwner(h, owner, now);
+    }
+
+    void Follow(const float* src, float* dst, uint32_t frames, uint32_t ch, bool silent, ULONGLONG now) {
+        AsmFxHeader* h = g_shared.header;
+        const uint32_t state = h->apo_state;
+        const bool alive = h->engine_pid != 0 && now - h->engine_tick_ms < 600;
+        if (!alive || !h->engine_wants || (state != ASMFX_STATE_PROCESSING && state != ASMFX_STATE_PRIMING) ||
+            h->channels != ch || h->rate != m_rate) {                // the rings carry the owner's format only
+            m_cursor_valid = false;
+            m_primed = false;
+            Pass(src, dst, frames, ch, silent);
+            return;
+        }
+        const float* out_ring = Ring(ASMFX_OFF_OUT_DATA);
+        const uint64_t ow = *Counter(ASMFX_OFF_OUT_WRITE);
+        if (!m_cursor_valid) {
+            m_cursor = *Counter(ASMFX_OFF_OUT_READ);                // where the owner is
+            m_cursor_valid = true;
+            m_primed = false;
+            m_misses = 0;
+            Trace("follower starts at %llu (engine at %llu)", (unsigned long long)m_cursor, (unsigned long long)ow);
+        }
+        int64_t avail = (int64_t)(ow - m_cursor);
+        if (avail < 0 || avail > (int64_t)ASMFX_RING_FRAMES) {
+            m_cursor = ow;
+            avail = 0;
+            m_primed = false;
+        }
+        uint32_t lead = h->lead_frames;
+        if (lead < frames) lead = frames;
+        if (lead > ASMFX_RING_FRAMES / 2) lead = ASMFX_RING_FRAMES / 2;
+        if (!m_primed && avail >= (int64_t)lead) m_primed = true;
+        if (!m_primed) {
+            memset(dst, 0, (size_t)frames * ch * sizeof(float));
+            return;
+        }
+        const uint32_t got = avail >= (int64_t)frames ? frames : (uint32_t)avail;
+        if (got) RingRead(out_ring, m_cursor, dst, got, ch);
+        if (got < frames) {
+            memset(dst + (size_t)got * ch, 0, (size_t)(frames - got) * ch * sizeof(float));
+            if (++m_misses > 60) { m_primed = false; m_misses = 0; }
+        } else {
+            m_misses = 0;
+        }
+        uint64_t next = m_cursor + got;
+        const int64_t left = avail - (int64_t)got;
+        if (left > (int64_t)lead + 4 * (int64_t)frames) next += (uint64_t)(left - (int64_t)lead);
+        m_cursor = next;
+    }
+
     void Process(const float* src, float* dst, uint32_t frames, uint32_t ch, bool silent) {
         AsmFxHeader* h = g_shared.header;
-        if (!h || !m_owner || m_faulted || !m_supported || frames > ASMFX_RING_FRAMES / 4) {
+        if (!h || m_faulted || !m_supported || frames > ASMFX_RING_FRAMES / 4) {
             Pass(src, dst, frames, ch, silent);
             return;
         }
         const ULONGLONG now = GetTickCount64();
+        if (m_owner && h->instance != m_id) {                      // somebody else took the rings over
+            m_owner = false;
+            m_cursor_valid = false;
+        }
+        if (!m_owner && !TakeOver(h, now, 1500)) {
+            Follow(src, dst, frames, ch, silent, now);
+            return;
+        }
         h->apo_tick_ms = now;
         h->calls = h->calls + 1;
         h->period_frames = frames;
-        if (h->instance != m_id) {                                 // somebody else took the rings over
-            m_owner = false;
-            Pass(src, dst, frames, ch, silent);
-            return;
-        }
         const bool alive = h->engine_pid != 0 && now - h->engine_tick_ms < 600;
         if (!alive) {
             h->apo_state = ASMFX_STATE_NO_ENGINE;
@@ -478,6 +542,8 @@ private:
     bool m_supported = false;
     bool m_locked = false;
     bool m_owner = false;
+    bool m_cursor_valid = false;
+    uint64_t m_cursor = 0;
     bool m_primed = false;
     bool m_faulted = false;
     bool m_traced = false;
