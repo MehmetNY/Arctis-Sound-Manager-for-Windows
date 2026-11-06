@@ -215,7 +215,8 @@ def etw(start: bool) -> None:
         pid_dec = str(AUDIODG["pid"]) if AUDIODG["pid"] else None
         total = 0
         paths: dict[str, str] = {}                  # key object -> path, learnt from the opens
-        reads: list[str] = []                       # what every process but our own tools asked of the effect / the endpoint
+        reads: list[str] = []                       # what the other processes asked of the effect / the endpoint
+        reads_audiodg: list[str] = []
         audio_events: list[str] = []
         images: list[str] = []
         with open(csv_path, encoding="utf-8", errors="replace", newline="") as handle:
@@ -240,23 +241,28 @@ def etw(start: bool) -> None:
                         continue
                     if event in ("CreateKey", "SetValueKey", "DeleteValueKey") and wanted.search(shown) and pid != pid_hex:
                         continue                                                # our own tools writing the registration
-                    if interesting.search(shown) and len(reads) < 400 and "ArctisSoundManager\\MicFx" not in shown:
-                        if pid_hex and pid == pid_hex:
-                            who = "AUDIODG"
-                        else:
-                            who = "pid " + pid
+                    if event == "EnumerateValueKey" or "ArctisSoundManager\\MicFx" in shown:
+                        continue                                                # noise
+                    if interesting.search(shown):
+                        mine = bool(pid_hex) and pid == pid_hex
                         if "Render" in shown and not wanted.search(shown):
                             continue
-                        reads.append(f"{who:12} {event:16} {status:11} {shown[-170:]}")
+                        if mine and len(reads_audiodg) < 500:
+                            reads_audiodg.append(f"AUDIODG      {event:16} {status:11} {shown[-170:]}")
+                        elif not mine and len(reads) < 120:
+                            reads.append(f"pid {pid} {event:16} {status:11} {shown[-170:]}")
                 elif provider.startswith("Microsoft-Windows-Kernel-Process") and "image" in event.lower():
                     if (pid_hex and pid_hex in text.lower()) or (pid_dec and re.search(r"(^|,)\s*" + pid_dec + r"\s*(,|$)", text)):
                         images.append(re.sub(r"\s+", " ", text)[-170:])
                 elif not provider.startswith("Microsoft-Windows-Kernel") and len(audio_events) < 150:
                     audio_events.append(re.sub(r"\s+", " ", text)[:260])
         log(f"   {total} trace events; audiodg is {pid_hex}")
-        log("   what the audio engine and others read about the effect and the endpoint (our own writes left out):")
-        for line in reads:
+        log("   what audiodg read about the effect and the endpoint:")
+        for line in reads_audiodg:
             log("   r " + line)
+        log("   what the other processes did with them (first 120):")
+        for line in reads:
+            log("   o " + line)
         log(f"   image loads of audiodg: {len(images)}")
         for line in images[:100]:
             log("   > " + line)
@@ -359,6 +365,11 @@ def rms(samples: np.ndarray, start_s: float, end_s: float) -> float:
 
 def timeline(quick: bool = True, snapshot=None) -> dict:
     import sounddevice as sd
+    try:                                                                  # the device list of an earlier case may be stale
+        sd._terminate()
+        sd._initialize()
+    except Exception as exc:                                              # noqa: BLE001
+        log("   (could not refresh PortAudio:", repr(exc), ")")
     mic, play = find_devices()
     log(f"devices: capture {mic} playback {play}")
     if mic is None or play is None:
