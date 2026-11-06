@@ -67,6 +67,12 @@ static void Trace(const char* fmt, ...) {
     CloseHandle(f);
 }
 
+static const char* Guid(REFGUID g, char (&out)[40]) {
+    _snprintf_s(out, sizeof(out), _TRUNCATE, "%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x", g.Data1, g.Data2, g.Data3,
+                g.Data4[0], g.Data4[1], g.Data4[2], g.Data4[3], g.Data4[4], g.Data4[5], g.Data4[6], g.Data4[7]);
+    return out;
+}
+
 // ── the memory shared with the ASM engine (one per process) ────────────────────────────────────────────────────────
 
 struct Shared {
@@ -163,7 +169,8 @@ public:
         else if (riid == __uuidof(IAudioSystemEffects))
             *ppv = static_cast<IAudioSystemEffects*>(this);
         else {
-            Trace("QueryInterface refused %08lx-%04x-%04x", riid.Data1, riid.Data2, riid.Data3);
+            char g[40];
+            Trace("QueryInterface refused %s", Guid(riid, g));
             return E_NOINTERFACE;
         }
         AddRef();
@@ -459,11 +466,15 @@ public:
         if (!ppv) return E_POINTER;
         if (riid == __uuidof(IUnknown) || riid == __uuidof(IClassFactory)) { *ppv = static_cast<IClassFactory*>(this); return S_OK; }
         *ppv = nullptr;
+        char g[40];
+        Trace("factory QueryInterface refused %s", Guid(riid, g));
         return E_NOINTERFACE;
     }
     STDMETHOD_(ULONG, AddRef)() override { return 2; }
     STDMETHOD_(ULONG, Release)() override { return 1; }
     STDMETHOD(CreateInstance)(IUnknown* outer, REFIID riid, void** ppv) override {
+        char g[40];
+        Trace("CreateInstance %s%s", Guid(riid, g), outer ? " (aggregated)" : "");
         if (!ppv) return E_POINTER;
         *ppv = nullptr;
         if (outer) return CLASS_E_NOAGGREGATION;
@@ -471,6 +482,7 @@ public:
         if (!fx) return E_OUTOFMEMORY;
         HRESULT hr = fx->QueryInterface(riid, ppv);
         fx->Release();
+        Trace("CreateInstance -> %08lx", (unsigned long)hr);
         return hr;
     }
     STDMETHOD(LockServer)(BOOL lock) override {
@@ -483,9 +495,12 @@ static Factory g_factory;
 extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID riid, void** ppv) {
     if (!ppv) return E_POINTER;
     *ppv = nullptr;
-    Trace("DllGetClassObject %08lx", clsid.Data1);
+    char g[40];
+    Trace("DllGetClassObject %08lx for %s", clsid.Data1, Guid(riid, g));
     if (!IsEqualGUID(clsid, CLSID_AsmMicFx)) return CLASS_E_CLASSNOTAVAILABLE;
-    return g_factory.QueryInterface(riid, ppv);
+    HRESULT hr = g_factory.QueryInterface(riid, ppv);
+    Trace("DllGetClassObject -> %08lx", (unsigned long)hr);
+    return hr;
 }
 
 extern "C" HRESULT __stdcall DllCanUnloadNow() { return g_objects == 0 ? S_OK : S_FALSE; }

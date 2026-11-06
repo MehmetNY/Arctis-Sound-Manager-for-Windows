@@ -365,13 +365,18 @@ def rms(samples: np.ndarray, start_s: float, end_s: float) -> float:
 
 def timeline(quick: bool = True, snapshot=None) -> dict:
     import sounddevice as sd
-    try:                                                                  # the device list of an earlier case may be stale
-        sd._terminate()
-        sd._initialize()
-    except Exception as exc:                                              # noqa: BLE001
-        log("   (could not refresh PortAudio:", repr(exc), ")")
-    mic, play = find_devices()
-    log(f"devices: capture {mic} playback {play}")
+    mic = play = None
+    for attempt in range(12):                                             # right after the endpoint builder restarted, the endpoints come back late
+        try:                                                              # the device list of an earlier case may be stale
+            sd._terminate()
+            sd._initialize()
+        except Exception as exc:                                          # noqa: BLE001
+            log("   (could not refresh PortAudio:", repr(exc), ")")
+        mic, play = find_devices()
+        if mic is not None and play is not None:
+            break
+        time.sleep(2)
+    log(f"devices: capture {mic} playback {play} (attempt {attempt + 1})")
     if mic is None or play is None:
         raise RuntimeError("no CABLE endpoints")
     extra = sd.WasapiSettings(auto_convert=True)
