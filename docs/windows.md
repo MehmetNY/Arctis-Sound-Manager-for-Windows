@@ -17,13 +17,17 @@ Published releases (the ones that are not marked "pre-release") are on the
 [Releases page](https://github.com/MehmetNY/Arctis-Sound-Manager-for-Windows/releases); the `windows-latest` pre-release is
 the newest build of the branch and is rebuilt on every change.
 
-That is all. The setup installs everything the program needs, including the one virtual audio device it uses for the
-processed microphone (VB-CABLE, see below), and nothing has to be installed or configured by hand afterwards. A silent
-installation works too: `ASM-Setup-<version>.exe /VERYSILENT /TASKS=autostart`.
+That is all. The setup installs no driver and no third-party program, and nothing has to be configured by hand
+afterwards: Windows' sound panel shows your headset as one device, as it did before ASM. A silent installation works too:
+`ASM-Setup-<version>.exe /VERYSILENT /TASKS=autostart`.
 
-To remove it, use *Apps → Installed apps*. The uninstaller stops every ASM process, gives every program its volume back
-and removes the Start-with-Windows entry; it asks whether the virtual microphone driver should go as well, because other
-programs may use it.
+If an earlier version (1.6 or older) put **VB-CABLE** on the machine, this setup takes exactly that one away again (the
+"CABLE Input", "CABLE Output" and "CABLE In 16ch" devices disappear from the sound panel). A VB-CABLE you installed
+yourself is never touched; `/KEEPCABLE=1` on the command line keeps the earlier one as well.
+
+To remove it, use *Apps → Installed apps*. The uninstaller stops every ASM process, gives every program its volume back,
+takes the microphone effect off the headset's microphone, puts Windows' audio setting back as it found it, and removes
+the Start-with-Windows entry.
 
 ## Updates
 
@@ -54,12 +58,18 @@ ASM does not need a driver of its own, and it does not ask you to point every pr
   boost and Smart Volume of that channel, mixes the channels and plays the result to your headset.
 * The slider of a program in Windows' volume mixer still works: ASM follows it.
 * When ASM exits - or crashes - the volumes are put back (a crash is repaired at the next start, and by the uninstaller).
-* The **processed microphone** (noise cancelling, noise reduction, gate, compressor, equaliser) is played into a virtual
-  microphone. Windows can only offer a new microphone through a driver, so ASM installs **VB-CABLE** for this, silently, as
-  part of its setup. In Discord, OBS, games and other programs choose **CABLE Output** as the microphone.
-
-VB-CABLE is © VB-Audio Software and is donationware: if it is useful to you, please support its author at
-<https://vb-audio.com/Cable/>.
+* The **processed microphone** (noise cancelling, noise reduction, gate, compressor, equaliser) needs no second
+  microphone in the list. ASM adds a small audio effect (`asm_micfx.dll`, an "audio processing object", the mechanism
+  sound-card drivers use for their own enhancements) to **the headset's own microphone**. Programs keep choosing "Arctis
+  Nova Pro Wireless" as the microphone, as before, and receive the processed voice. The effect itself does no
+  processing: it hands the voice to the ASM audio engine through shared memory and plays back what the engine returns.
+  If the engine is not running, is slow, or anything at all is in doubt, it lets your voice through unchanged, so a
+  problem in ASM can never silence the microphone. Should the Windows audio service ever crash because of it, ASM
+  detaches the effect by itself (`%ProgramData%\ArctisSoundManager\micfx-disabled.txt` says so).
+* To let the effect load, the setup registers it for the headset's microphone, switches off **Windows' protection of the
+  audio engine for unsigned effects** (the `DisableProtectedAudioDG` setting; the uninstaller sets it back) and restarts
+  the Windows audio service once. The three small scheduled tasks "ASM microphone effect - attach / detach / guard" keep
+  this in order after Windows updates or when the headset's microphone is plugged into another port.
 
 ## What is where
 
@@ -81,7 +91,15 @@ VB-CABLE is © VB-Audio Software and is donationware: if it is useful to you, pl
 * **Recorders and streaming tools** (OBS, Discord's screen capture, Xbox Game Bar, ...) are never turned down, so what they
   record stays what they record. A program ASM has never heard before is only *listened to* until it plays; the first
   tenth of a second of its very first sound can be heard unprocessed, once.
-* **VB-CABLE has two playing ends**, "CABLE Input" and "CABLE In 16ch". Windows lets only one of them be open at a time, and ASM uses "CABLE Input" for the processed microphone: do not point other programs at "CABLE In 16ch" while ASM runs.
+* **The microphone effect reaches programs that record in Windows' shared mode** (Discord, Teams, Zoom, OBS, browsers,
+  nearly every game). A program that opens the microphone in *exclusive mode* gets the raw voice - the same limit as with
+  the output above. The effect works on 48 kHz, one- or two-channel microphones; the Nova Pro Wireless is one.
+* **Windows' audio protection** is switched off to load the effect (see above). It is a security setting meant for media
+  protection; it is not needed for anything else ASM does. If you do not want that, use **Settings → Audio engine →
+  Devices... → Switch the microphone effect off** (or run `ArctisSoundManager.exe --fx detach` as administrator): the
+  output side of ASM keeps working, and the microphone stays as Windows has it.
+* The only completely driver-free way to offer a *separate*, extra microphone would be a signed virtual-audio driver, which
+  needs a code-signing certificate this project does not have. This is why ASM processes the real microphone instead.
 * With the audio engine switched off (Settings → Audio engine), ASM does not touch any sound.
 * The program is unsigned, so Windows warns when you run the installer. Signing is possible later.
 
