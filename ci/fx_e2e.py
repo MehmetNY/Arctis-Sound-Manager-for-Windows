@@ -83,6 +83,17 @@ def endpoint_guid() -> str:
         return ""
 
 
+def safe(fn):
+    """A diagnosis step that fails is a line in the log, never the end of the test."""
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:                                          # noqa: BLE001
+            log(f"   ({fn.__name__} failed: {exc!r})")
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 def ps(script: str, timeout: float = 120.0) -> str:
     return sh(["powershell", "-NoProfile", "-Command", script], timeout=timeout)
 
@@ -97,6 +108,7 @@ def trace_text(clear: bool = True) -> str:
         return f"(no trace file: {exc!r})"
 
 
+@safe
 def diagnose(label: str) -> None:
     """What Windows and the effect say after a case."""
     log(f"--- diagnosis: {label}")
@@ -112,6 +124,10 @@ def diagnose(label: str) -> None:
     log("the effect's own trace:")
     for line in trace_text().splitlines()[:80]:
         log("   | " + line)
+    ps("foreach ($n in 'Microsoft-Windows-CodeIntegrity/Operational') { Get-WinEvent -FilterHashtable @{LogName=$n; StartTime=(Get-Date).AddMinutes(-4)} "
+       "-ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object { $n + ' ' + $_.TimeCreated.ToString('HH:mm:ss') + ' id ' + $_.Id + ': ' + "
+       "($_.Message -replace '\\s+',' ').Substring(0, [Math]::Min(400, $_.Message.Length)) } }")
+    ps("Get-WinEvent -ListLog *Audio* -ErrorAction SilentlyContinue | ForEach-Object { $_.LogName + ' (' + $_.RecordCount + ' records, enabled ' + $_.IsEnabled + ')' }")
     ps("foreach ($n in 'Microsoft-Windows-Audio/Operational','System','Application') { "
        "Get-WinEvent -FilterHashtable @{LogName=$n; StartTime=(Get-Date).AddMinutes(-3)} -ErrorAction SilentlyContinue "
        "| Where-Object { $_.ProviderName -match 'Audio|audiodg|Application Error|Windows Error' -or $_.Message -match 'audiodg|asm_micfx|APO' } "
@@ -148,6 +164,7 @@ except Exception as exc:
 """
 
 
+@safe
 def probe_com() -> None:
     """Can any process create the effect through COM, with the registration the product writes? (Then a failure to load
     it in the audio engine is about the audio engine, not the DLL or the registration.)"""
@@ -158,44 +175,51 @@ def probe_com() -> None:
 
 
 ETL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Temp" / "asmaudio.etl"
+PROVIDERS = [("{AE4BD3BE-F36F-45B6-8D21-BDD6FB832853}", "0xffffffffffffffff", "0xff"),      # Microsoft-Windows-Audio
+             ("{70EB4F03-C1DE-4F73-A051-33D13D5413BD}", "0xffffffffffffffff", "0xff"),      # Microsoft-Windows-Kernel-Registry
+             ("{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}", "0x40", "0xff")]                    # Microsoft-Windows-Kernel-Process: image loads
 
 
 def etw(start: bool) -> None:
-    """Windows' own trace of its audio engine around a case: it names what it does with every effect it meets."""
-    if start:
-        sh(["logman", "stop", "asmaudio", "-ets"])
-        sh(["logman", "start", "asmaudio", "-p", "{AE4BD3BE-F36F-45B6-8D21-BDD6FB832853}", "0xffffffffffffffff", "0xff",
-            "-o", str(ETL), "-ets"])
-        return
-    sh(["logman", "stop", "asmaudio", "-ets"])
-    xml = ETL.with_suffix(".xml")
-    sh(["tracerpt", str(ETL), "-o", str(xml), "-of", "XML", "-y", "-summary", str(ETL.with_suffix(".txt"))])
+    """Windows' own trace around a case: which registry keys the audio engine reads (does it ever look at the effect?),
+    which DLLs the audio engine loads, and what the audio engine itself says."""
     try:
-        text = xml.read_text(encoding="utf-16", errors="replace")
-    except OSError:
-        try:
-            text = xml.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            log("   (no trace: %r)" % exc)
+        if start:
+            sh(["logman", "stop", "asmaudio", "-ets"], lines=2)
+            pf = ETL.with_suffix(".providers")
+            pf.write_text("\n".join(" ".join(p) for p in PROVIDERS) + "\n", encoding="ascii")
+            sh(["logman", "start", "asmaudio", "-pf", str(pf), "-o", str(ETL), "-ets", "-bs", "1024", "-nb", "64", "256"])
             return
-    import re
-    events = re.findall(r"<Event .*?</Event>", text, flags=re.S)
-    log(f"   {len(events)} audio events; the ones that mention effects:")
-    shown = 0
-    for e in events:
-        if re.search(r"APO|[Ee]ffect|A998FC6D|asm_micfx|CLSID|SFX|EFX|MFX|Fx", e):
-            flat = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e))
-            log("   * " + flat[:300])
-            shown += 1
-            if shown >= 40:
-                break
+        sh(["logman", "stop", "asmaudio", "-ets"])
+        csv = ETL.with_suffix(".csv")
+        sh(["tracerpt", str(ETL), "-o", str(csv), "-of", "CSV", "-y"], timeout=300, lines=6)
+        import re
+        wanted = re.compile(r"A998FC6D|asm_micfx|ArctisSoundManager", re.I)
+        total = hits = 0
+        audiodg_images = []
+        with open(csv, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                total += 1
+                if wanted.search(line):
+                    hits += 1
+                    if hits <= 40:
+                        log("   * " + re.sub(r"\s+", " ", line)[:400])
+                elif "audiodg" in line.lower() and "ImageLoad" in line and len(audiodg_images) < 60:
+                    audiodg_images.append(re.sub(r"\s+", " ", line)[:200])
+        log(f"   {total} trace events, {hits} mention the effect")
+        log("   DLLs loaded by audiodg during the case (first 60):")
+        for line in audiodg_images:
+            log("   > " + line)
+    except Exception as exc:                                              # noqa: BLE001 — a diagnosis must never end the test
+        log("   (trace failed: %r)" % exc)
 
 
+@safe
 def snapshot_audiodg() -> None:
     """While the streams are open: what the audio engine process has loaded."""
     log("--- audiodg while a stream is open")
     ps("(Get-Process audiodg).Modules | ForEach-Object { $_.ModuleName } | Sort-Object | Out-String -Width 250", 60)
-    sh(["tasklist", "/m", "/fi", "imagename eq audiodg.exe"], lines=40)
+    ps("$p = (Get-Process audiodg).Id; 'audiodg pid ' + $p; Get-ProcessMitigation -Id $p | Out-String -Width 200", 60)
 
 
 def install_dll() -> None:

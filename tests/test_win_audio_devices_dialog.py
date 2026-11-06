@@ -12,7 +12,9 @@ from PySide6.QtWidgets import QApplication                                      
 from arctis_sound_manager.gui import win_audio_devices as wa                            # noqa: E402
 from arctis_sound_manager.win.audio.backend import DeviceInfo                           # noqa: E402
 from arctis_sound_manager.win.audio.engine_config import EngineConfig, load_config, save_config   # noqa: E402
+from arctis_sound_manager.win.audio.strings import t                                    # noqa: E402
 from arctis_sound_manager.win.audio.tap import tap_devices                              # noqa: E402
+from arctis_sound_manager.win.fx import state as fxstate                                # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -29,6 +31,8 @@ HEADSET = [dev(9, "Headset Earphone (Arctis Nova Pro Wireless)", outs=2),
            dev(10, "Headset Microphone (Arctis Nova Pro Wireless)", ins=1)]
 OTHERS = [dev(11, "Speakers (Realtek(R) Audio)", outs=2, default_out=True),
           dev(12, "Speakers (Realtek(R) Audio)", outs=2, api="MME")]                    # the same device, another host API
+MONITOR = dev(13, "Monitor (NVIDIA High Definition Audio)", outs=2)
+DAC = dev(14, "Line out (USB DAC)", outs=2)
 TAPS = tap_devices()
 DEVICES = [*CABLE, *HEADSET, *OTHERS, *TAPS]
 GAME_TAP = {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"}
@@ -60,7 +64,24 @@ class FakeClient:
         return {"ok": True, "problems": self.problems}
 
 
+class FxAsks:
+    """Stands in for the scheduled tasks that set the microphone effect up: remembers what was asked."""
+
+    def __init__(self, answer=True):
+        self.asked, self.answer = [], answer
+
+    def __call__(self, action):
+        self.asked.append(action)
+        return self.answer
+
+
+def fx_state(code, detail=""):
+    return lambda status=None: fxstate.FxState(code, detail)
+
+
 def make(tmp_path, qapp, devices=DEVICES, probe=None, **kw):
+    kw.setdefault("fx_describe", fx_state(fxstate.READY))
+    kw.setdefault("fx_request", FxAsks())
     kw.setdefault("ensure_engine", lambda cfg, wait=0.0: True)
     kw.setdefault("client_factory", FakeClient)
     kw.setdefault("bridge", FakeBridge())
@@ -81,12 +102,11 @@ def own_config(**over):
 
 def test_candidates_use_wasapi_devices_the_likeliest_first_and_never_the_taps_own_devices():
     cand = wa.candidates(DEVICES)
+    assert set(cand) == {"headset", "stream"}
     assert all(d.wasapi for lists in cand.values() for d in lists)
     assert not [d for lists in cand.values() for d in lists if d.name.startswith("ASM Tap")]
-    assert cand["headset"][0].name.startswith(("Headset Earphone", "Speakers"))
-    assert all("CABLE" not in d.name for d in cand["headset"][:2])
-    assert [d.name for d in cand["cable_out"][:1]] == ["CABLE Input (VB-Audio Virtual Cable)"]
-    assert [d.name for d in cand["mic"]] == ["Headset Microphone (Arctis Nova Pro Wireless)", "CABLE Output (VB-Audio Virtual Cable)"]
+    assert cand["headset"][0].name.startswith("Headset Earphone")
+    assert not [d for lists in cand.values() for d in lists if "CABLE" in d.name]       # somebody's virtual cable is not offered
 
 
 def test_without_wasapi_every_device_is_offered():
@@ -94,9 +114,12 @@ def test_without_wasapi_every_device_is_offered():
     assert wa.candidates(mme_only)["headset"][0].name == "Speakers"
 
 
-def test_a_cable_is_found_only_by_its_playback_end():
-    assert wa.has_cable(DEVICES) and not wa.has_cable([*HEADSET, *OTHERS, *TAPS])
-    assert not wa.has_cable([CABLE[0]])
+def test_virtual_devices_of_other_software_are_never_offered_or_chosen():
+    virtual = [dev(20, "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", outs=2),
+               dev(21, "SteelSeries Sonar - Gaming (SteelSeries Sonar Virtual Audio Device)", outs=2)]
+    cand = wa.candidates([*DEVICES, *virtual])
+    assert [d.name for d in cand["headset"] if wa.is_virtual(d.name)] == []
+    assert not hasattr(wa, "has_cable")                                                  # nothing in the window asks for a cable
 
 
 def test_combo_items_keep_a_configured_device_that_is_gone():
@@ -120,52 +143,53 @@ def test_the_same_device_listed_twice_appears_once():
 def test_a_first_run_preselects_asms_own_choice(tmp_path, qapp):
     d = make(tmp_path, qapp)
     assert current(d, "out:headset").startswith("Headset Earphone")
-    assert current(d, "mic:in").startswith("Headset Microphone") and current(d, "mic:out").startswith("CABLE Input")
     assert d._latency.currentData() == "balanced" and d._limiter.isChecked()
     assert d._save_btn.isEnabled() and d.message() == ""
 
 
-def test_there_is_no_channel_by_channel_cable_form(tmp_path, qapp):
-    """The programs' sound is taken by the engine itself: nothing to assign per channel."""
+def test_there_is_no_channel_by_channel_cable_form_and_no_microphone_device(tmp_path, qapp):
+    """The programs' sound is taken by the engine itself, the microphone is the headset's own: nothing to assign."""
     d = make(tmp_path, qapp)
-    assert set(d._combos) == {"out:headset", "mic:in", "mic:out", "out:stream"}
+    assert set(d._combos) == {"out:headset", "out:stream"}
 
 
 def test_an_existing_configuration_is_shown_not_replaced(tmp_path, qapp):
     save_config(own_config(latency="safe", outputs={"headset": "Speakers (Realtek"}, master_limiter=False, block=960), tmp_path)
     d = make(tmp_path, qapp)
-    assert current(d, "out:headset").startswith("Speakers") and current(d, "mic:in") == ""
+    assert current(d, "out:headset").startswith("Speakers")
     assert d._latency.currentData() == "safe" and not d._limiter.isChecked()
 
 
 def test_the_stream_row_only_shows_when_it_matters(tmp_path, qapp):
     d = make(tmp_path, qapp)
     label, combo = d._rows["out:stream"]
-    assert label.isHidden() and combo.isHidden()                                 # one cable: nothing to spare
-    two = [*DEVICES, dev(13, "CABLE-B Output (VB-Audio Cable B)", ins=2), dev(14, "CABLE-B Input (VB-Audio Cable B)", outs=2)]
-    d = make(tmp_path, qapp, devices=two)
-    assert not d._rows["out:stream"][1].isHidden()
-    save_config(own_config(outputs={"headset": "Headset Earphone", "stream": "Old Cable Input"}), tmp_path)
+    assert label.isHidden() and combo.isHidden()                                 # one other output: nothing to spare
+    d = make(tmp_path, qapp, devices=[*DEVICES, MONITOR, DAC])
+    assert not d._rows["out:stream"][1].isHidden()                               # a second real output device to send the stream mix to
+    save_config(own_config(outputs={"headset": "Headset Earphone", "stream": "Old Interface"}), tmp_path)
     d = make(tmp_path, qapp)
     assert not d._rows["out:stream"][1].isHidden()
-    assert current(d, "out:stream") == "Old Cable Input" and "(not found)" in d._combos["out:stream"].currentText()
+    assert current(d, "out:stream") == "Old Interface" and "(not found)" in d._combos["out:stream"].currentText()
 
 
-def test_no_cable_says_what_is_missing_and_switches_the_microphone_off(tmp_path, qapp):
+def test_a_virtual_cable_on_the_pc_is_invisible_in_the_window(tmp_path, qapp):
+    """Nothing virtual is installed, needed, mentioned or chosen by ASM."""
+    from PySide6.QtWidgets import QLabel
+    d = make(tmp_path, qapp)
+    assert d.message() == ""
+    texts = [x.text() for x in d.findChildren(QLabel)] + [c.itemText(i) for c in d._combos.values() for i in range(c.count())]
+    assert not [x for x in texts if "cable" in x.lower() or "vb-audio" in x.lower()]
+    d.save()
+    assert "CABLE" not in (tmp_path / "win_audio_engine.json").read_text()
+
+
+def test_the_window_works_without_any_virtual_device_at_all(tmp_path, qapp):
     d = make(tmp_path, qapp, devices=[*HEADSET, *OTHERS, *TAPS])
-    assert "VB-CABLE" in d.message()
-    assert not d._combos["mic:out"].isEnabled() and not d._combos["mic:in"].isEnabled() and d._mic_hint.isHidden()
+    assert d.message() == "" and d._save_btn.isEnabled()
     d.save()
     cfg = load_config(tmp_path)
-    assert cfg.mic_input == "" and cfg.mic_output == "" and cfg.outputs["headset"].startswith("Headset Earphone")
-    assert cfg.inputs == GAME_TAP and not cfg.problems()                       # the engine still runs without the mic
-
-
-def test_the_vb_cable_donation_note_is_in_the_window(tmp_path, qapp):
-    d = make(tmp_path, qapp)
-    from PySide6.QtWidgets import QLabel
-    notes = [x.text() for x in d.findChildren(QLabel)]
-    assert any("VB-CABLE" in x and "vb-audio.com" in x and "donationware" in x for x in notes)
+    assert cfg.outputs["headset"].startswith("Headset Earphone") and cfg.mic_fx
+    assert cfg.inputs == GAME_TAP and not cfg.problems()
 
 
 def test_a_failed_scan_is_reported(tmp_path, qapp):
@@ -185,8 +209,7 @@ def test_save_writes_the_file_and_has_the_engine_rebuild(tmp_path, qapp):
     d.save()
     cfg = load_config(tmp_path)
     assert cfg.latency == "low" and cfg.master_limiter is False
-    assert cfg.inputs == GAME_TAP and cfg.outputs["headset"].startswith("Headset Earphone")
-    assert cfg.mic_input.startswith("Headset Microphone") and cfg.mic_output.startswith("CABLE Input")
+    assert cfg.inputs == GAME_TAP and cfg.outputs["headset"].startswith("Headset Earphone") and cfg.mic_fx
     assert not cfg.problems() and changed == [1] and cfg.auto is False
     assert ensured == [(tmp_path, 10.0)]
     assert FakeClient.instances[-1].reconfigured == 1
@@ -195,30 +218,30 @@ def test_save_writes_the_file_and_has_the_engine_rebuild(tmp_path, qapp):
 
 def test_save_keeps_the_settings_the_form_has_no_control_for(tmp_path, qapp):
     save_config(own_config(block=960, mic_block=480, device_latency="high",
-                           outputs={"headset": "Headset Earphone", "stream": "CABLE Input"},
+                           outputs={"headset": "Headset Earphone", "stream": "Monitor"},
                            routing={"game": "stream", "chat": "headset", "media": "headset", "aux": "headset"}), tmp_path)
-    d = make(tmp_path, qapp)
+    d = make(tmp_path, qapp, devices=[*DEVICES, MONITOR, DAC])
     d.save()
     cfg = load_config(tmp_path)
     assert (cfg.block, cfg.mic_block, cfg.device_latency) == (960, 480, "high")
     assert cfg.inputs == GAME_TAP and cfg.routing["game"] == "stream"
-    assert cfg.outputs["stream"].startswith("CABLE Input")                       # the name is made exact
+    assert cfg.outputs["stream"].startswith("Monitor (NVIDIA")                   # the name is made exact
 
 
-def test_unselecting_the_stream_cable_removes_it_from_the_saved_file(tmp_path, qapp):
-    save_config(own_config(outputs={"headset": "Headset Earphone", "stream": "CABLE Input"}), tmp_path)
-    d = make(tmp_path, qapp)
-    assert current(d, "out:stream").startswith("CABLE Input")
+def test_unselecting_the_stream_output_removes_it_from_the_saved_file(tmp_path, qapp):
+    save_config(own_config(outputs={"headset": "Headset Earphone", "stream": "Monitor"}), tmp_path)
+    d = make(tmp_path, qapp, devices=[*DEVICES, MONITOR, DAC])
+    assert current(d, "out:stream").startswith("Monitor")
     d._combos["out:stream"].setCurrentIndex(0)
     d.save()
     assert "stream" not in load_config(tmp_path).outputs
 
 
-def test_a_microphone_without_a_cable_to_send_it_to_is_dropped(tmp_path, qapp):
+def test_the_microphone_setting_survives_a_save(tmp_path, qapp):
+    save_config(own_config(mic_fx=False), tmp_path)
     d = make(tmp_path, qapp)
-    d._combos["mic:out"].setCurrentIndex(0)
-    cfg = d.selected_config()
-    assert cfg.mic_output == "" and cfg.mic_input == ""
+    d.save()
+    assert load_config(tmp_path).mic_fx is False                                 # the form has no control for it: kept as it was
 
 
 def test_save_needs_a_headset(tmp_path, qapp):
@@ -241,7 +264,7 @@ def test_choose_automatically_gives_the_choice_back_to_asm(tmp_path, qapp):
     d.automatic()
     cfg = load_config(tmp_path)
     assert cfg.auto is True
-    assert cfg.outputs["headset"].startswith("Headset Earphone") and cfg.mic_input.startswith("Headset Microphone")
+    assert cfg.outputs["headset"].startswith("Headset Earphone") and cfg.mic_fx
     assert cfg.inputs == GAME_TAP
     assert (cfg.latency, cfg.master_limiter, cfg.block) == ("safe", False, 960)  # only the devices are ASM's to choose
     assert current(d, "out:headset").startswith("Headset Earphone")             # the form shows what was chosen
@@ -281,6 +304,50 @@ def test_the_state_line_follows_the_engine(tmp_path, qapp):
     bridge.value = None
     d.refresh_state()
     assert "not running" in d.state_text() or "No headset" in d.state_text()
+
+
+# ── the microphone effect ────────────────────────────────────────────────────
+
+def test_the_window_says_how_the_microphone_effect_is_doing(tmp_path, qapp):
+    for code, key in ((fxstate.RUNNING, "fx_running"), (fxstate.READY, "fx_ready"), (fxstate.NEEDS_SETUP, "fx_needs_setup"),
+                      (fxstate.NO_HEADSET, "fx_no_headset"), (fxstate.MISSING, "fx_missing"), (fxstate.OFF, "fx_off")):
+        d = make(tmp_path, qapp, fx_describe=fx_state(code))
+        assert d.fx_text() == t(key, "en"), code
+    d = make(tmp_path, qapp, fx_describe=fx_state(fxstate.DISABLED, "audiodg.exe crashed 2 times in the effect"))
+    assert "audiodg.exe crashed 2 times" in d.fx_text()
+
+
+def test_the_button_sets_the_effect_up_or_switches_it_off(tmp_path, qapp):
+    asks = FxAsks()
+    d = make(tmp_path, qapp, fx_describe=fx_state(fxstate.NEEDS_SETUP), fx_request=asks)
+    assert not d._fx_btn.isHidden() and d._fx_btn.text() == t("btn_fx_setup", "en")
+    d._fx_btn.click()
+    assert asks.asked == ["attach"] and d.message() == t("fx_asked", "en")
+    d = make(tmp_path, qapp, fx_describe=fx_state(fxstate.READY), fx_request=asks)
+    assert d._fx_btn.text() == t("btn_fx_remove", "en")
+    d._fx_btn.click()
+    assert asks.asked == ["attach", "detach"] and d.message() == t("fx_asked_off", "en")
+    d = make(tmp_path, qapp, fx_describe=fx_state(fxstate.DISABLED, "off"), fx_request=asks)
+    d._fx_btn.click()
+    assert asks.asked[-1] == "attach"                                            # switched off by hand or by the guard: asking again re-enables
+
+
+def test_there_is_no_button_when_there_is_nothing_to_set_up(tmp_path, qapp):
+    for code in (fxstate.OFF, fxstate.NO_HEADSET, fxstate.MISSING):
+        assert make(tmp_path, qapp, fx_describe=fx_state(code))._fx_btn.isHidden()
+
+
+def test_without_the_scheduled_tasks_the_window_says_what_to_do_instead(tmp_path, qapp):
+    d = make(tmp_path, qapp, fx_describe=fx_state(fxstate.NEEDS_SETUP), fx_request=FxAsks(answer=False))
+    d._fx_btn.click()
+    assert d.message() == t("fx_cannot_ask", "en") and "--fx attach" in d.message()
+
+
+def test_a_failing_status_lookup_never_breaks_the_window(tmp_path, qapp):
+    def boom(status=None):
+        raise RuntimeError("registry unreadable")
+    d = make(tmp_path, qapp, fx_describe=boom)
+    assert d.fx_text() == t("fx_off", "en")
 
 
 def test_the_texts_are_turkish_in_a_turkish_ui(tmp_path, qapp, monkeypatch):
