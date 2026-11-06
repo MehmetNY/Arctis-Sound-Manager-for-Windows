@@ -78,7 +78,10 @@ def test_attach_registers_the_effect_and_puts_it_on_the_microphone(reg, dll, tmp
     apo = reg.values(fx.APO_KEY)
     assert apo["NumAPOInterfaces"].data == 4 and apo["APOInterface3"].data == "{5FA00F27-ADD6-499A-8A9D-6B98521FA75B}"
     assert apo["Flags"].data == 0xF and apo["MinInputConnections"].kind == REG_DWORD
-    assert reg.get(fx.FXP.format(ARCTIS) if hasattr(fx, "FXP") else FXP.format(ARCTIS), fx.EFX).data == fx.CLSID
+    assert reg.get(FXP.format(ARCTIS), fx.slot_key("gfx")).data == fx.CLSID    # the global effect: one instance, every program
+    assert fx.DEFAULT_SLOTS == ("gfx",) and fx.carries(reg, FXP.format(ARCTIS)) == ["gfx"]
+    assert fx.slot_key("gfx").endswith(",2")
+    assert not [k for k in reg.values(FXP.format(ARCTIS)) if k.startswith(fx.MODES_FMTID)]   # the old model needs no mode list
     assert reg.get(fx.AUDIO, fx.PROTECT).data == 1
     for other in (SONAR, SPEAKER_MIC):
         assert fx.carries(reg, FXP.format(other)) == []                        # nobody else's microphone is touched
@@ -146,7 +149,7 @@ def mode_names(reg, guid, slot="efx"):
 
 def test_the_effect_says_which_modes_it_works_in(reg, dll, tmp_path):
     offer(reg, ARCTIS, "default", "raw", "communications")
-    attach(reg, dll, marker_dir=tmp_path)
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",))
     value = reg.get(FXP.format(ARCTIS), "{d3993a3f-99c2-4402-b5ec-a92a0367664b},7")
     assert value.kind == REG_MULTI_SZ and mode_names(reg, ARCTIS) == ["communications", "default", "media", "movie"]
     assert reg.get(FXP.format(SONAR), fx.mode_key("efx")) is None              # only the headset's microphone is touched
@@ -155,12 +158,12 @@ def test_the_effect_says_which_modes_it_works_in(reg, dll, tmp_path):
 def test_a_driver_that_offers_only_the_raw_mode_gets_the_raw_mode_too(reg, dll, tmp_path):
     offer(reg, ARCTIS, "raw")
     assert fx.supported_modes(reg, fx.endpoints(reg)[0]) == {"raw"}
-    attach(reg, dll, marker_dir=tmp_path)
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",))
     assert mode_names(reg, ARCTIS) == ["communications", "default", "media", "movie", "raw"]
 
 
 def test_the_modes_can_be_named(reg, dll, tmp_path):
-    attach(reg, dll, marker_dir=tmp_path, modes=["raw", "bogus", "raw"])
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",), modes=["raw", "bogus", "raw"])
     assert mode_names(reg, ARCTIS) == ["raw"]
 
 
@@ -174,11 +177,11 @@ def test_each_slot_gets_its_own_mode_list_and_the_old_pair_none(reg, dll, tmp_pa
 def test_detach_puts_the_drivers_own_mode_list_back(reg, dll, tmp_path):
     own = [fx.MODES["default"]]
     reg.set(FXP.format(ARCTIS), fx.mode_key("efx"), own, REG_MULTI_SZ)
-    attach(reg, dll, marker_dir=tmp_path)
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",))
     assert mode_names(reg, ARCTIS) != ["default"]
     fx.detach(reg, restart=None, marker_dir=tmp_path)
     assert list(reg.get(FXP.format(ARCTIS), fx.mode_key("efx")).data) == own
-    attach(reg, dll, marker_dir=tmp_path)
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",))
     fx.detach(reg, restart=None, marker_dir=tmp_path)
     assert list(reg.get(FXP.format(ARCTIS), fx.mode_key("efx")).data) == own    # twice in a row: still the driver's
 
@@ -187,7 +190,7 @@ def test_the_mode_list_of_an_endpoint_attached_by_an_older_build_is_added(reg, d
     reg.set(FXP.format(ARCTIS), fx.EFX, fx.CLSID, REG_SZ)                       # the effect, but no list
     s = fx.status(reg, dll, marker_dir=tmp_path)
     assert s.attached == [ARCTIS] and s.missing == [ARCTIS] and s.needs_attach
-    attach(reg, dll, marker_dir=tmp_path)
+    attach(reg, dll, marker_dir=tmp_path, slots=("efx",))
     s = fx.status(reg, dll, marker_dir=tmp_path)
     assert not s.missing and fx.has_modes(reg, fx.endpoints(reg)[0])
 
@@ -438,7 +441,7 @@ def test_the_command_line_can_target_another_endpoint_and_ignore_junk_slots(reg,
     monkeypatch.setattr(fx, "program_data_dir", lambda: tmp_path)
     monkeypatch.setattr(fx, "restart_audio_service", lambda *a, **k: True)
     assert cli.main(["attach", "--match", "Realtek", "--slots", "bogus"]) == 0
-    assert fx.attached_guids(reg) == [SPEAKER_MIC] and fx.carries(reg, FXP.format(SPEAKER_MIC)) == ["efx"]
+    assert fx.attached_guids(reg) == [SPEAKER_MIC] and fx.carries(reg, FXP.format(SPEAKER_MIC)) == ["gfx"]
 
 
 def test_the_default_file_is_next_to_the_program(monkeypatch, tmp_path):

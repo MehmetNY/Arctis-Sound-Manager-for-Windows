@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """``ArctisSoundManager.exe --fx <command>``: the microphone effect from the command line.
 
-    attach [--match WORD ...] [--force] [--no-protect] [--slots efx,sfx,...] [--modes default,raw,...] [--builder]
+    attach [--match WORD ...] [--force] [--no-protect] [--slots gfx,sfx,...] [--modes default,raw,...] [--builder]
                                            register the effect and attach it to the headset's microphone (administrator)
     detach [--reason TEXT]                 take it away again and put Windows back as it was (administrator)
     guard                                  detach for good if the audio engine crashed in the effect (administrator)

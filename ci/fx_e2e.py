@@ -462,17 +462,14 @@ def check(levels: dict) -> dict:
 
 VARIANTS = [
     # (title, arguments of "attach", does it use the product's way of switching Windows' audio protection off)
-    # Every case also writes the list of signal processing modes the effect works in (the CI's stand-in microphone offers
-    # only the raw mode, so the list has to say "raw" there; the product adds raw to the list in the same situation).
+    # The first case is the product's own way (no arguments: whatever the program attaches by default); it has to work.
+    # The others show what else works on this Windows, to choose from if the product's way does not on some machine.
     # Every case records the microphone with two programs at once: both must get the processed sound.
-    ("SFX (stream effect)", ["--slots", "sfx"], True),
-    ("MFX (mode effect)", ["--slots", "mfx"], True),
-    ("GFX (global effect)", ["--slots", "gfx"], True),
-    ("LFX (local effect)", ["--slots", "lfx"], True),
+    ("the product's way (default slots)", [], True),
+    ("GFX, endpoint builder restarted too", ["--slots", "gfx", "--builder"], True),
     ("LFX + GFX (the old pair)", ["--slots", "lfx,gfx"], True),
-    ("EFX (endpoint effect)", ["--slots", "efx"], True),
-    ("SFX + MFX + EFX, endpoint builder restarted too", ["--slots", "sfx,mfx,efx", "--builder"], True),
-    ("SFX, audio protection left alone", ["--slots", "sfx"], False),
+    ("SFX (stream effect)", ["--slots", "sfx"], True),
+    ("GFX, audio protection left alone", ["--slots", "gfx"], False),
 ]
 
 
@@ -481,7 +478,7 @@ def case(title: str, extra: list[str], protect: bool) -> dict:
     log(f"########## {title}")
     fx("detach")
     trace_text()
-    deep = title.startswith(("SFX (stream effect)", "EFX (endpoint effect)"))         # the full diagnosis for two of the cases
+    deep = title.startswith("the product's way")         # the full diagnosis for two of the cases
     if deep:
         etw(True)
     fx("attach", "--match", "CABLE Output", *extra, *(() if protect else ("--no-protect",)))
@@ -544,6 +541,8 @@ def main() -> int:
     if not working:
         FAILS.append("no way of attaching the effect worked")
     log("Ways that worked:", "; ".join(s["title"] for s in working) or "none")
+    if not passed(summaries[0]):
+        FAILS.append("the product's own way of attaching the effect does not work")
     protected = [s for s in summaries if not s["protect"]]
     if protected:
         log("Windows loads the effect without switching the audio protection off: " + ("YES" if passed(protected[-1]) else "no"))

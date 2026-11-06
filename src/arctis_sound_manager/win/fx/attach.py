@@ -11,8 +11,11 @@ What "attach" does, in the order it does it (an administrator only; the installe
    (``HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Audio\\DisableProtectedAudioDG = 1``; Equalizer APO's installer
    sets the same value). The value is only set while the effect is attached, and its previous state is kept so that
    detaching puts it back exactly.
-3. Every microphone endpoint that belongs to the headset gets the effect as its *endpoint effect* (EFX: one instance per
-   device, whoever records). The endpoint's earlier value, if any, is kept so that detaching restores it.
+3. Every microphone endpoint that belongs to the headset gets the effect as its *global effect* (GFX, the post-mix slot
+   of the older effect model: one instance per device, so every program that records gets the processed voice). The
+   stream, mode and endpoint slots were tried on real Windows too (``ci/fx_e2e.py``): the stream and local ones give an
+   instance per recording program and the effect then follows the first one's audio, the mode and endpoint ones are not
+   used by Windows for this kind of device. The endpoint's earlier value, if any, is kept so that detaching restores it.
 4. Windows' audio service is restarted once so the audio engine notices.
 
 Everything goes through :class:`~.registry.Registry`, so the tests run the same code against an in-memory registry.
@@ -40,10 +43,9 @@ FRIENDLY_NAME = "Arctis Sound Manager microphone effect"
 
 CAPTURE = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture"
 FX_GUID = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d}"
-# The places in an endpoint's FxProperties where Windows looks for an effect (property id after the comma). The new ones
-# (stream, mode, endpoint) win over the old pre-mix/post-mix pair when any of them is present.
+# The places in an endpoint's FxProperties where Windows looks for an effect (property id after the comma).
 SLOTS = {"lfx": 1, "gfx": 2, "sfx": 5, "mfx": 6, "efx": 7}
-DEFAULT_SLOTS = ("efx",)                                           # PKEY_FX_EndpointEffectClsid: one instance per device
+DEFAULT_SLOTS = ("gfx",)                                           # PKEY_FX_PostMixEffectClsid: one instance per device
 EFX = f"{FX_GUID},{SLOTS['efx']}"
 
 
