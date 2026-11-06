@@ -1,0 +1,13 @@
+
+===== start audio service
+
+Name      Status
+----      ------
+Audiosrv Running
+
+===== download VB-CABLE
+downloaded VBCABLE_Driver_Pack45.zip
+[vbcable] exit code 0
+
+===== allow microphone access
+ok

@@ -1,0 +1,179 @@
+===== sessions with only a tone playing (A) / + endpoint loopback recorder (B) / + process loopback capture of A (C)
+spawned tone pid=4200: tone --device CABLE Input --amp 0.3 --secs 60
+
+----- P1: tone only
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 EBD8F1F7-1DDA-46F0-B40D-4AF8170A9DBD
+  session-id        hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4200 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 E4AAEE00-B3A6-4800-B6A8-C15F9E35F336
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4200'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.3 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 9AFDFA80-E8D5-46D7-95E2-C4EB87A6980C
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+spawned rec pid=4192: record --device CABLE Input --loopback --secs 50
+
+----- P2: tone + endpoint-loopback recorder (pid 4192 is the recorder)
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 63A7D5C7-79F0-4E1A-A97B-7AB278F2108B
+  session-id        hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4200 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 E4AAEE00-B3A6-4800-B6A8-C15F9E35F336
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4200'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.3 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4192 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 3CD4C453-490E-42CE-8C8D-35F06BB83C2F
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4192'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.300003 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 614B235C-4671-4948-9A00-C3BABFE71EB0
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+spawned cap pid=5148: capture --pid 4200 --secs 45
+
+----- P3: + process-loopback capture of the tone (pid 5148 is the capture client)
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 5A2268A5-FBC2-43AF-B040-D0FA8F8F063B
+  session-id        hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4200 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 E4AAEE00-B3A6-4800-B6A8-C15F9E35F336
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4200'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.3 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4192 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 3CD4C453-490E-42CE-8C8D-35F06BB83C2F
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4192'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.300003 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=5148 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 E430EF31-8CCB-4433-9C9C-B283DF274664
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b5148'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0.3 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 691C895B-1AC7-4CE8-8ECE-310D9287BDD2
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+
+pids: tone=4200 endpoint-recorder=4192 process-capture=5148
+
+----- P4: tone gone, recorders still up
+SESSION device='CABLE In 16ch (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 53D05917-18C8-4647-9A16-E0C1AA5E6100
+  session-id        hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{118ee402-e54e-455d-8e43-ff089114e544}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=4192 exe=audioprobe.exe state=1 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 3CD4C453-490E-42CE-8C8D-35F06BB83C2F
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b4192'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0 channels=2
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=5148 exe=audioprobe.exe state=0 volume=1 mute=0
+  display-name      hr=00000000 ''
+  icon-path         hr=00000000 ''
+  grouping-param    hr=00000000 E430EF31-8CCB-4433-9C9C-B283DF274664
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|\Device\HarddiskVolume4\a\Arctis-Sound-Manager-for-Windows\Arctis-Sound-Manager-for-Windows\build\audioprobe.exe%b{00000000-0000-0000-0000-000000000000}|2%b5148'
+  is-system-sounds  1   is-single-process 0
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+SESSION device='CABLE Input (VB-Audio Virtual Cable)' pid=0 exe=(system) state=0 volume=1 mute=0
+  display-name      hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-202'
+  icon-path         hr=00000000 '@%SystemRoot%\System32\AudioSrv.Dll,-203'
+  grouping-param    hr=00000000 8D797CC3-0342-4331-A752-01DB2D23AB57
+  session-id        hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}'
+  session-instance  hr=00000000 '{0.0.0.00000000}.{13a8f5bc-3639-49ce-a584-75cf98cfb2ff}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}|2%b#'
+  is-system-sounds  0   is-single-process 143196173
+  meter             peak=0 channels=0
+  channel-volumes   count=2 1 1
+
+----- P5a the meter of a playing session (A) at volume 1, then at 1e-8, then back
+spawned tone5 pid=6972: tone --device CABLE Input --amp 0.3 --secs 60
+meter at 1:    meter             peak=0.3 channels=2
+meter at 1e-8: meter             peak=0.3 channels=2
+meter at 1:    meter             peak=0.3 channels=2
+
+----- P5b the recorder's OWN session volume: 1 for 1.5 s, 1e-8 for 1.5 s, then 1 again (200 ms means of the recorded level, tone plays all the time)
+spawned rec5 pid=2136: record --device CABLE Input --loopback --secs 4.8 --trace
+recorder meter before: meter             peak=0.300003 channels=2
+t_setvol_low  03:20:59.398
+recorder meter at 1e-8: meter             peak=3.00003e-09 channels=2
+t_setvol_high 03:21:00.653
+recorded level per 200 ms: 0.1861 0.2120 0.2120 0.2120 0.2120 0.2120 0.0084 0.0000 0.0000 0.0000 0.0000 0.1952 0.2120 0.2120 0.2120 0.2120
+
+----- P5c the same for a process-loopback client following the tone
+spawned cap5 pid=1704: capture --pid 6972 --secs 4.8 --trace
+captured level per 200 ms: 0.1863 0.2122 0.2122 0.2122 0.2122 0.2122 0.0283 0.0000 0.0000 0.0000 0.0000 0.2116 0.2122 0.2122 0.2122 0.2122 0.2122 0.2122 0.2122
+RESULT capture pid=6972 mode=include frames=205920 packets=429 silent_packets=0 rms=0.179435934 peak=0.300000012
+
+PROBE SESSIONS DONE
