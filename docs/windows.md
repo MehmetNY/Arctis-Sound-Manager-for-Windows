@@ -92,8 +92,9 @@ ASM does not need a driver of its own, and it does not ask you to point every pr
   record stays what they record. A program ASM has never heard before is only *listened to* until it plays; the first
   tenth of a second of its very first sound can be heard unprocessed, once.
 * **The microphone effect reaches programs that record in Windows' shared mode** (Discord, Teams, Zoom, OBS, browsers,
-  nearly every game). A program that opens the microphone in *exclusive mode* gets the raw voice - the same limit as with
-  the output above. The effect works on 48 kHz, one- or two-channel microphones; the Nova Pro Wireless is one.
+  nearly every game), all of them at the same time: it is attached as the microphone's *global* effect, one instance for
+  every program that records. A program that opens the microphone in *exclusive mode* gets the raw voice - the same limit
+  as with the output above. The effect works on 48 kHz, one- or two-channel microphones; the Nova Pro Wireless is one.
 * **Windows' audio protection** is switched off to load the effect (see above). It is a security setting meant for media
   protection; it is not needed for anything else ASM does. If you do not want that, use **Settings → Audio engine →
   Devices... → Switch the microphone effect off** (or run `ArctisSoundManager.exe --fx detach` as administrator): the
