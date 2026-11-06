@@ -1,0 +1,179 @@
+
+===== os
+
+Caption     : Microsoft Windows Server 2025 Datacenter
+BuildNumber : 26100
+Version     : 10.0.26100
+
+===== secure boot
+False
+
+===== bcdedit current
+
+Windows Boot Loader
+-------------------
+identifier              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows Server
+locale                  en-US
+inherit                 {bootloadersettings}
+recoverysequence        {5570eff0-d007-11f1-9b3c-7ced8dc08302}
+displaymessageoverride  Recovery
+recoveryenabled         No
+testsigning             Yes
+isolatedcontext         Yes
+allowedinmemorysettings 0x15000075
+osdevice                partition=C:
+systemroot              \Windows
+resumeobject            {5570efec-d007-11f1-9b3c-7ced8dc08302}
+nx                      OptOut
+bootstatuspolicy        IgnoreAllFailures
+hypervisorlaunchtype    Auto
+hypervisorschedulertype Root
+ems                     Yes
+
+===== audio services
+
+Name                  Status StartType
+----                  ------ ---------
+AudioEndpointBuilder Running Automatic
+Audiosrv             Running Automatic
+
+===== start audio service, allow microphone access
+ok
+
+===== sound devices (before the installer)
+
+Name        : VB-Audio Virtual Cable
+Status      : OK
+PNPDeviceID : ROOT\MEDIA\0000
+
+
+
+FriendlyName                            Status InstanceId
+------------                            ------ ----------
+CABLE Output (VB-Audio Virtual Cable)   OK     SWD\MMDEVAPI\{0.0.1.00000000}.{AD95577F-0324-43F6-9FE3-CEEAC96DB2F4}
+Speakers (VB-Audio Virtual Cable)       OK     SWD\MMDEVAPI\{0.0.0.00000000}.{05CF1574-2E6F-45AE-B0D1-673058D6FC0F}
+CABLE In 16 Ch (VB-Audio Virtual Cable) OK     SWD\MMDEVAPI\{0.0.0.00000000}.{17BD1EBF-601F-49F0-B7F7-A83574DEBBC2}
+
+
+
+FriendlyName : VB-Audio Virtual Cable
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : ROOT\MEDIA\0000
+
+===== installer file
+
+Name   : ASM-Setup-1.6.4.exe
+Length : 155683926
+[installer] still running; open windows:
+     10232 WindowsTerminal          'C:\ProgramData\GitHub\HostedComputeAgent\hosted-compute-agent'
+[installer] exit code 0
+INSTALLER finished=True exit=0
+
+===== sound devices (after the installer)
+
+Name        : VB-Audio Virtual Cable
+Status      : OK
+PNPDeviceID : ROOT\MEDIA\0000
+
+
+
+FriendlyName                            Status InstanceId
+------------                            ------ ----------
+CABLE Output (VB-Audio Virtual Cable)   OK     SWD\MMDEVAPI\{0.0.1.00000000}.{AD95577F-0324-43F6-9FE3-CEEAC96DB2F4}
+Speakers (VB-Audio Virtual Cable)       OK     SWD\MMDEVAPI\{0.0.0.00000000}.{05CF1574-2E6F-45AE-B0D1-673058D6FC0F}
+CABLE In 16 Ch (VB-Audio Virtual Cable) OK     SWD\MMDEVAPI\{0.0.0.00000000}.{17BD1EBF-601F-49F0-B7F7-A83574DEBBC2}
+
+
+
+FriendlyName : VB-Audio Virtual Cable
+Status       : OK
+Problem      : CM_PROB_NONE
+InstanceId   : ROOT\MEDIA\0000
+
+===== installed files
+
+Name                    Length
+----                    ------
+_internal               
+fx                      
+ArctisSoundManager.exe  17009882
+asm-audiotap.exe        330752
+LICENSE.txt             35969
+rnnoise.dll             14825472
+THIRD-PARTY-NOTICES.txt 1375
+unins000.dat            508793
+unins000.exe            4423426
+
+
+uninstaller present
+
+===== the microphone effect (registered by the installer)
+dll: C:\Program Files\Arctis Sound Manager\fx\asm_micfx.dll
+dll_present: True
+com_registered: True
+protection_off: False
+attached: []
+wanted: []
+missing: []
+disabled: None
+ready: False
+needs_attach: False
+tasks: True
+
+
+TaskName:      \ASM microphone effect - attach
+TaskName:      \ASM microphone effect - detach
+TaskName:      \ASM microphone effect - guard
+
+
+VB-CABLE driver files (the fixture; the installer must not add or remove any):
+
+===== start with windows (HKCU Run)
+ArctisSoundManager = "C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe" --background
+StartupApproved present: False
+
+===== installer log (tail)
+2026-11-06 03:26:33.747   Time stamp of our file: 2026-11-06 03:22:30.000
+2026-11-06 03:26:33.747   Installing the file.
+2026-11-06 03:26:33.748   Successfully installed the file.
+2026-11-06 03:26:33.748   -- Icon entry --
+2026-11-06 03:26:33.748   Dest filename: C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Arctis Sound Manager.lnk
+2026-11-06 03:26:33.748   Creating the icon.
+2026-11-06 03:26:34.105   Successfully created the icon.
+2026-11-06 03:26:34.111   Saving uninstall information.
+2026-11-06 03:26:34.111   Creating new uninstall key: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3B2A52-6C1E-4E43-9B6A-7B4F0C5E21A9}_is1
+2026-11-06 03:26:34.111   Writing uninstall key values.
+2026-11-06 03:26:34.111   Detected previous non administrative install? No
+2026-11-06 03:26:34.111   Detected previous administrative 32-bit install? No
+2026-11-06 03:26:34.133   Installation process succeeded.
+2026-11-06 03:26:34.135   -- Run entry --
+2026-11-06 03:26:34.135   Run as: Current user
+2026-11-06 03:26:34.135   Type: Exec
+2026-11-06 03:26:34.135   Filename: C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe
+2026-11-06 03:26:34.135   Parameters: --fx tasks-install
+2026-11-06 03:26:35.429   Process exit code: 0
+2026-11-06 03:26:35.429   -- Run entry --
+2026-11-06 03:26:35.429   Run as: Current user
+2026-11-06 03:26:35.429   Type: Exec
+2026-11-06 03:26:35.429   Filename: C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe
+2026-11-06 03:26:35.429   Parameters: --fx attach
+2026-11-06 03:26:40.923   Process exit code: 0
+2026-11-06 03:26:40.923   -- Run entry --
+2026-11-06 03:26:40.923   Run as: Current user
+2026-11-06 03:26:40.923   Type: Exec
+2026-11-06 03:26:40.923   Filename: C:\Windows\system32\net.exe
+2026-11-06 03:26:40.923   Parameters: start audiosrv
+2026-11-06 03:26:40.975   Process exit code: 2
+2026-11-06 03:26:40.975   -- Run entry --
+2026-11-06 03:26:40.975   Run as: Original user
+2026-11-06 03:26:40.975   Type: Exec
+2026-11-06 03:26:40.975   Filename: C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe
+2026-11-06 03:26:40.975   Parameters: --enable-autostart
+2026-11-06 03:26:41.351   Process exit code: 0
+2026-11-06 03:26:41.354   Need to restart Windows? No
+2026-11-06 03:26:41.356   Deinitializing Setup.
+2026-11-06 03:26:41.364   Log closed.

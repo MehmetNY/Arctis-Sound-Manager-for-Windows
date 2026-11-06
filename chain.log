@@ -1,0 +1,271 @@
+== installed program
+PASS  C0.1 the installer put the program on disk   [C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe]
+PASS  C0.2 and the per-application helper
+PASS  C0.3 and the microphone effect (the audio engine's plug-in)
+PASS  C0.4 no third-party driver pack is shipped
+   fx status: {"dll": "C:\\Program Files\\Arctis Sound Manager\\fx\\asm_micfx.dll", "dll_present": true, "com_registered": true, "protection_off": false, "attached": [], "wanted": [], "missing": [], "disabled": null, "ready": false, "needs_attach": false, "tasks": true}
+PASS  C0.5 the installer registered the effect with Windows and created its scheduled tasks   [{"dll": "C:\\Program Files\\Arctis Sound Manager\\fx\\asm_micfx.dll", "dll_present": true, "com_registered": true, "protection_off": false, "attached": [], "wanted": [], "missing": [], "disabled": nul]
+DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Input (VB-Audio Virtual Cable)
+DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE In 16ch (VB-Audio Virtual Cable)
+DEVICE capture state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Output (VB-Audio Virtual Cable)
+DEFAULT render  CABLE Input (VB-Audio Virtual Cable)
+DEFAULT capture CABLE Output (VB-Audio Virtual Cable)
+PASS  C1.1 the test machine's stand-in endpoints (VB-CABLE, installed by the CI, not by ASM) are there
+PASS  C2.1 Start with Windows is registered   ["C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe" --background]
+PASS  C2.2 and starts quietly in the background   ["C:\Program Files\Arctis Sound Manager\ArctisSoundManager.exe" --background]
+PASS  C3.1 the installed program runs   [1.6.4]
+== the engine starts by itself, the way Start with Windows starts the program
+PASS  C4.1 the engine is up without anybody starting it (first start compiles the audio kernels)
+   engine config: {"schema": 3, "latency": "balanced", "device_latency": "low", "inputs": {"game": "ASM Tap game", "chat": "ASM Tap chat", "media": "ASM Tap media", "aux": "ASM Tap aux"}, "outputs": {"headset": "CABLE Input"}, "routing": {"game": "headset", "chat": "headset", "media": "headset", "aux": "headset"}, "mic": {"fx": false}, "master_limiter": true}
+   engine endpoints: {"in:game": {"state": "running", "device": "ASM Tap game", "channels": 2, "callbacks": 74, "reopened": 0, "underruns": 0, "resyncs": 0, "overruns": 0, "drift_ppm": 0.0, "level": 1935}, "in:chat": {"state": "running", "device": "ASM Tap chat", "channels": 2, "callbacks": 74, "reopened": 0, "underruns": 0, "resyncs": 0, "overruns": 0, "drift_ppm": 0.0, "level": 1936}, "in:media": {"state": "running", "device": "ASM Tap media", "channels": 2, "callbacks": 74, "reopened": 0, "underruns": 0, "resyncs": 0, "overruns": 0, "drift_ppm": 0.0, "level": 1936}, "in:aux": {"state": "running", "device": "ASM Tap aux", "channels": 2, "callbacks": 74, "reopened": 0, "underruns": 0, "resyncs": 0, "overruns": 0, "drift_ppm": 0.0, "level": 1936}, "out:headset": {"state": "running", "device": "CABLE Input (VB-Audio Virtual Cable)", "channels": 2, "callbacks": 76, "reopened": 0, "underruns": 0, "fill": 1920}}
+PASS  C4.2 it is running and has no problems   [[] ]
+PASS  C4.2b every device of the engine is open   [{}]
+PASS  C4.3 the helper process is there
+PASS  C4.4 the tray/daemon process is there (not a console window)   [3]
+== two programs play
+    TONE start pid=2912 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.300 freq=440 | TONE start pid=2208 device='CABLE Input (VB-Audio Virtual Cable)' mix=[2ch 48000Hz 32bit float] amp=0.200 freq=880
+PASS  C5.1 the programs are turned down to the helper's level   [2e-08 2e-08]
+PASS  C5.2 the headset receives the mixed sound   [0.1955]
+PASS  C5.3 not clipped   [0.1955]
+   (the programs' endpoint is the headset here, so it carries the engine's mix: 0.1954)
+== channel controls
+   both 0.1955  chat only 0.1414  game only 0.1348  none 0.00001  both again 0.1954
+PASS  C6.1 muting the game channel leaves the chat   [0.1414]
+PASS  C6.2 muting the chat channel leaves the game   [0.1348]
+PASS  C6.3 muting both is silence   [0.00001]
+PASS  C6.4 unmuting brings the sound back   [0.1954 vs 0.1955]
+PASS  C6.5 the two channels add up (separate channels, one mix)   [0.03818 vs 0.03823]
+PASS  C6.6 the volume of a channel changes the level   [0.0169 vs 0.1348]
+== cost
+   MEASURE ArctisSoundManager.exe pid 744: 0.0% of one core    Manager\ArctisSoundManager.exe --daemon
+   MEASURE ArctisSoundManager.exe pid 3348: 8.4% of one core    Manager\ArctisSoundManager.exe --engine
+   MEASURE asm-audiotap.exe pid 3592: 1.6% of one core   al\arctis_manager\run\audiotap_state.txt
+   MEASURE ArctisSoundManager.exe pid 9324: 0.2% of one core   ager\ArctisSoundManager.exe --background
+PASS  C7.1 all of ASM together uses less than half a core while two programs play   [10.2%]
+== quit all
+PASS  C8.1 no ASM process is left   [[] []]
+PASS  C8.2 the programs have their volume back   [1.0 1.0]
+PASS  C8.3 and are heard directly again   [0.2550]
+== can the installed program open the headset device? (the engine's own code path, on two threads)
+   --- CABLE Input
+    device: [10] CABLE Input (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2)
+    INFO arctis_sound_manager.win.audio.backend: opened output [10] CABLE Input (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2): 2 ch (shared, auto-convert)
+    INFO arctis_sound_manager.win.audio.backend: opened output [10] CABLE Input (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2): 2 ch (shared, auto-convert)
+    open-test main thread: OK (2 ch, shared, auto-convert)
+    open-test worker thread: OK (2 ch, shared, auto-convert)
+PASS  C6.7a the engine's code opens and starts CABLE Input on the main thread and on another one   [exit code 0]
+   --- CABLE In 16ch
+    device: [11] CABLE In 16ch (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2)
+    INFO arctis_sound_manager.win.audio.backend: opened output [11] CABLE In 16ch (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2): 2 ch (shared, auto-convert)
+    INFO arctis_sound_manager.win.audio.backend: opened output [11] CABLE In 16ch (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2): 2 ch (shared, auto-convert)
+    open-test main thread: OK (2 ch, shared, auto-convert)
+    open-test worker thread: OK (2 ch, shared, auto-convert)
+PASS  C6.7b the engine's code opens and starts CABLE In 16ch on the main thread and on another one   [exit code 0]
+== the microphone: stand-in microphone -> effect in Windows' audio engine -> ASM engine -> recording program
+   attach: {"ok": true, "changed": true, "restarted": true, "attached": ["{ad95577f-0324-43f6-9fe3-ceeac96db2f4}"], "errors": [], "notes": []}
+PASS  C10.1 the effect attaches to that microphone
+PASS  C10.1b with the effect attached and no engine running, a program hears the microphone as it is   [0.1736]
+PASS  C10.2 the engine runs with only the microphone configured
+PASS  C10.3 the engine and the effect find each other while a program records   [{"state": "bypass", "claimed": true, "wants": false, "blocks": 0, "errors": 0, "load": 0.0, "effect": {"state": "bypass", "apo_alive": true, "apo_pid": 9256, "rate": 48000, "channels": 2, "period_frames": 480, "calls": 298, "underruns": 0, "overruns": 0, "in_frames": 0, "out_frames": 0, "fault": 0, ]
+PASS  C10.4 with nothing enabled the program hears the microphone as it is   [0.1734 vs 0.1736 without the effect]
+   8 forced rebuilds in a burst took 4.2 s; replies [True, True, True, True, True, True, True, True]
+PASS  C10.5 the engine did not give up after the burst (it answered every request and is running)   [[True, True, True, True, True, True, True, True] ]
+   reload: {"ok": true}
+PASS  C10.6 noise cancelling is running (RNNoise) and the effect is carrying the sound   [{"state": "processing", "claimed": true, "wants": true, "blocks": 45, "errors": 0, "load": 0.0691, "effect": {"state": "processing", "apo_alive": true, "apo_pid": 9256, "rate": 48000, "channels": 2, "period_frames": 480, "calls": 1700, "underruns": 0, "overruns": 0, "in_frames": 24000, "out_frames": 21600, "fault": 0, "dll_build": 1, "engine_owns": true}, "active": true, "noise_engine": "rnnoise"}]
+PASS  C10.7 and the program hears the noise taken out (a fraction of what it heard before)   [0.0000 vs 0.1736 before]
+   level the recording program hears: noise alone 0.1736   nothing enabled 0.1734   noise cancelling on 0.0000
+PASS  C10.8 nothing of ASM is left running after the microphone test
+== uninstall
+PASS  C9.0 there is an uninstaller
+   uninstaller exit code: 0
+PASS  C9.1 the program folder is gone (or only leftovers of the uninstaller itself)   [folder removed]
+PASS  C9.2 Start with Windows is removed   [None]
+PASS  C9.3 nothing is left running
+PASS  C9.4 Windows is back to how it was: the effect is unregistered and its scheduled tasks are gone   [registered=False]
+PASS  C9.5 and a VB-CABLE that is not ASM's (the CI fixture) was left alone   [['DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Input (VB-Audio Virtual Cable)', 'DEVICE render  state=0x1 mix=[2ch 48000Hz 32bit float] CABLE In 16ch (VB-Audio Virtual Cable)', 'DEVICE capture state=0x1 mix=[2ch 48000Hz 32bit float] CABLE Output (VB-Audio Virtual Cable)']]
+== logs of the programs
+--- C:\Users\runneradmin\.config\arctis_manager\asm-audio-engine.log  (4288 chars, 39 lines)
+    03:26:57 INFO    engine: ASM audio engine starting (config folder C:\Users\runneradmin\.config\arctis_manager)
+    03:26:57 INFO    health: health: engine pid 3348 runs build a7245c9 (2026-11-06 03:21 UTC)
+    03:26:57 INFO    health: health: engine pid 3348, private 295.3 MB, ws 145.2 MB (peak 147.6), handles 271, gdi 0, user 2, threads 4, python-objects 599691, cpu 184.6%, busiest threads: asm-warmup 323%, asm-health-engine 92%, MainThread 46%, up 0m00s
+    03:26:59 INFO    arctis_sound_manager.win.audio.fast: compiled kernels ready in 2.5 s
+    03:26:59 INFO    arctis_sound_manager.win.audio.tap: asm-audiotap.exe started (pid 3592)
+    03:26:59 INFO    arctis_sound_manager.win.audio.runtime: in:game: ASM Tap game (2 ch)
+    03:26:59 INFO    arctis_sound_manager.win.audio.runtime: in:chat: ASM Tap chat (2 ch)
+    03:26:59 INFO    arctis_sound_manager.win.audio.runtime: in:media: ASM Tap media (2 ch)
+    03:26:59 INFO    arctis_sound_manager.win.audio.runtime: in:aux: ASM Tap aux (2 ch)
+    03:26:59 INFO    arctis_sound_manager.win.audio.backend: opened output [10] CABLE Input (VB-Audio Virtual Cable) (Windows WASAPI, in 0 / out 2): 2 ch (shared, auto-convert)
+    03:26:59 INFO    arctis_sound_manager.win.audio.runtime: out:headset: CABLE Input (VB-Audio Virtual Cable) (2 ch)
+    03:26:59 INFO    arctis_sound_manager.win.audio.tap: audiotap: endpoint: CABLE Input (VB-Audio Virtual Cable)
+    03:27:00 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to ArctisSoundManager.exe (pid 9324) -> game
+    03:27:00 INFO    arctis_sound_manager.win.audio.tap: audiotap: heard ArctisSoundManager.exe (pid 9324): turned down from now on
+    03:27:00 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to fakegame.exe (pid 2912) -> game
+    03:27:01 INFO    arctis_sound_manager.win.audio.tap: audiotap: tapping discord.exe (pid 2208) -> chat
+    03:27:01 INFO    arctis_sound_manager.win.audio.tap: audiotap: heard fakegame.exe (pid 2912): turned down from now on
+    03:27:03 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 6948) -> game
+    03:27:06 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 6536) -> game
+    03:27:08 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 9524) -> game
+    03:27:10 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 8324) -> game
+    03:27:13 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 4836) -> game
+    03:27:16 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 7928) -> game
+    03:27:18 INFO    arctis_sound_manager.win.audio.tap: audiotap: listening to audioprobe.exe (pid 5336) -> game
+    03:27:30 INFO    engine: ASM audio engine stopping
+    03:27:58 INFO    engine: ASM audio engine starting (config folder C:\Users\runneradmin\.config\arctis_manager)
+    03:27:59 INFO    health: health: engine pid 1732 runs build a7245c9 (2026-11-06 03:21 UTC)
+    03:27:59 INFO    health: health: engine pid 1732, private 295.6 MB, ws 147.7 MB (peak 147.7), handles 270, gdi 0, user 2, threads 4, python-objects 602664, cpu 176.5%, busiest threads: asm-warmup 265%, MainThread 44%, asm-health-engine 44%, up 0m00s
+    03:27:59 INFO    arctis_sound_manager.win.audio.fast: compiled kernels ready in 0.4 s
+    03:27:59 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:14 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:15 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:15 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:16 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:16 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:17 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:17 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:18 INFO    arctis_sound_manager.win.audio.runtime: microphone: connected to the microphone effect
+    03:28:29 INFO    engine: ASM audio engine stopping
+--- C:\Users\runneradmin\.config\arctis_manager\sonar_micro_state.json  (86 chars, 1 lines)
+    {"bands": [], "noise_canceling": {"enabled": true, "value": 0.9, "engine": "rnnoise"}}
+--- C:\Users\runneradmin\.config\arctis_manager\sonar_presets_synced\Castlevania_ Belmont's Curse [Game].json  (2424 chars, 131 lines)
+        "subWoofer": {
+          "position": 0,
+          "gain": 0
+        },
+        "rearLeft": {
+          "position": 150,
+          "gain": 0
+        },
+        "rearRight": {
+          "position": -150,
+          "gain": 0
+        },
+        "sideLeft": {
+          "position": 90,
+          "gain": 0
+        },
+        "sideRight": {
+          "position": -90,
+          "gain": 0
+        }
+      },
+      "reverbGainDB": -6,
+      "formFactor": "headphones",
+      "globalEnableState": true
+    }
+--- C:\Users\runneradmin\.config\arctis_manager\sonar_presets_synced\COD_ Modern Warfare 4 [Game].json  (2428 chars, 131 lines)
+        "subWoofer": {
+          "position": 0,
+          "gain": 0
+        },
+        "rearLeft": {
+          "position": 150,
+          "gain": 0
+        },
+        "rearRight": {
+          "position": -150,
+          "gain": 0
+        },
+        "sideLeft": {
+          "position": 90,
+          "gain": 0
+        },
+        "sideRight": {
+          "position": -90,
+          "gain": 0
+        }
+      },
+      "reverbGainDB": -6,
+      "formFactor": "headphones",
+      "globalEnableState": true
+    }
+--- C:\Users\runneradmin\.config\arctis_manager\sonar_presets_synced\How to fish [Game].json  (2423 chars, 131 lines)
+        "subWoofer": {
+          "position": 0,
+          "gain": 0
+        },
+        "rearLeft": {
+          "position": 150,
+          "gain": 0
+        },
+        "rearRight": {
+          "position": -150,
+          "gain": 0
+        },
+        "sideLeft": {
+          "position": 90,
+          "gain": 0
+        },
+        "sideRight": {
+          "position": -90,
+          "gain": 0
+        }
+      },
+      "reverbGainDB": -6,
+      "formFactor": "headphones",
+      "globalEnableState": true
+    }
+--- C:\Users\runneradmin\.config\arctis_manager\win_audio_engine.json  (198 chars, 15 lines)
+    {
+      "schema": 3,
+      "latency": "balanced",
+      "inputs": {
+        "game": "",
+        "chat": "",
+        "media": "",
+        "aux": ""
+      },
+      "outputs": {},
+      "mic": {
+        "fx": true
+      },
+      "master_limiter": true
+    }
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\daemon.log  (12488 chars, 80 lines)
+    [   INFO]        Configuration: Found: SteelSeries Arctis 7+ (0x1038, ['0x220e', '0x2212', '0x2216', '0x2236']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_7_plus.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis 7+ (0x1038, ['0x220c']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_7_plus_220c.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis 9 Wireless (0x1038, ['0x12c2']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_9.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova Pro Wired (0x1038, ['0x12cb', '0x12cd', '0x12fa']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_nova_pro_wired.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Pro GameDAC (0x1038, ['0x1280', '0x1282']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_pro_gamedac.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Pro Wireless (0x1038, ['0x1290', '0x1294']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\arctis_pro_wireless.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis GameBuds (0x1038, ['0x230a', '0x2317']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\gamebuds.yaml
+    [   INFO]        Configuration: Found: Generic audio device (0x0000, []) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\generic.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 3 (0x1038, ['0x12ec']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_3.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 3 Wireless (0x1038, ['0x2269', '0x226d']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_3_wireless.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 4 (0x1038, ['0x12f2', '0x12f6']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_4.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 5 Wireless (0x1038, ['0x2232', '0x2253', '0x2255', '0x2264']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_5.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 7 (Gen 1) (0x1038, ['0x2202', '0x2206', '0x223a', '0x227a', '0x22a4']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_7_discrete_battery.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 7 (Gen 2) (0x1038, ['0x22a1', '0x227e', '0x2258', '0x229e', '0x22a9', '0x22a5', '0x22ad', '0x22ab']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_7_perc_battery.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 7P (Gen 1) (0x1038, ['0x220a']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_7p_discrete_battery.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova 7P (Gen 2) (0x1038, ['0x22a7', '0x2298']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_7p_perc_battery.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova Elite (0x1038, ['0x2244', '0x2246', '0x2249', '0x2270']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_elite.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova Pro Omni (0x1038, ['0x2290']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_pro_omni.yaml
+    [   INFO]        Configuration: Found: SteelSeries Arctis Nova Pro Wireless (0x1038, ['0x12e0', '0x12e5', '0x225d']) from C:\Program Files\Arctis Sound Manager\_internal\arctis_sound_manager\devices\nova_pro_wireless.yaml
+    [WARNING]           CoreEngine: No supported device connected, skipping virtual sink setup
+    [   INFO]    USBDevicesMonitor: Starting USB devices monitor (backend=polling)...
+    [   INFO]          DbusManager: Initializing service...
+    [   INFO]         PowerWatcher: Resume-from-sleep watcher started.
+    [   INFO] arctis_sound_manager.win.dbus_shim.ipc: IPC listening on 127.0.0.1:50214
+    [   INFO]          DbusManager: D-Bus name 'name.giacomofurlan.ArctisManager.Next' acquired (PRIMARY_OWNER).
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\logs\tray.log  (1505 chars, 14 lines)
+    ok
+    {"ok": true, "changed": true, "restarted": true, "attached": [], "errors": [], "notes": ["no microphone of the headset is known to Windows yet"]}
+                WinStart     INFO | daemon started
+                  health     INFO | health: tray pid 9324 runs build a7245c9 (2026-11-06 03:21 UTC)
+                  health     INFO | health: tray pid 9324, private 47.9 MB, ws 80.3 MB (peak 80.4), handles 389, gdi 9, user 18, threads 5, python-objects 282472, cpu 82.4%, busiest threads: asm-health-tray 82%, up 0m00s, qt_widgets 3, window closed
+    arctis_sound_manager.preset_sync     INFO | Downloaded preset: COD_ Modern Warfare 4 [Game].json
+    arctis_sound_manager.preset_sync     INFO | Downloaded preset: Castlevania_ Belmont's Curse [Game].json
+    arctis_sound_manager.preset_sync     INFO | Downloaded preset: How to fish [Game].json
+    arctis_sound_manager.preset_sync     INFO | Preset sync: 3 new preset(s) downloaded.
+    arctis_sound_manager.scripts.gui     INFO | Preset sync: 3 new preset(s) available: COD_ Modern Warfare 4, Castlevania_ Belmont's Curse, How to fish
+                WinStart     INFO | daemon started
+                  health     INFO | health: tray pid 8276 runs build a7245c9 (2026-11-06 03:21 UTC)
+                  health     INFO | health: tray pid 8276, private 47.8 MB, ws 80.4 MB (peak 80.6), handles 397, gdi 9, user 18, threads 5, python-objects 282821, cpu 79.1%, up 0m00s, qt_widgets 3, window closed
+    {"ok": true, "changed": false, "restarted": false, "attached": [], "errors": [], "notes": []}
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\migrations.json  (20 chars, 3 lines)
+    {
+      "engine_on": 1
+    }
+--- C:\Users\runneradmin\AppData\Local\arctis_manager\run\ipc.json  (81 chars, 1 lines)
+    {"v": 1, "port": 50214, "token": "4bb5a48a76cc863941080c5706ea7b3d", "pid": 6524}
+
+== RESULT: all checks passed
